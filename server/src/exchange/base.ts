@@ -21,8 +21,10 @@ export interface ExchangeClient {
   getTicker(pair: string): Promise<Ticker>;
   getBalances(): Promise<Balance[]>;
   getOpenOrders(pair?: string): Promise<any[]>;
-  buyMarket(pair: string, amountQuote: number): Promise<OrderResult>;
-  sellMarket(pair: string, qtyBase: number): Promise<OrderResult>;
+  /** Beli MARKET dengan nominal quote. clientOrderId untuk idempotensi. */
+  buyMarket(pair: string, amountQuote: number, clientOrderId?: string): Promise<OrderResult>;
+  /** Jual MARKET dengan qty base. clientOrderId untuk idempotensi. */
+  sellMarket(pair: string, qtyBase: number, clientOrderId?: string): Promise<OrderResult>;
   getKlines(pair: string, interval: string, limit: number): Promise<Kline[]>;
   /** USDT→IDR rate; 1 untuk exchange IDR */
   getUsdtIdrRate(): Promise<number>;

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { createHttp } from './http.js';
 import { ExchangeClient, Ticker, Balance, OrderResult, Kline, ExchangeError, parsePair } from './base.js';
+import { sleep } from '../utils/format.js';
 
 /**
  * Client Indodax.
@@ -120,20 +121,94 @@ export class IndodaxClient implements ExchangeClient {
     return ret?.orders || [];
   }
 
-  async buyMarket(pair: string, amountQuote: number): Promise<OrderResult> {
-    const p = IndodaxClient.pairUnderscore(pair);
-    const ret = await this.tapi('trade', { pair: p, type: 'buy', price: 0, idr: Math.floor(amountQuote) });
-    const ticker = await this.getTicker(pair);
-    const qty = amountQuote / ticker.ask;
-    return { order_id: String(ret.order_id), price: ticker.ask, qty, fee: amountQuote * this.feeRate, side: 'buy', status: 'filled' };
+  /** Ambil order by client_order_id (untuk rekonsiliasi fill aktual) */
+  private async getOrderByClientOrderId(clientOrderId: string): Promise<any | null> {
+    try {
+      const ret = await this.tapi('getOrderByClientOrderId', { client_order_id: clientOrderId });
+      return ret?.order || null;
+    } catch {
+      return null;
+    }
   }
 
-  async sellMarket(pair: string, qtyBase: number): Promise<OrderResult> {
+  /** Ambil trades untuk satu order (harga & fee aktual) */
+  private async getTradesForOrder(pair: string, orderId: string): Promise<any[]> {
+    try {
+      const ret = await this.tapi('tradeHistory', { pair: IndodaxClient.pairUnderscore(pair), order_id: orderId, count: 50 });
+      return ret?.trades || [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Rekonsiliasi fill aktual dari tradeHistory. Kunci qty = base asset lowercase (btc/xrp/dll). */
+  private async reconcileFill(pair: string, clientOrderId: string, fallbackPrice: number, fallbackQty: number, fallbackFee: number) {
+    const { base } = parsePair(pair, this.quoteAsset);
+    const baseKey = base.toLowerCase();
+    let price = fallbackPrice, qty = fallbackQty, fee = fallbackFee;
+    await sleep(700);
+    const order = await this.getOrderByClientOrderId(clientOrderId);
+    if (order) {
+      const trades = await this.getTradesForOrder(pair, String(order.order_id));
+      if (trades.length > 0) {
+        let q = 0, val = 0, f = 0;
+        for (const t of trades) {
+          const tq = parseFloat(t[baseKey] ?? '0');
+          const tp = parseFloat(t.price);
+          q += tq; val += tq * tp; f += parseFloat(t.fee || '0');
+        }
+        if (q > 0) { qty = q; price = val / q; fee = f > 0 ? f : val * this.feeRate; }
+      }
+    }
+    return { price, qty, fee };
+  }
+
+  /**
+   * BUY MARKET dengan nominal IDR.
+   * Sesuai docs resmi: order_type=market TANPA price; hanya parameter idr.
+   * Fill aktual direkonsiliasi via getOrderByClientOrderId + tradeHistory.
+   */
+  async buyMarket(pair: string, amountQuote: number, clientOrderId?: string): Promise<OrderResult> {
+    const p = IndodaxClient.pairUnderscore(pair);
+    const idr = Math.floor(amountQuote);
+    const ret = await this.tapi('trade', {
+      pair: p, type: 'buy', order_type: 'market', idr,
+      ...(clientOrderId ? { client_order_id: clientOrderId } : {})
+    });
+
+    // Rekonsiliasi fill aktual (order bisa under-filled)
+    const ticker = await this.getTicker(pair);
+    let price = ticker.ask;
+    let qty = idr / ticker.ask;
+    let fee = idr * this.feeRate;
+
+    if (clientOrderId) {
+      const r = await this.reconcileFill(pair, clientOrderId, price, qty, fee);
+      price = r.price; qty = r.qty; fee = r.fee;
+    }
+    return { order_id: String(ret.order_id ?? ''), price, qty, fee, side: 'buy', status: 'filled' };
+  }
+
+  /** SELL MARKET dengan qty base coin */
+  async sellMarket(pair: string, qtyBase: number, clientOrderId?: string): Promise<OrderResult> {
     const { base } = parsePair(pair, this.quoteAsset);
     const p = IndodaxClient.pairUnderscore(pair);
-    const ret = await this.tapi('trade', { pair: p, type: 'sell', price: 0, [base.toLowerCase()]: qtyBase });
+    const reqQty = parseFloat(qtyBase.toFixed(8));
+    const ret = await this.tapi('trade', {
+      pair: p, type: 'sell', order_type: 'market', [base.toLowerCase()]: reqQty,
+      ...(clientOrderId ? { client_order_id: clientOrderId } : {})
+    });
+
     const ticker = await this.getTicker(pair);
-    return { order_id: String(ret.order_id), price: ticker.bid, qty: qtyBase, fee: qtyBase * ticker.bid * this.feeRate, side: 'sell', status: 'filled' };
+    let price = ticker.bid;
+    let qty = reqQty;
+    let fee = qty * price * this.feeRate;
+
+    if (clientOrderId) {
+      const r = await this.reconcileFill(pair, clientOrderId, price, qty, fee);
+      price = r.price; qty = r.qty; fee = r.fee;
+    }
+    return { order_id: String(ret.order_id ?? ''), price, qty, fee, side: 'sell', status: 'filled' };
   }
 
   async getUsdtIdrRate(): Promise<number> {

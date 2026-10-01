@@ -197,24 +197,44 @@ api.post('/trade/quick', asyncH(async (req: any, res: any) => {
   if (!exchange_id || !pair || !side || !amount) {
     return res.status(400).json({ error: 'Field wajib: exchange_id, pair, side, amount' });
   }
+  if (!['buy', 'sell'].includes(side)) {
+    return res.status(400).json({ error: 'side harus buy atau sell' });
+  }
   const exRow = queries.getExchange.get(exchange_id) as ExchangeRow;
+  if (!exRow) return res.status(404).json({ error: 'Exchange tidak ditemukan' });
   const usePaper = mode ? mode === 'paper' : exRow.mode === 'paper';
-  const trader = usePaper ? registry.getPaper(exchange_id) : registry.get(exchange_id);
   const client = registry.get(exchange_id);
+
+  // Guard live: kredensial + exchange mode
+  if (!usePaper) {
+    if (exRow.mode !== 'live') return res.status(400).json({ error: 'Exchange masih mode Demo. Ubah ke Riil di Pengaturan untuk quick trade live.' });
+    if (!client.hasCredentials()) return res.status(400).json({ error: 'API key/secret belum diisi' });
+  }
+
+  const numAmount = Number(amount);
+  if (!Number.isFinite(numAmount) || numAmount <= 0) {
+    return res.status(400).json({ error: 'amount harus angka > 0' });
+  }
+  const minLot = exRow.min_lot_idr ?? 10000;
+  if (side === 'buy' && numAmount < minLot) {
+    return res.status(400).json({ error: `Nominal buy minimal ${minLot} ${client.quoteAsset}` });
+  }
+
+  const trader = usePaper ? registry.getPaper(exchange_id) : client;
+  const clientOrderId = `quick-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`.slice(0, 36);
 
   try {
     let result;
     if (side === 'buy') {
-      result = await trader.buyMarket(pair, Number(amount));
+      result = await trader.buyMarket(pair, numAmount, clientOrderId);
     } else {
-      // amount = qty base untuk sell; "100%" di-handle frontend → qty
-      result = await trader.sellMarket(pair, Number(amount));
+      result = await trader.sellMarket(pair, numAmount, clientOrderId);
     }
     const info = queries.insertTrade.run({
       bot_id: null, exchange_id, pair: pair.toUpperCase(), side,
       price: result.price, qty: result.qty, fee: result.fee, value: result.qty * result.price,
       realized_pnl: 0, cost_basis: 0, mode: usePaper ? 'paper' : 'live',
-      order_id: result.order_id, client_order_id: null, strategy_tag: 'QUICK',
+      order_id: result.order_id, client_order_id: clientOrderId, strategy_tag: 'QUICK',
       note: 'Quick trade manual', created_at: now()
     });
     res.json({ id: info.lastInsertRowid, ...result, mode: usePaper ? 'paper' : 'live' });

@@ -33,7 +33,7 @@ export class PaperTrader {
     return row?.free ?? 0;
   }
 
-  async buyMarket(pair: string, amountQuote: number): Promise<OrderResult> {
+  async buyMarket(pair: string, amountQuote: number, clientOrderId?: string): Promise<OrderResult> {
     this.seedIfNeeded(this.liveClient.id, this.liveClient.quoteAsset);
     const quote = this.liveClient.quoteAsset;
     const { base } = parsePair(pair, quote);
@@ -51,7 +51,7 @@ export class PaperTrader {
     return { order_id: `paper-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, price, qty, fee, side: 'buy', status: 'filled' };
   }
 
-  async sellMarket(pair: string, qtyBase: number): Promise<OrderResult> {
+  async sellMarket(pair: string, qtyBase: number, clientOrderId?: string): Promise<OrderResult> {
     this.seedIfNeeded(this.liveClient.id, this.liveClient.quoteAsset);
     const quote = this.liveClient.quoteAsset;
     const { base } = parsePair(pair, quote);

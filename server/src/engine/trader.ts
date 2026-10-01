@@ -13,9 +13,10 @@ let tradeCounter = 0;
  */
 export async function executeAction(bot: BotRow, action: Action, usdtIdr: number): Promise<TradeRow | null> {
   const cycle = `${Date.now()}-${tradeCounter++}`;
-  const clientOrderId = `bot-${bot.id}-${cycle}`;
+  // client_order_id: maks 36 char, alfanumerik _- (aturan Indodax)
+  const clientOrderId = `bot${bot.id}-${action.type}${cycle}`.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 36);
 
-  // Cek idempotensi (double-tick)
+  // Idempotensi lokal (double-tick dalam satu proses)
   if (queries.tradeByClientId.get(clientOrderId)) return null;
 
   const client = registry.get(bot.exchange_id);
@@ -34,12 +35,12 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
         log('warn', 'TRADE', `Order buy ${fmtIDR(amount * usdtIdr)} < lot minimum ${fmtIDR(minLot * usdtIdr)}, dilewati`, { bot_id: bot.id });
         return null;
       }
-      result = await trader.buyMarket(bot.pair, amount);
+      result = await trader.buyMarket(bot.pair, amount, clientOrderId);
       value = result.qty * result.price;
     } else {
       const qty = action.qtyBase ?? 0;
       if (qty <= 0) return null;
-      result = await trader.sellMarket(bot.pair, qty);
+      result = await trader.sellMarket(bot.pair, qty, clientOrderId);
       value = result.qty * result.price;
     }
 

@@ -104,9 +104,37 @@ export class TokocryptoClient implements ExchangeClient {
     return this.signed('GET', '/api/v3/openOrders', pair ? { symbol: pair.toUpperCase() } : {});
   }
 
-  async buyMarket(pair: string, amountQuote: number): Promise<OrderResult> {
+  /** Normalisasi qty sesuai stepSize dari exchangeInfo (cache 10 menit) */
+  private symbolFilters = new Map<string, { stepSize: number; minQty: number; minNotional: number; ts: number }>();
+  private async getFilters(symbol: string) {
+    const c = this.symbolFilters.get(symbol);
+    if (c && Date.now() - c.ts < 600000) return c;
+    try {
+      const { data } = await this.http.get('/api/v3/exchangeInfo', { params: { symbol } });
+      const s = data.symbols?.[0];
+      const lot = s?.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
+      const notional = s?.filters?.find((f: any) => f.filterType === 'MIN_NOTIONAL' || f.filterType === 'NOTIONAL');
+      const f = {
+        stepSize: parseFloat(lot?.stepSize || '0.00000001'),
+        minQty: parseFloat(lot?.minQty || '0'),
+        minNotional: parseFloat(notional?.minNotional || '1'),
+        ts: Date.now()
+      };
+      this.symbolFilters.set(symbol, f);
+      return f;
+    } catch {
+      return { stepSize: 0.00000001, minQty: 0, minNotional: 1, ts: Date.now() };
+    }
+  }
+  private roundDown(qty: number, step: number): number {
+    const precision = Math.max(0, Math.ceil(-Math.log10(step)));
+    return Math.floor(qty / step) * step === 0 ? 0 : parseFloat((Math.floor(qty / step) * step).toFixed(precision));
+  }
+
+  async buyMarket(pair: string, amountQuote: number, clientOrderId?: string): Promise<OrderResult> {
     const data = await this.signed('POST', '/api/v3/order', {
-      symbol: pair.toUpperCase(), side: 'BUY', type: 'MARKET', quoteOrderQty: amountQuote.toFixed(2)
+      symbol: pair.toUpperCase(), side: 'BUY', type: 'MARKET', quoteOrderQty: amountQuote.toFixed(2),
+      ...(clientOrderId ? { newClientOrderId: clientOrderId } : {})
     });
     const fills = data.fills || [];
     const qty = fills.reduce((s: number, f: any) => s + parseFloat(f.qty), 0) || parseFloat(data.executedQty || '0');
@@ -115,9 +143,15 @@ export class TokocryptoClient implements ExchangeClient {
     return { order_id: String(data.orderId), price: qty > 0 ? value / qty : 0, qty, fee, side: 'buy', status: data.status };
   }
 
-  async sellMarket(pair: string, qtyBase: number): Promise<OrderResult> {
+  async sellMarket(pair: string, qtyBase: number, clientOrderId?: string): Promise<OrderResult> {
+    const symbol = pair.toUpperCase();
+    const filters = await this.getFilters(symbol);
+    let reqQty = this.roundDown(qtyBase, filters.stepSize);
+    if (reqQty < filters.minQty) reqQty = filters.minQty;
+    if (reqQty <= 0) throw new ExchangeError(`Qty ${qtyBase} di bawah stepSize ${filters.stepSize}`);
     const data = await this.signed('POST', '/api/v3/order', {
-      symbol: pair.toUpperCase(), side: 'SELL', type: 'MARKET', quantity: qtyBase.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')
+      symbol, side: 'SELL', type: 'MARKET', quantity: String(reqQty),
+      ...(clientOrderId ? { newClientOrderId: clientOrderId } : {})
     });
     const fills = data.fills || [];
     const qty = fills.reduce((s: number, f: any) => s + parseFloat(f.qty), 0) || parseFloat(data.executedQty || '0');

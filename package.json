@@ -7,7 +7,8 @@
     "dev": "concurrently -n server,web -c blue,green \"npm run dev -w server\" \"npm run dev -w web\"",
     "build": "npm run build -w server && npm run build -w web",
     "start": "node server/dist/index.js",
-    "test:exchanges": "npm run test:exchanges -w server"
+    "test:exchanges": "npm run test:exchanges -w server",
+    "test:live": "npm run test:live-mock -w server && npm run test:live-e2e -w server"
   },
   "workspaces": [
     "server",
