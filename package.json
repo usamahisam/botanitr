@@ -1,0 +1,23 @@
+{
+  "name": "trading-botani",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web trading bot multi-bot untuk Indodax + Tokocrypto dengan kontrol Telegram & proxy",
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w server && npm run build -w web",
+    "start": "node server/dist/index.js",
+    "test:exchanges": "npm run test:exchanges -w server"
+  },
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "esbuild": "^0.25.12"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
