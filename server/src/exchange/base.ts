@@ -21,6 +21,8 @@ export interface ExchangeClient {
   getTicker(pair: string): Promise<Ticker>;
   getBalances(): Promise<Balance[]>;
   getOpenOrders(pair?: string): Promise<any[]>;
+  /** Batalkan semua open order (untuk kill switch). Mengembalikan jumlah yang dibatalkan. */
+  cancelOpenOrders(pair?: string): Promise<number>;
   /** Beli MARKET dengan nominal quote. clientOrderId untuk idempotensi. */
   buyMarket(pair: string, amountQuote: number, clientOrderId?: string): Promise<OrderResult>;
   /** Jual MARKET dengan qty base. clientOrderId untuk idempotensi. */

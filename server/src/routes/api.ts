@@ -331,6 +331,12 @@ api.post('/telegram/test', asyncH(async (_req: any, res: any) => {
   res.json(await sendTestMessage());
 }));
 
+// ===== Kill Switch =====
+api.post('/killswitch', asyncH(async (_req: any, res: any) => {
+  const { activateKillSwitch } = await import('../engine/killswitch.js');
+  res.json(await activateKillSwitch('Dashboard'));
+}));
+
 // ===== Error handler =====
 export function apiErrorHandler(err: any, _req: any, res: any, _next: any) {
   console.error('API error:', err);

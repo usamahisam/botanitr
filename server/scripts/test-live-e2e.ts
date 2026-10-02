@@ -18,6 +18,7 @@ const PORT = 3902;
 
 // Pakai DB sementara agar tidak mengotori data user
 const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), 'botani-e2e-'));
+process.env.BOTANI_DATA_DIR = tmpData;
 process.env.INDODAX_BASE_URL = `http://127.0.0.1:${PORT}`;
 
 const balances: Record<string, number> = { idr: 5_000_000, xrp: 0 };

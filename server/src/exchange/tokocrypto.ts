@@ -77,7 +77,7 @@ export class TokocryptoClient implements ExchangeClient {
     return crypto.createHmac('sha256', this.apiSecret).update(query).digest('hex');
   }
 
-  private async signed(method: 'GET' | 'POST', path: string, params: Record<string, string | number> = {}): Promise<any> {
+  private async signed(method: 'GET' | 'POST' | 'DELETE', path: string, params: Record<string, string | number> = {}): Promise<any> {
     if (!this.hasCredentials()) throw new ExchangeError('Kredensial Tokocrypto belum diisi');
     const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])), timestamp: Date.now().toString() }).toString();
     const signature = this.sign(query);
@@ -102,6 +102,26 @@ export class TokocryptoClient implements ExchangeClient {
 
   async getOpenOrders(pair?: string): Promise<any[]> {
     return this.signed('GET', '/api/v3/openOrders', pair ? { symbol: pair.toUpperCase() } : {});
+  }
+
+  async cancelOpenOrders(pair?: string): Promise<number> {
+    const symbol = pair?.toUpperCase();
+    try {
+      // Binance-style: DELETE /api/v3/openOrders membatalkan semua (untuk symbol atau semua)
+      const data = await this.signed('DELETE', '/api/v3/openOrders', symbol ? { symbol } : {});
+      return Array.isArray(data) ? data.length : (data ? 1 : 0);
+    } catch (e: any) {
+      // Fallback: cancel satu per satu
+      const orders = await this.getOpenOrders(symbol);
+      let cancelled = 0;
+      for (const o of orders) {
+        try {
+          await this.signed('DELETE', '/api/v3/order', { symbol: o.symbol, orderId: o.orderId });
+          cancelled++;
+        } catch { /* lanjut */ }
+      }
+      return cancelled;
+    }
   }
 
   /** Normalisasi qty sesuai stepSize dari exchangeInfo (cache 10 menit) */

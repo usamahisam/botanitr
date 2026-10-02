@@ -24,6 +24,9 @@ export class PaperTrader {
       .filter(b => b.free > 0 || b.locked > 0);
   }
 
+  /** Paper tidak punya open order riil → selalu 0 */
+  async cancelOpenOrders(_pair?: string): Promise<number> { return 0; }
+
   private setBalance(asset: string, free: number) {
     queries.upsertPaperBalance.run(this.liveClient.id, asset, Math.max(0, free), 0);
   }

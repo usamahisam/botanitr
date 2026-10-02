@@ -107,6 +107,17 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] Data tes dibersihkan (DB direset)
 - [x] README.md
 
+## Pasca-Audit (ditambahkan)
+- [x] Audit jalur live berdasarkan docs resmi Indodax → 5 kritis + 4 menengah diperbaiki (`docs/11-audit-live-trading.md`)
+- [x] Market order tanpa `price` (order_type=market)
+- [x] Idempotensi `client_order_id` native exchange
+- [x] Rekonsiliasi fill aktual (getOrderByClientOrderId + tradeHistory)
+- [x] Guard quick trade live
+- [x] Normalisasi qty Tokocrypto (exchangeInfo LOT_SIZE)
+- [x] E2E mock: test:live-mock 13/13 ✅, test:live-e2e 11/11 ✅
+- [x] **Kill switch global** (pause semua + cancel open orders): endpoint + tombol Dashboard + Telegram /panic → test:killswitch 7/7 ✅
+- [x] Isolasi DB test via env `BOTANI_DATA_DIR`
+
 ## Catatan Operasional
 - Server bind `127.0.0.1:3000`; `npm start` untuk produksi, `npm run dev` untuk development.
 - Jika `npm install` ulang bermasalah di esbuild: `npm install -D esbuild@0.25.12 --ignore-scripts`, lalu build native better-sqlite3: `cd node_modules/better-sqlite3 && npx prebuild-install`.

@@ -13,7 +13,7 @@ export const config = {
     .split(',').map(s => s.trim()).filter(Boolean),
   defaultProxy: process.env.DEFAULT_PROXY || '',
   defaultPaperMode: (process.env.DEFAULT_PAPER_MODE || 'true') === 'true',
-  dataDir: path.resolve(__dirname, '../data'),
+  dataDir: process.env.BOTANI_DATA_DIR ? path.resolve(process.env.BOTANI_DATA_DIR) : path.resolve(__dirname, '../data'),
   webDist: path.resolve(__dirname, '../../web/dist'),
   tokocryptoBaseUrl: process.env.TOKOCRYPTO_BASE_URL || 'https://www.tokocrypto.com',
   indodaxBaseUrl: process.env.INDODAX_BASE_URL || 'https://indodax.com'

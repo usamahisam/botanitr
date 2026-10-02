@@ -62,6 +62,19 @@ npm run test:exchanges -w server   # koneksi publik nyata (ticker)
 
 ## Rekomendasi Lanjutan (roadmap v1.1+)
 - Migrasi `tradeHistory`/`orderHistory` ke Indodax Trade API v2 (`/api/v2/myTrades`) sebelum deprecasi April 2026.
-- Tambah "kill switch" global (pause semua + batalkan open orders) satu tombol.
 - Reconciler berkala: bandingkan posisi bot vs saldo exchange aktual, peringatkan jika drift.
 - Trailing stop & max daily loss limit per bot.
+
+## 🚨 Kill Switch Global (ditambahkan pasca-audit)
+Fitur darurat satu aksi: **pause semua bot + batalkan semua open order live**.
+
+**Implementasi:**
+- `ExchangeClient.cancelOpenOrders(pair?)` di Indodax (`cancelOrder` per order; `openOrders` tanpa pair mengembalikan object per-pair → di-flatten) & Tokocrypto (`DELETE /api/v3/openOrders`, fallback per-order). Paper → 0.
+- `engine/killswitch.ts` `activateKillSwitch(triggeredBy)`: pause semua bot running → cancel open order live semua exchange → log `SYSTEM` + notifikasi Telegram.
+- Endpoint `POST /api/killswitch`.
+- Tombol merah **"Kill Switch (Darurat)"** di Dashboard (dengan konfirmasi).
+- Telegram `/panic` dengan konfirmasi inline button.
+
+**Verifikasi E2E:** `test:killswitch` **7/7 ✅** — 2 bot running + 2 open order mock → semua paused + semua order dibatalkan, tanpa error.
+
+Jalankan: `npm run test:killswitch -w server`

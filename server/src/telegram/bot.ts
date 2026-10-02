@@ -113,9 +113,10 @@ export function startTelegram(): boolean {
     '/pnl — profit & win rate\n' +
     '/pause [id] /resume [id] — kontrol bot\n' +
     '/logs [n] — log terakhir\n' +
+    '/panic — 🚨 kill switch (pause semua + batalkan order)\n' +
     '/help — bantuan'
   ));
-  bot.help(ctx => ctx.reply('Perintah: /status /balance /positions /price /pnl /pause /resume /logs\nQuick trade dari dashboard web.'));
+  bot.help(ctx => ctx.reply('Perintah: /status /balance /positions /price /pnl /pause /resume /logs /panic\nQuick trade dari dashboard web.'));
 
   bot.command('status', async ctx => ctx.reply(await buildStatus()));
   bot.command('balance', async ctx => ctx.reply(await buildBalance()));
@@ -156,6 +157,25 @@ export function startTelegram(): boolean {
       db.prepare(`UPDATE bots SET status='running' WHERE status='paused'`).run();
       ctx.reply('▶️ Semua bot dilanjutkan.');
     }
+  });
+
+  bot.command('panic', async ctx => {
+    await ctx.reply(
+      '🚨 KILL SWITCH akan ME-PAUSE semua bot & MEMBATALKAN semua open order live.\nLanjutkan?',
+      { reply_markup: { inline_keyboard: [[{ text: '✅ Ya, AKTIFKAN', callback_data: 'panic_confirm' }, { text: '❌ Batal', callback_data: 'panic_cancel' }]] } }
+    );
+  });
+
+  bot.action('panic_cancel', async ctx => {
+    await ctx.answerCbQuery('Dibatalkan');
+    await ctx.editMessageText('✅ Kill switch dibatalkan. Bot tetap berjalan.');
+  });
+  bot.action('panic_confirm', async ctx => {
+    await ctx.answerCbQuery('Mengaktifkan…');
+    const { activateKillSwitch } = await import('../engine/killswitch.js');
+    const r = await activateKillSwitch(`Telegram @${ctx.from?.username || ctx.from?.id}`);
+    const total = Object.values(r.orders_cancelled).reduce((s, n) => s + n, 0);
+    await ctx.editMessageText(`🚨 KILL SWITCH AKTIF\n${r.bots_paused} bot di-pause\n${total} open order dibatalkan${r.errors.length ? `\n⚠️ ${r.errors.join('; ')}` : ''}\n\nGunakan /resume untuk menjalankan lagi.`);
   });
 
   bot.command('logs', ctx => {

@@ -76,6 +76,19 @@ export default function Dashboard() {
             className="w-full py-3.5 rounded-2xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-lg shadow-lg shadow-brand-500/20 transition">
             ⚡ Quick Trade
           </button>
+
+          <button onClick={async () => {
+              if (!confirm('🚨 KILL SWITCH akan ME-PAUSE semua bot & MEMBATALKAN semua open order live.\n\nLanjutkan?')) return;
+              try {
+                const r: any = await api.post('/killswitch');
+                const total = Object.values(r.orders_cancelled || {}).reduce((s: number, n: any) => s + Number(n), 0);
+                alert(`🚨 Kill switch aktif!\n${r.bots_paused} bot di-pause\n${total} open order dibatalkan${r.errors?.length ? `\n⚠️ ${r.errors.join('; ')}` : ''}`);
+                load();
+              } catch (e: any) { alert(`❌ ${e.message}`); }
+            }}
+            className="w-full py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-bold shadow-lg shadow-red-500/20 transition">
+            🚨 Kill Switch (Darurat)
+          </button>
         </div>
       </div>
 

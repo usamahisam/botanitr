@@ -118,7 +118,29 @@ export class IndodaxClient implements ExchangeClient {
 
   async getOpenOrders(pair?: string): Promise<any[]> {
     const ret = await this.tapi('openOrders', pair ? { pair: IndodaxClient.pairUnderscore(pair) } : {});
-    return ret?.orders || [];
+    const orders = ret?.orders;
+    if (Array.isArray(orders)) return orders;
+    // Tanpa pair: { orders: { btc_idr: [...], ... } } → flatten
+    if (orders && typeof orders === 'object') {
+      return Object.entries(orders).flatMap(([p, arr]: [string, any]) =>
+        (Array.isArray(arr) ? arr : []).map((o: any) => ({ ...o, pair: o.pair || p })));
+    }
+    return [];
+  }
+
+  async cancelOpenOrders(pair?: string): Promise<number> {
+    const orders = await this.getOpenOrders(pair);
+    let cancelled = 0;
+    for (const o of orders) {
+      try {
+        await this.tapi('cancelOrder', {
+          pair: IndodaxClient.pairUnderscore(o.pair || pair || 'btc_idr'),
+          order_id: o.order_id, type: o.type, order_type: o.order_type || 'limit'
+        });
+        cancelled++;
+      } catch { /* lanjut order berikutnya */ }
+    }
+    return cancelled;
   }
 
   /** Ambil order by client_order_id (untuk rekonsiliasi fill aktual) */
