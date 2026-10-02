@@ -85,7 +85,7 @@ async function main() {
 
   // Buat 2 bot running
   for (const nm of ['Bot A', 'Bot B']) {
-    queries.insertBot.run({ name: nm, exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca', params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000, mode: 'live', auto_compound_pct: 100, status: 'running', state: '{}', created_at: now(), updated_at: now() });
+    queries.insertBot.run({ name: nm, exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca', params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000, mode: 'live', auto_compound_pct: 100, status: 'running', state: '{}', max_daily_loss_pct: 0, created_at: now(), updated_at: now() });
   }
   const runningBefore = (queries.runningBots.all() as any[]).length;
   check('2 bot running sebelum kill switch', runningBefore === 2, `got ${runningBefore}`);

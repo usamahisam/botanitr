@@ -144,7 +144,7 @@ api.get('/bots/:id', asyncH(async (req: any, res: any) => {
 }));
 
 api.post('/bots', asyncH(async (req: any, res: any) => {
-  const { name, exchange_id, pair, strategy, params, budget_idr, auto_compound_pct, mode, confirmed_live } = req.body || {};
+  const { name, exchange_id, pair, strategy, params, budget_idr, auto_compound_pct, mode, confirmed_live, max_daily_loss_pct } = req.body || {};
   if (!name || !exchange_id || !pair || !strategy || !budget_idr) {
     return res.status(400).json({ error: 'Field wajib: name, exchange_id, pair, strategy, budget_idr' });
   }
@@ -169,6 +169,7 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
     current_budget: Number(budget_idr), lot,
     mode: finalMode, auto_compound_pct: Number(auto_compound_pct ?? 100),
     status: 'running', state: JSON.stringify(strat.init(mergedParams)),
+    max_daily_loss_pct: Math.max(0, Number(max_daily_loss_pct ?? 0)),
     created_at: now(), updated_at: now()
   });
   const bot = queries.getBot.get(info.lastInsertRowid) as BotRow;

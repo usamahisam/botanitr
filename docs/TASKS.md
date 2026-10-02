@@ -118,6 +118,13 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] **Kill switch global** (pause semua + cancel open orders): endpoint + tombol Dashboard + Telegram /panic → test:killswitch 7/7 ✅
 - [x] Isolasi DB test via env `BOTANI_DATA_DIR`
 
+## Security Hardening v1.1 (ditambahkan)
+- [x] Migrasi Indodax TAPI v2 (`indodax-v2.ts` + auto-detect v1/v2 + rekonsiliasi via `/api/v2/myTrades`) — antisipasi decommission v1 April 2026
+- [x] Max daily loss limit per bot (kolom `max_daily_loss_pct`, guard auto-pause + notif, field di Wizard)
+- [x] Reconciler drift berkala (posisi bot vs saldo exchange → alert Telegram)
+- [x] E2E `test:safety` 12/12 ✅; total suite 43/43 ✅
+- [x] Dokumentasi `docs/12-security-hardening-v1.1.md`
+
 ## Catatan Operasional
 - Server bind `127.0.0.1:3000`; `npm start` untuk produksi, `npm run dev` untuk development.
 - Jika `npm install` ulang bermasalah di esbuild: `npm install -D esbuild@0.25.12 --ignore-scripts`, lalu build native better-sqlite3: `cd node_modules/better-sqlite3 && npx prebuild-install`.

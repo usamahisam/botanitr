@@ -5,7 +5,8 @@ import { log } from '../log.js';
 import { getStrategy, StrategyContext } from '../strategies/types.js';
 import { executeAction } from './trader.js';
 import { getUsdtIdr } from './balances.js';
-import { notifyTrade } from '../telegram/notify.js';
+import { notifyTrade, notify } from '../telegram/notify.js';
+import { pnl } from './pnl.js';
 import '../strategies/grid.js';
 import '../strategies/dca.js';
 import '../strategies/scalper.js';
@@ -34,6 +35,21 @@ function shouldTick(bot: BotRow, nowMs: number): boolean {
 const botCache = new Map<number, BotRow>();
 
 async function processBot(bot: BotRow) {
+  // Guard: max daily loss — pause bot jika rugi realized hari ini melewati batas
+  if (bot.max_daily_loss_pct > 0) {
+    const client0 = registry.get(bot.exchange_id);
+    const mult = client0.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
+    const realizedToday = pnl.botRealizedToday(bot.id);
+    const lossLimit = (bot.max_daily_loss_pct / 100) * bot.current_budget;
+    if (realizedToday < 0 && Math.abs(realizedToday) >= lossLimit) {
+      queries.setBotStatus.run('paused', now(), bot.id);
+      const msg = `🛑 MAX DAILY LOSS tercapai untuk "${bot.name}": rugi hari ini ${Math.round(realizedToday * mult).toLocaleString('id-ID')} ≥ batas ${Math.round(lossLimit * mult).toLocaleString('id-ID')} (${bot.max_daily_loss_pct}%). Bot di-pause otomatis.`;
+      log('warn', 'ENGINE', msg, { bot_id: bot.id });
+      await notify(msg).catch(() => {});
+      return;
+    }
+  }
+
   const strategy = getStrategy(bot.strategy);
   const params = JSON.parse(bot.params || '{}');
   let state = JSON.parse(bot.state || '{}');

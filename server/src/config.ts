@@ -16,7 +16,8 @@ export const config = {
   dataDir: process.env.BOTANI_DATA_DIR ? path.resolve(process.env.BOTANI_DATA_DIR) : path.resolve(__dirname, '../data'),
   webDist: path.resolve(__dirname, '../../web/dist'),
   tokocryptoBaseUrl: process.env.TOKOCRYPTO_BASE_URL || 'https://www.tokocrypto.com',
-  indodaxBaseUrl: process.env.INDODAX_BASE_URL || 'https://indodax.com'
+  indodaxBaseUrl: process.env.INDODAX_BASE_URL || 'https://indodax.com',
+  indodaxV2BaseUrl: process.env.INDODAX_V2_BASE_URL || 'https://api.indodax.com'
 };
 
 export function validateConfig(): string[] {

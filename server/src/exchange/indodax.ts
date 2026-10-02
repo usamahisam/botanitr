@@ -3,6 +3,8 @@ import { config } from '../config.js';
 import { createHttp } from './http.js';
 import { ExchangeClient, Ticker, Balance, OrderResult, Kline, ExchangeError, parsePair } from './base.js';
 import { sleep } from '../utils/format.js';
+import { IndodaxV2Client } from './indodax-v2.js';
+import { log } from '../log.js';
 
 /**
  * Client Indodax.
@@ -17,13 +19,30 @@ export class IndodaxClient implements ExchangeClient {
   private apiSecret = '';
   private proxyUrl: string | null = null;
   private http = createHttp(config.indodaxBaseUrl);
+  /** Client TAPI v2 (dipakai otomatis jika kredensial adalah key v2) */
+  private v2 = new IndodaxV2Client();
+  private useV2: boolean | null = null; // null = belum dideteksi
 
   setProxy(url?: string | null) {
     this.proxyUrl = url || null;
     this.http = createHttp(config.indodaxBaseUrl, this.proxyUrl);
+    this.v2.setProxy(url);
   }
-  setCredentials(key: string, secret: string) { this.apiKey = key; this.apiSecret = secret; }
+  setCredentials(key: string, secret: string) {
+    this.apiKey = key; this.apiSecret = secret;
+    this.v2.setCredentials(key, secret);
+    this.useV2 = null; // reset deteksi saat kredensial berubah
+  }
   hasCredentials() { return !!(this.apiKey && this.apiSecret); }
+
+  /** Deteksi versi API: true jika kredensial valid sebagai key TAPI v2 */
+  private async detectV2(): Promise<boolean> {
+    if (this.useV2 !== null) return this.useV2;
+    if (!this.hasCredentials()) { this.useV2 = false; return false; }
+    this.useV2 = await this.v2.probe();
+    log('info', 'SYSTEM', `Indodax: menggunakan TAPI ${this.useV2 ? 'v2' : 'v1 (legacy)'} untuk akun ini`);
+    return this.useV2;
+  }
 
   /** Format pair per endpoint: ticker → 'xrp_idr'; trades/depth → 'xrpidr' */
   private static pairUnderscore(pair: string): string {
@@ -106,6 +125,7 @@ export class IndodaxClient implements ExchangeClient {
   }
 
   async getBalances(): Promise<Balance[]> {
+    if (await this.detectV2()) return this.v2.getBalances();
     const ret = await this.tapi('getInfo');
     const out: Balance[] = [];
     const balance = ret.balance || {};
@@ -117,6 +137,7 @@ export class IndodaxClient implements ExchangeClient {
   }
 
   async getOpenOrders(pair?: string): Promise<any[]> {
+    if (await this.detectV2()) return this.v2.getOpenOrders(pair);
     const ret = await this.tapi('openOrders', pair ? { pair: IndodaxClient.pairUnderscore(pair) } : {});
     const orders = ret?.orders;
     if (Array.isArray(orders)) return orders;
@@ -129,6 +150,7 @@ export class IndodaxClient implements ExchangeClient {
   }
 
   async cancelOpenOrders(pair?: string): Promise<number> {
+    if (await this.detectV2()) return this.v2.cancelOpenOrders(pair);
     const orders = await this.getOpenOrders(pair);
     let cancelled = 0;
     for (const o of orders) {
@@ -191,6 +213,7 @@ export class IndodaxClient implements ExchangeClient {
    * Fill aktual direkonsiliasi via getOrderByClientOrderId + tradeHistory.
    */
   async buyMarket(pair: string, amountQuote: number, clientOrderId?: string): Promise<OrderResult> {
+    if (await this.detectV2()) return this.v2.buyMarket(pair, amountQuote, clientOrderId);
     const p = IndodaxClient.pairUnderscore(pair);
     const idr = Math.floor(amountQuote);
     const ret = await this.tapi('trade', {
@@ -213,6 +236,7 @@ export class IndodaxClient implements ExchangeClient {
 
   /** SELL MARKET dengan qty base coin */
   async sellMarket(pair: string, qtyBase: number, clientOrderId?: string): Promise<OrderResult> {
+    if (await this.detectV2()) return this.v2.sellMarket(pair, qtyBase, clientOrderId);
     const { base } = parsePair(pair, this.quoteAsset);
     const p = IndodaxClient.pairUnderscore(pair);
     const reqQty = parseFloat(qtyBase.toFixed(8));

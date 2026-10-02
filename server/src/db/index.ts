@@ -15,6 +15,13 @@ db.pragma('foreign_keys = ON');
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 db.exec(schema);
 
+// Migrasi ringan: tambah kolom jika belum ada (untuk DB yang sudah ada)
+function ensureColumn(table: string, column: string, ddl: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+  if (!cols.some(c => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+ensureColumn('bots', 'max_daily_loss_pct', 'max_daily_loss_pct REAL NOT NULL DEFAULT 0');
+
 // ===== Seed =====
 const now = () => new Date().toISOString();
 
@@ -88,7 +95,7 @@ export interface BotRow {
   id: number; name: string; exchange_id: string; pair: string; strategy: string;
   params: string; budget_idr: number; current_budget: number; lot: number;
   mode: 'paper' | 'live'; auto_compound_pct: number; status: 'running' | 'paused' | 'stopped';
-  state: string; error_count: number; created_at: string; updated_at: string;
+  state: string; error_count: number; max_daily_loss_pct: number; created_at: string; updated_at: string;
 }
 export interface TradeRow {
   id: number; bot_id: number | null; exchange_id: string; pair: string; side: 'buy' | 'sell';
@@ -104,8 +111,8 @@ export interface LogRow {
 export const queries = {
   getExchange: db.prepare('SELECT * FROM exchanges WHERE id=?'),
   allExchanges: db.prepare('SELECT * FROM exchanges ORDER BY id'),
-  insertBot: db.prepare(`INSERT INTO bots (name, exchange_id, pair, strategy, params, budget_idr, current_budget, lot, mode, auto_compound_pct, status, state, created_at, updated_at)
-    VALUES (@name, @exchange_id, @pair, @strategy, @params, @budget_idr, @current_budget, @lot, @mode, @auto_compound_pct, @status, @state, @created_at, @updated_at)`),
+  insertBot: db.prepare(`INSERT INTO bots (name, exchange_id, pair, strategy, params, budget_idr, current_budget, lot, mode, auto_compound_pct, status, state, max_daily_loss_pct, created_at, updated_at)
+    VALUES (@name, @exchange_id, @pair, @strategy, @params, @budget_idr, @current_budget, @lot, @mode, @auto_compound_pct, @status, @state, @max_daily_loss_pct, @created_at, @updated_at)`),
   getBot: db.prepare('SELECT * FROM bots WHERE id=?'),
   allBots: db.prepare('SELECT * FROM bots ORDER BY id DESC'),
   runningBots: db.prepare(`SELECT * FROM bots WHERE status='running'`),

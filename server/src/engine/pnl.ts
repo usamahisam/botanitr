@@ -1,5 +1,13 @@
 import { db } from '../db/index.js';
 
+/** Awal hari ini (WIB) dalam ISO UTC */
+function todayStartUtcIso(): string {
+  const now = new Date();
+  const wib = new Date(now.getTime() + 7 * 3600 * 1000);
+  const startUtc = new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate())).getTime() - 7 * 3600 * 1000;
+  return new Date(startUtc).toISOString();
+}
+
 /**
  * Perhitungan PnL & statistik untuk dashboard.
  * Semua dalam quote currency masing-masing; konversi IDR dilakukan pemanggil via usdtIdr.
@@ -28,13 +36,16 @@ export const pnl = {
 
   /** Realized PnL hari ini (WIB) */
   realizedToday(exchangeId?: string): number {
-    const now = new Date();
-    const wib = new Date(now.getTime() + 7 * 3600 * 1000);
-    const startUtc = new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate())).getTime() - 7 * 3600 * 1000;
     let sql = `SELECT COALESCE(SUM(realized_pnl),0) s FROM trades WHERE created_at >= ?`;
-    const args: any[] = [new Date(startUtc).toISOString()];
+    const args: any[] = [todayStartUtcIso()];
     if (exchangeId) { sql += ' AND exchange_id=?'; args.push(exchangeId); }
     return (db.prepare(sql).get(...args) as any).s;
+  },
+
+  /** Realized PnL hari ini per bot (untuk max daily loss guard) */
+  botRealizedToday(botId: number): number {
+    return (db.prepare(`SELECT COALESCE(SUM(realized_pnl),0) s FROM trades WHERE bot_id=? AND created_at >= ?`)
+      .get(botId, todayStartUtcIso()) as any).s;
   },
 
   /** Statistik per bot */

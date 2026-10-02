@@ -33,6 +33,7 @@ export default function Wizard() {
   const [botName, setBotName] = useState('');
   const [mode, setMode] = useState<'paper' | 'live'>('paper');
   const [compound, setCompound] = useState(100);
+  const [maxDailyLoss, setMaxDailyLoss] = useState(0);
   const [confirmedLive, setConfirmedLive] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -66,6 +67,7 @@ export default function Wizard() {
       await api.post('/bots', {
         name: botName, exchange_id: exchange, pair, strategy: selected.strategi,
         params, budget_idr: budget, auto_compound_pct: compound, mode,
+        max_daily_loss_pct: maxDailyLoss,
         confirmed_live: mode === 'live' ? confirmedLive : undefined
       });
       navigate('/bots');
@@ -184,6 +186,10 @@ export default function Wizard() {
               <div>
                 <label className="text-xs text-gray-500">Budget ({exchange === 'indodax' ? 'IDR' : 'USDT'})</label>
                 <input type="number" value={budget} onChange={e => setBudget(Number(e.target.value))} className="w-full mt-1 rounded-xl border border-gray-300 px-3 py-2 text-sm" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-gray-500">Batas Rugi Harian (% budget) — 0 = nonaktif. Bot auto-pause jika rugi harian melewati batas ini.</label>
+                <input type="number" step="any" value={maxDailyLoss} onChange={e => setMaxDailyLoss(Number(e.target.value))} className="w-full mt-1 rounded-xl border border-gray-300 px-3 py-2 text-sm" />
               </div>
             </div>
             <div className="flex justify-between">

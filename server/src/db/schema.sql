@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS bots (
   status TEXT NOT NULL DEFAULT 'running',
   state TEXT NOT NULL DEFAULT '{}',
   error_count INTEGER NOT NULL DEFAULT 0,
+  max_daily_loss_pct REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

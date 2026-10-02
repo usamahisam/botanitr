@@ -12,6 +12,7 @@
     "test:live-mock": "tsx scripts/test-live-mock.ts",
     "test:live-e2e": "tsx scripts/test-live-e2e.ts",
     "test:killswitch": "tsx scripts/test-killswitch.ts",
+    "test:safety": "tsx scripts/test-safety.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
