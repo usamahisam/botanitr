@@ -199,7 +199,7 @@ export async function runCustomBacktest(
   const client = registry.get(exchangeId);
   // Rebalance butuh multi-aset: tampilkan buy-and-hold pembanding untuk pair ini
   if (strategy === 'rebalance') {
-    const klines = await client.getKlines(pair, '1d', Math.min(Math.max(days, 7), 365));
+    const klines = await klinesWithTimeout(client, pair, '1d', Math.min(Math.max(days, 7), 365));
     const closes = klines.map(k => k[4]);
     if (closes.length < 2) return { winRate: 0, profitPct: 0, trades: 0, maxDrawdownPct: 0, equity: [], candles: closes.length, note: 'Data kurang' };
     const first = closes[0];
@@ -214,7 +214,7 @@ export async function runCustomBacktest(
   const interval = strategy === 'scalper' ? '1m' : '1h';
   const perDay = strategy === 'scalper' ? 500 : 24;
   const limit = Math.min(Math.max(days, 1) * perDay, 1000);
-  const klines = await client.getKlines(pair, interval, limit);
+  const klines = await klinesWithTimeout(client, pair, interval, limit, 30000);
   const pseudo: PresetDef = {
     id: 'custom', nama: 'Kustom', strategi: strategy, gaya: '', deskripsi: '',
     params, leverage_label: '', tp_sl_label: '', timeframe: interval
@@ -230,6 +230,21 @@ export interface PresetRecommendation extends PresetDef {
 
 const recCache = new Map<string, { data: PresetRecommendation[]; ts: number }>();
 
+export class MarketDataError extends Error {
+  constructor(message: string) { super(message); this.name = 'MarketDataError'; }
+}
+
+/** Batasi waktu fetch candle agar analisis gagal cepat dengan pesan jelas (bukan hang) */
+async function klinesWithTimeout(client: any, pair: string, interval: string, limit: number, ms = 25000): Promise<Kline[]> {
+  return Promise.race([
+    client.getKlines(pair, interval, limit),
+    new Promise<Kline[]>((_, reject) =>
+      setTimeout(() => reject(new MarketDataError(
+        `Data pasar ${pair} tidak tersedia (timeout). Untuk Binance/Tokocrypto, isi proxy bila koneksi diblokir.`
+      )), ms))
+  ]);
+}
+
 /** Analisis + skor 4 preset untuk satu pasangan (cache 15 menit) */
 export async function recommend(exchangeId: string, pair: string, budgetQuote = 100000): Promise<PresetRecommendation[]> {
   const key = `${exchangeId}:${pair}`;
@@ -237,11 +252,15 @@ export async function recommend(exchangeId: string, pair: string, budgetQuote = 
   if (c && Date.now() - c.ts < 15 * 60 * 1000) return c.data;
 
   const client = registry.get(exchangeId);
-  // Candle harian untuk metrik + 1m/1h untuk backtest scalper
+  // Candle harian untuk metrik + backtest (butuh ≥30 candle) + 1m untuk scalper
   let daily: Kline[] = [];
   let micro: Kline[] = [];
-  try { daily = await client.getKlines(pair, '1d', 14); } catch { /* lanjut */ }
-  try { micro = await client.getKlines(pair, '1m', 500); } catch { /* lanjut */ }
+  try { daily = await klinesWithTimeout(client, pair, '1d', 120); } catch (e: any) {
+    if (e instanceof MarketDataError) throw e;
+  }
+  try { micro = await klinesWithTimeout(client, pair, '1m', 500); } catch (e: any) {
+    if (e instanceof MarketDataError && daily.length === 0) throw e;
+  }
   if (daily.length < 5 && micro.length >= 30) daily = micro;
   if (micro.length < 30) micro = daily;
 

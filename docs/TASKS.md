@@ -140,7 +140,7 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] Auth multi-user JWT (setup admin, login, bcrypt, middleware, isolasi per-user menyeluruh, Telegram & WS per-user)
 - [x] Marketplace preset (seed 5, list+search+rating, install paused, publikasi, hapus)
 - [x] Docker satu-klik (Dockerfile, compose, ignore) — build sempat sukses; smoke test temukan bug dep → diperbaiki
-- [x] E2E `test-v2` 21/21 ✅ + `test-auth-http` 12/12 ✅; total suite 100/100 ✅
+- [x] E2E `test-v2` 21/21 ✅ + `test-auth-http` 12/12 ✅; total suite 88/88 ✅
 - [x] Dokumentasi `docs/15-v2-multipengguna-marketplace.md` + ROADMAP ditandai selesai
 
 ## Redesain UI Terminal (ditambahkan)

@@ -52,7 +52,7 @@ SECRET_KEY="isi_min_32_karakter_acak" docker compose up --build -d
 5. Pantau di **Dashboard** & **Bot**. Jika performa bagus di Demo, baru aktifkan mode Riil.
 6. Admin dapat menambah user lain via **Pengaturan → Pengguna**.
 
-## Tes (100 tes E2E, tanpa uang sungguhan)
+## Tes (88 tes E2E, tanpa uang sungguhan)
 ```bash
 npm run test:all
 # Tes koneksi exchange publik:

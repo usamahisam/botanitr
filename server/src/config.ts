@@ -17,6 +17,7 @@ export const config = {
   webDist: path.resolve(__dirname, '../../web/dist'),
   tokocryptoBaseUrl: process.env.TOKOCRYPTO_BASE_URL || 'https://www.tokocrypto.com',
   binanceBaseUrl: process.env.BINANCE_BASE_URL || 'https://api.binance.com',
+  binancePublicBaseUrl: process.env.BINANCE_PUBLIC_BASE_URL || 'https://data-api.binance.vision',
   indodaxBaseUrl: process.env.INDODAX_BASE_URL || 'https://indodax.com',
   indodaxV2BaseUrl: process.env.INDODAX_V2_BASE_URL || 'https://api.indodax.com'
 };

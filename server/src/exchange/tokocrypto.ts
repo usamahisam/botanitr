@@ -22,14 +22,18 @@ export class TokocryptoClient implements ExchangeClient {
   readonly feeRate = 0.001;
   protected label = 'Tokocrypto';
   protected baseUrl(): string { return config.tokocryptoBaseUrl; }
+  /** Host khusus data publik (ticker/klines). Default = host trading. */
+  protected publicBaseUrl(): string { return this.baseUrl(); }
   private apiKey = '';
   private apiSecret = '';
   private proxyUrl: string | null = null;
   private http = createHttp(this.baseUrl());
+  private pubHttp = createHttp(this.publicBaseUrl());
 
   setProxy(url?: string | null) {
     this.proxyUrl = url || null;
     this.http = createHttp(this.baseUrl(), this.proxyUrl);
+    this.pubHttp = createHttp(this.publicBaseUrl(), this.proxyUrl);
   }
   setCredentials(key: string, secret: string) { this.apiKey = key; this.apiSecret = secret; }
   hasCredentials() { return !!(this.apiKey && this.apiSecret); }
@@ -37,7 +41,7 @@ export class TokocryptoClient implements ExchangeClient {
   async testConnection() {
     const t0 = Date.now();
     try {
-      await this.http.get('/api/v3/ping');
+      await this.pubHttp.get('/api/v3/ping');
       return { ok: true, latency_ms: Date.now() - t0 };
     } catch (e: any) {
       return { ok: false, latency_ms: Date.now() - t0, error: e.message };
@@ -48,8 +52,8 @@ export class TokocryptoClient implements ExchangeClient {
     const symbol = pair.toUpperCase();
     try {
       const [{ data: t24 }, { data: book }] = await Promise.all([
-        this.http.get('/api/v3/ticker/24hr', { params: { symbol } }),
-        this.http.get('/api/v3/ticker/bookTicker', { params: { symbol } })
+        this.pubHttp.get('/api/v3/ticker/24hr', { params: { symbol } }),
+        this.pubHttp.get('/api/v3/ticker/bookTicker', { params: { symbol } })
       ]);
       const last = parseFloat(t24.lastPrice);
       if (!Number.isFinite(last)) throw new ExchangeError(`${this.label}: respons ticker tidak valid`, t24?.code);
@@ -64,7 +68,7 @@ export class TokocryptoClient implements ExchangeClient {
 
   async getKlines(pair: string, interval: string, limit: number): Promise<Kline[]> {
     try {
-      const { data } = await this.http.get('/api/v3/klines', {
+      const { data } = await this.pubHttp.get('/api/v3/klines', {
         params: { symbol: pair.toUpperCase(), interval, limit: Math.min(limit, 1000) }
       });
       if (!Array.isArray(data)) throw new ExchangeError(`${this.label}: respons klines tidak valid`, data?.code);
@@ -132,7 +136,7 @@ export class TokocryptoClient implements ExchangeClient {
     const c = this.symbolFilters.get(symbol);
     if (c && Date.now() - c.ts < 600000) return c;
     try {
-      const { data } = await this.http.get('/api/v3/exchangeInfo', { params: { symbol } });
+      const { data } = await this.pubHttp.get('/api/v3/exchangeInfo', { params: { symbol } });
       const s = data.symbols?.[0];
       const lot = s?.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
       const notional = s?.filters?.find((f: any) => f.filterType === 'MIN_NOTIONAL' || f.filterType === 'NOTIONAL');

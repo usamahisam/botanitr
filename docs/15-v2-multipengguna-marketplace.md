@@ -6,7 +6,7 @@ Versi 2.0 menyelesaikan seluruh sisa roadmap v1.1–v2.0:
 - v1.2: **Backtest UI interaktif**, **adapter Binance**, **strategi Rebalance**.
 - v2.0: **Multi-user + login (JWT)**, **Marketplace preset**, **Docker satu-klik**.
 
-Total suite E2E: **100/100 ✅** (`npm run test:all`).
+Total suite E2E: **88/88 ✅** (`npm run test:all`).
 
 ## 1. Ekspor CSV (v1.1)
 - `GET /trades/export?exchange=&mode=&...` → CSV (BOM UTF-8 agar rapi di Excel), header Indonesia, maks 50.000 baris, filter sama seperti `/trades`.
@@ -20,6 +20,9 @@ Total suite E2E: **100/100 ✅** (`npm run test:all`).
 
 ## 3. Adapter Binance (v1.2)
 - `BinanceClient extends TokocryptoClient` (protokol Binance v3 sama; beda base URL `https://api.binance.com`, bisa dioverride via `BINANCE_BASE_URL`).
+- **Data publik via mirror resmi**: `api.binance.com` di-geo-block dari Indonesia sehingga analisis pasar Binance kosong/hang. Solusinya: endpoint publik (ping/ticker/klines/exchangeInfo) lewat `https://data-api.binance.vision` (env `BINANCE_PUBLIC_BASE_URL`), sedangkan order privat tetap ke host trading (atau via proxy). Berlaku umum via `publicBaseUrl()` yang bisa dioverride per adapter.
+- Guard timeout 25–30 dtk di `recommend()`/`runCustomBacktest()` agar analisis gagal cepat dengan pesan jelas bila data pasar tak tersedia.
+- Jumlah candle harian untuk analisis dinaikkan (14 → 120) agar backtest strategi harian punya cukup data (syarat ≥30 candle).
 - `TokocryptoClient` direfactor agar bisa di-subclass (`baseUrl()`, `label`, `normalizeError` berlabel).
 - Seed otomatis: baris exchange `binance` + 10 pair USDT untuk DB baru maupun lama.
 - Catatan: `api.binance.com` juga geo-restricted dari sebagian IP Indonesia → gunakan proxy seperti Tokocrypto.
@@ -57,8 +60,9 @@ Total suite E2E: **100/100 ✅** (`npm run test:all`).
 |---|---|---|
 | test-v2 | bcrypt/JWT, isolasi user, rebalance (jual/beli/jeda), marketplace (seed/install/rating), backtest equity, registrasi Binance | 21/21 ✅ |
 | test-auth-http | setup→login→401/403→admin buat user→isolasi uid | 12/12 ✅ |
+| test-auth-http | setup→login→401/403→admin buat user→isolasi uid | 12/12 ✅ |
 
-## Suite Keseluruhan (100/100 ✅)
+## Suite Keseluruhan (88/88 ✅)
 test-live-mock 13 · test-live-e2e 11 · test-killswitch 7 · test-safety 12 · test-features-v11 12 · test-v2 21 · test-auth-http 12.
 
 ## Checklist Go-Live v2.0
