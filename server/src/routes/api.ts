@@ -9,6 +9,7 @@ import { restartTelegram, sendTestMessage } from '../telegram/bot.js';
 import { notify } from '../telegram/notify.js';
 import { registry as stratRegistry } from '../strategies/types.js';
 import { config } from '../config.js';
+import { createHttp } from '../exchange/http.js';
 import '../strategies/grid.js';
 import '../strategies/dca.js';
 import '../strategies/scalper.js';
@@ -121,6 +122,32 @@ api.get('/pairs', asyncH(async (req: any, res: any) => {
   const rows = ex
     ? db.prepare('SELECT * FROM default_pairs WHERE exchange_id=? ORDER BY sort').all(ex)
     : db.prepare('SELECT * FROM default_pairs ORDER BY exchange_id, sort').all();
+  res.json(rows);
+}));
+
+// ===== Market tape (publik: top pair IDR by volume, cache 60 detik) =====
+let marketCache: { data: any[]; ts: number } | null = null;
+api.get('/market', asyncH(async (_req: any, res: any) => {
+  if (marketCache && Date.now() - marketCache.ts < 60000) return res.json(marketCache.data);
+  const row = queries.getExchange.get('indodax') as ExchangeRow | undefined;
+  const http = createHttp(config.indodaxBaseUrl, row?.proxy_url || undefined);
+  const { data } = await http.get('/api/summaries');
+  const tickers = data.tickers || {};
+  const rows = Object.entries(tickers)
+    .filter(([k]: any) => k.endsWith('idr'))
+    .map(([k, v]: any) => ({
+      pair: k.toUpperCase(),
+      symbol: String(v.name || k).toUpperCase(),
+      last: parseFloat(v.last || '0'),
+      high: parseFloat(v.high || '0'),
+      low: parseFloat(v.low || '0'),
+      vol: parseFloat(v.vol_idr || '0')
+    }))
+    .filter(r => r.last > 0)
+    .sort((a, b) => b.vol - a.vol)
+    .slice(0, 14)
+    .map(({ vol, ...r }) => r);
+  marketCache = { data: rows, ts: Date.now() };
   res.json(rows);
 }));
 

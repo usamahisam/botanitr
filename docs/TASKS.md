@@ -132,6 +132,15 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] E2E `test:features` 12/12 ✅; total suite 55/55 ✅
 - [x] Dokumentasi `docs/13-features-roadmap-v1.md`
 
+## Redesain UI Terminal (ditambahkan)
+- [x] Tema gelap profesional: index.css (token, .panel/.tbl/.btn/.tag/.input/.seg/.num), tanpa emoji
+- [x] Set ikon SVG inline `components/icons.tsx` (18 ikon, stroke)
+- [x] Shell App: header 52px, nav berikon, jam WIB, indikator WS LIVE/OFFLINE
+- [x] Dashboard: ticker tape (`GET /api/market`), hero portofolio, panel exchange tabel, rail kinerja + Order cepat + Mode darurat
+- [x] Bot: kartu terminal + equity chart + log konsol realtime; Wizard 3 langkah; Riwayat tabel mono; Peringatan; Pengaturan
+- [x] Verifikasi: 0 emoji, tsc bersih, build OK, E2E 55/55 ✅
+- [x] Dokumentasi `docs/14-ui-terminal-redesign.md`
+
 ## Catatan Operasional
 - Server bind `127.0.0.1:3000`; `npm start` untuk produksi, `npm run dev` untuk development.
 - Jika `npm install` ulang bermasalah di esbuild: `npm install -D esbuild@0.25.12 --ignore-scripts`, lalu build native better-sqlite3: `cd node_modules/better-sqlite3 && npx prebuild-install`.

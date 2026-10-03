@@ -1,9 +1,37 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, DashboardData } from '../lib/api';
-import { fmtIDR, fmtSignedIDR, fmtPct } from '../lib/format';
+import { api, DashboardData, MarketRow } from '../lib/api';
+import { fmtIDR, fmtSignedIDR, fmtPct, fmtNum } from '../lib/format';
 import { getSocket } from '../lib/ws';
 import ExchangeCard from '../components/ExchangeCard';
 import QuickTradeModal from '../components/QuickTradeModal';
+import { Icon } from '../components/icons';
+
+function Tape() {
+  const [rows, setRows] = useState<MarketRow[]>([]);
+  useEffect(() => {
+    api.get<MarketRow[]>('/market').then(setRows).catch(() => {});
+    const t = setInterval(() => api.get<MarketRow[]>('/market').then(setRows).catch(() => {}), 60000);
+    return () => clearInterval(t);
+  }, []);
+  if (rows.length === 0) return null;
+  const items = [...rows, ...rows];
+  return (
+    <div className="overflow-hidden border-b border-white/[0.07] bg-[#0c1118]">
+      <div className="tape-track py-1.5">
+        {items.map((r, i) => {
+          const mid = (r.high + r.low) / 2;
+          const up = mid > 0 ? r.last >= mid : true;
+          return (
+            <span key={i} className="flex items-center gap-2 px-4 text-xs whitespace-nowrap border-r border-white/[0.05]">
+              <span className="font-bold tracking-wide">{r.symbol}</span>
+              <span className={`num ${up ? 'txt-up' : 'txt-down'}`}>{fmtNum(r.last, r.last < 1000 ? 2 : 0)}</span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -11,7 +39,7 @@ export default function Dashboard() {
   const [err, setErr] = useState('');
 
   const load = useCallback(() => {
-    api.get<DashboardData>('/dashboard').then(setData).catch(e => setErr(e.message));
+    api.get<DashboardData>('/dashboard').then(d => { setData(d); setErr(''); }).catch(e => setErr(e.message));
   }, []);
 
   useEffect(() => {
@@ -23,72 +51,84 @@ export default function Dashboard() {
     return () => { s.off('balances', onBalances); clearInterval(t); };
   }, [load]);
 
-  if (err) return <div className="card text-red-600">⚠️ {err}</div>;
-  if (!data) return <div className="text-gray-400">Memuat dashboard…</div>;
+  if (err) return <div className="panel p-5 txt-down text-sm">Koneksi gagal: {err}</div>;
+  if (!data) return <div className="txt-3 text-sm">Memuat data…</div>;
 
   const p = data.portfolio;
   const r = data.realized;
+  const up = p.change_24h_pct >= 0;
+
+  const killswitch = async () => {
+    if (!confirm('Mode darurat akan menghentikan semua bot dan membatalkan semua order terbuka di akun riil.\n\nLanjutkan?')) return;
+    try {
+      const res: any = await api.post('/killswitch');
+      const total = Object.values(res.orders_cancelled || {}).reduce((s: number, n: any) => s + Number(n), 0);
+      alert(`Mode darurat aktif.\n${res.bots_paused} bot dihentikan · ${total} order dibatalkan${res.errors?.length ? `\n${res.errors.join('; ')}` : ''}`);
+      load();
+    } catch (e: any) { alert(e.message); }
+  };
 
   return (
-    <div className="space-y-5">
-      {/* Total Portfolio */}
-      <div className="card flex items-center justify-between">
-        <div>
-          <div className="text-sm text-gray-500 uppercase tracking-wide">Total Portfolio (IDR)</div>
-          <div className="text-4xl font-bold mt-1">{fmtIDR(p.total_idr)}</div>
-          <div className={`mt-1 ${p.change_24h_pct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-            ↗ {fmtPct(p.change_24h_pct)} ({fmtSignedIDR(p.change_24h_idr)}) <span className="text-gray-400 text-sm">24J</span>
+    <div className="space-y-4">
+      <Tape />
+
+      {/* Hero portofolio */}
+      <section className="panel px-5 py-4 flex items-center gap-6 flex-wrap">
+        <div className="min-w-0">
+          <div className="lbl">Total portofolio · IDR</div>
+          <div className="num text-[34px] leading-tight font-semibold tracking-tight">{fmtIDR(p.total_idr)}</div>
+          <div className={`num text-[13px] font-medium flex items-center gap-1.5 mt-0.5 ${up ? 'txt-up' : 'txt-down'}`}>
+            {up ? <Icon.up size={14} /> : <Icon.down size={14} />}
+            {fmtPct(p.change_24h_pct)} · {fmtSignedIDR(p.change_24h_idr)}
+            <span className="txt-3 font-normal">/ 24J</span>
           </div>
         </div>
-        <div className="text-right text-sm text-gray-500">
-          <div>Kurs USDT/IDR</div>
-          <div className="font-semibold text-gray-700">{fmtIDR(p.usdt_idr)}</div>
+        <div className="ml-auto flex items-center gap-6 text-right">
+          <div>
+            <div className="lbl">USDT / IDR</div>
+            <div className="num text-[15px] font-semibold mt-1">{fmtIDR(p.usdt_idr)}</div>
+          </div>
+          <div className="w-px h-10 bg-white/[0.07]" />
+          <div>
+            <div className="lbl">Win rate</div>
+            <div className="num text-[15px] font-semibold mt-1">{r.total > 0 ? `${((r.wins / r.total) * 100).toFixed(1)}%` : '—'} <span className="txt-3 font-normal text-xs">({r.wins}/{r.total})</span></div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Kartu exchange */}
-        <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="xl:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-4">
           {data.exchanges.map(ex => <ExchangeCard key={ex.id} ex={ex} onSynced={load} />)}
         </div>
 
-        {/* Panel kanan */}
-        <div className="space-y-5">
-          <div className="card">
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Realized Profit & Win Rate</h3>
-            <div className="text-3xl font-bold text-emerald-600">{fmtSignedIDR(r.total_idr)}</div>
-            <div className="text-sm text-gray-500 mt-1">Win Rate ({r.wins}/{r.total}) — {fmtPct(r.rate * 100, 1)}</div>
-            <div className="mt-4 pt-4 border-t border-gray-100 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500">Profit Hari Ini</span><span className="font-semibold text-emerald-600">{fmtSignedIDR(r.today_idr)}</span></div>
+        <div className="space-y-4">
+          <section className="panel">
+            <div className="panel-head"><span className="lbl">Kinerja terealisasi</span></div>
+            <div className="px-4 py-3">
+              <div className={`num text-[26px] font-semibold ${r.total_idr >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedIDR(r.total_idr)}</div>
+              <div className="mt-3 space-y-2 text-[13px]">
+                <div className="flex justify-between"><span className="txt-2">Hari ini</span><span className={`num font-medium ${r.today_idr >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedIDR(r.today_idr)}</span></div>
+                {data.exchanges.map(ex => (
+                  <div key={ex.id} className="flex justify-between border-t border-white/[0.05] pt-2">
+                    <span className="txt-2">{ex.name}</span>
+                    <span className={`num font-medium ${ex.profit_total >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedIDR(ex.profit_total)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="text-xs text-gray-400 mb-2">Profit Per Exchange</div>
-              {data.exchanges.map(ex => (
-                <div key={ex.id} className="flex justify-between text-sm py-1">
-                  <span className="text-gray-600">{ex.name}</span>
-                  <span className={`font-medium ${ex.profit_total >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{fmtSignedIDR(ex.profit_total)}</span>
-                </div>
-              ))}
-            </div>
+          </section>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => setShowQuick(true)} className="btn btn-primary !py-3">
+              <Icon.zap size={15} /> Order cepat
+            </button>
+            <button onClick={killswitch} className="btn btn-danger !py-3">
+              <Icon.power size={15} /> Mode darurat
+            </button>
           </div>
-
-          <button onClick={() => setShowQuick(true)}
-            className="w-full py-3.5 rounded-2xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-lg shadow-lg shadow-brand-500/20 transition">
-            ⚡ Quick Trade
-          </button>
-
-          <button onClick={async () => {
-              if (!confirm('🚨 KILL SWITCH akan ME-PAUSE semua bot & MEMBATALKAN semua open order live.\n\nLanjutkan?')) return;
-              try {
-                const r: any = await api.post('/killswitch');
-                const total = Object.values(r.orders_cancelled || {}).reduce((s: number, n: any) => s + Number(n), 0);
-                alert(`🚨 Kill switch aktif!\n${r.bots_paused} bot di-pause\n${total} open order dibatalkan${r.errors?.length ? `\n⚠️ ${r.errors.join('; ')}` : ''}`);
-                load();
-              } catch (e: any) { alert(`❌ ${e.message}`); }
-            }}
-            className="w-full py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-bold shadow-lg shadow-red-500/20 transition">
-            🚨 Kill Switch (Darurat)
-          </button>
+          <p className="text-[11px] txt-3 leading-relaxed px-1">
+            Mode darurat menghentikan seluruh bot dan membatalkan order terbuka pada akun riil.
+          </p>
         </div>
       </div>
 

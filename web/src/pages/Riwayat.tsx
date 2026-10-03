@@ -21,17 +21,20 @@ export default function Riwayat() {
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
   return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold">Riwayat Transaksi</h2>
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <span className="text-[14px] font-semibold">Riwayat transaksi</span>
+          <span className="num text-xs txt-3 ml-2">{total} baris</span>
+        </div>
         <div className="flex gap-2">
-          <select value={exchange} onChange={e => { setExchange(e.target.value); setPage(1); }} className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
-            <option value="">Semua Exchange</option>
+          <select value={exchange} onChange={e => { setExchange(e.target.value); setPage(1); }} className="input !w-auto !py-1.5 text-xs">
+            <option value="">Semua exchange</option>
             <option value="indodax">Indodax</option>
             <option value="tokocrypto">Tokocrypto</option>
           </select>
-          <select value={mode} onChange={e => { setMode(e.target.value); setPage(1); }} className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
-            <option value="">Semua Mode</option>
+          <select value={mode} onChange={e => { setMode(e.target.value); setPage(1); }} className="input !w-auto !py-1.5 text-xs">
+            <option value="">Semua mode</option>
             <option value="paper">Demo</option>
             <option value="live">Riil</option>
           </select>
@@ -39,47 +42,46 @@ export default function Riwayat() {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="tbl num">
           <thead>
-            <tr className="text-left text-xs text-gray-400 border-b">
-              <th className="py-2 pr-3">Waktu</th><th className="pr-3">Exchange</th><th className="pr-3">Pair</th>
-              <th className="pr-3">Sisi</th><th className="pr-3 text-right">Harga</th><th className="pr-3 text-right">Qty</th>
-              <th className="pr-3 text-right">Nilai</th><th className="pr-3 text-right">Fee</th><th className="pr-3 text-right">PnL</th>
-              <th className="pr-3">Mode</th><th>Strategi</th>
+            <tr>
+              <th>Waktu</th><th>Pair</th><th>Sisi</th>
+              <th className="!text-right">Harga</th><th className="!text-right">Qty</th>
+              <th className="!text-right">Nilai</th><th className="!text-right">Fee</th><th className="!text-right">PnL</th>
+              <th>Mode</th><th>Sumber</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={11} className="text-center text-gray-400 py-8">Belum ada transaksi</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={10} className="!text-center txt-3 !py-8 font-sans">Belum ada transaksi.</td></tr>}
             {rows.map(t => (
-              <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                <td className="py-2 pr-3 text-gray-500 whitespace-nowrap">{fmtDateTime(t.created_at)}</td>
-                <td className="pr-3">{t.exchange_id}</td>
-                <td className="pr-3 font-medium">{t.pair}</td>
-                <td className="pr-3"><span className={`badge ${t.side === 'buy' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{t.side === 'buy' ? 'BELI' : 'JUAL'}</span></td>
-                <td className="pr-3 text-right">{fmtIDR(t.price)}</td>
-                <td className="pr-3 text-right">{fmtQty(t.qty)}</td>
-                <td className="pr-3 text-right">{fmtIDR(t.value)}</td>
-                <td className="pr-3 text-right text-gray-400">{fmtIDR(t.fee)}</td>
-                <td className={`pr-3 text-right font-medium ${t.realized_pnl > 0 ? 'text-emerald-600' : t.realized_pnl < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+              <tr key={t.id}>
+                <td className="txt-3 whitespace-nowrap !text-[12px]">{fmtDateTime(t.created_at)}</td>
+                <td><span className="font-semibold font-sans">{t.pair}</span> <span className="txt-3 text-[11px] font-sans">{t.exchange_id}</span></td>
+                <td><span className={`text-[12px] font-bold tracking-wide ${t.side === 'buy' ? 'txt-up' : 'txt-down'}`}>{t.side === 'buy' ? 'BELI' : 'JUAL'}</span></td>
+                <td className="!text-right">{fmtIDR(t.price)}</td>
+                <td className="!text-right txt-2">{fmtQty(t.qty)}</td>
+                <td className="!text-right">{fmtIDR(t.value)}</td>
+                <td className="!text-right txt-3">{fmtIDR(t.fee)}</td>
+                <td className={`!text-right font-semibold ${t.realized_pnl > 0 ? 'txt-up' : t.realized_pnl < 0 ? 'txt-down' : 'txt-3'}`}>
                   {t.realized_pnl !== 0 ? fmtSignedIDR(t.realized_pnl) : '—'}
                 </td>
-                <td className="pr-3"><span className={`badge ${t.mode === 'live' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{t.mode === 'live' ? 'Riil' : 'Demo'}</span></td>
-                <td className="text-xs text-gray-400">{t.strategy_tag || '—'}</td>
+                <td><span className={`tag ${t.mode === 'live' ? 'tag-down' : 'tag-dim'}`}>{t.mode === 'live' ? 'RIIL' : 'DEMO'}</span></td>
+                <td className="txt-3 text-xs font-sans">{t.strategy_tag || '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-        <span>{total} transaksi</span>
+      <div className="flex items-center justify-between px-4 py-3 border-t border-white/[0.06] text-xs txt-3">
+        <span className="num">Halaman {page} / {totalPages}</span>
         <div className="flex gap-1">
           {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => (
             <button key={i} onClick={() => setPage(i + 1)}
-              className={`w-8 h-8 rounded-lg text-sm font-medium ${page === i + 1 ? 'bg-brand-500 text-white' : 'bg-white border border-gray-200'}`}>{i + 1}</button>
+              className={`w-7 h-7 rounded-md text-xs num font-medium border ${page === i + 1 ? 'bg-[#4f7cff] border-[#4f7cff] text-white' : 'border-white/10 txt-3 hover:text-white'}`}>{i + 1}</button>
           ))}
         </div>
       </div>
-    </div>
+    </section>
   );
 }

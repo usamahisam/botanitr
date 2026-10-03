@@ -15,6 +15,14 @@ export function fmtPct(n: number, decimals = 2): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(decimals).replace('.', ',')}%`;
 }
 
+/** Angka polos bergaya ID (pemisah ribuan titik, desimal koma) */
+export function fmtNum(n: number, decimals = 0): string {
+  const fixed = Math.abs(n).toFixed(decimals);
+  const [int, dec] = fixed.split('.');
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${n < 0 ? '-' : ''}${grouped}${dec ? ',' + dec : ''}`;
+}
+
 export function fmtQty(n: number): string {
   let s = n.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
   const [int, dec] = s.split('.');

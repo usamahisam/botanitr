@@ -3,9 +3,12 @@ import { api, Bot, LogRow } from '../lib/api';
 import { fmtIDR, fmtSignedIDR, fmtTime } from '../lib/format';
 import { getSocket } from '../lib/ws';
 import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
+import { Icon } from '../components/icons';
 
 const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester' };
 const PER_PAGE = 8;
+
+const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'DCA_TP', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'INVENTORY_HARVEST_RECYCLE', 'AUTO_COMPOUND'];
 
 function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -22,52 +25,72 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
     } finally { setBusy(false); }
   };
   const winRate = bot.stats.total > 0 ? (bot.stats.wins / bot.stats.total) * 100 : 0;
+  const running = bot.status === 'running';
   const equityData = equity.map((e, i) => ({ i, equity: e.equity }));
-  const equityUp = equity.length > 1 ? equity[equity.length - 1].equity >= equity[0].equity : true;
+  const equityUp = equity.length > 1 ? equity[equity.length - 1].equity >= equity[0].equity : bot.stats.realized >= 0;
+  const line = equityUp ? '#2ebd85' : '#f6465d';
 
   return (
-    <div className="card !p-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="font-semibold">{bot.name}</div>
-          <div className="text-xs text-gray-500">{bot.pair} · {STRAT_LABEL[bot.strategy] || bot.strategy} · {bot.exchange_id}</div>
+    <div className="panel p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={running ? 'txt-up' : 'txt-3'}><Icon.dot size={7} /></span>
+            <span className="font-semibold text-[14px] truncate">{bot.name}</span>
+          </div>
+          <div className="num text-xs txt-3 mt-1">{bot.pair} · {STRAT_LABEL[bot.strategy] || bot.strategy} · {bot.exchange_id} · {bot.mode === 'live' ? 'RIIL' : 'DEMO'}</div>
         </div>
-        <span className={`badge ${bot.status === 'running' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'}`}>
-          {bot.status === 'running' ? '● Running' : '⏸ Paused'}
-        </span>
+        <span className={`tag ${running ? 'tag-up' : 'tag-dim'}`}>{running ? 'JALAN' : 'BERHENTI'}</span>
       </div>
-      <div className="h-16 mt-2">
+
+      <div className="h-[64px] mt-3 -mx-1">
         {equityData.length > 1 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={equityData}>
+            <AreaChart data={equityData} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
               <defs>
                 <linearGradient id={`eq-${bot.id}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={equityUp ? '#16a34a' : '#dc2626'} stopOpacity={0.3} />
-                  <stop offset="100%" stopColor={equityUp ? '#16a34a' : '#dc2626'} stopOpacity={0} />
+                  <stop offset="0%" stopColor={line} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={line} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <YAxis hide domain={['dataMin', 'dataMax']} />
-              <Tooltip formatter={(v: any) => fmtIDR(Number(v))} labelFormatter={() => ''} />
-              <Area type="monotone" dataKey="equity" stroke={equityUp ? '#16a34a' : '#dc2626'} strokeWidth={2} fill={`url(#eq-${bot.id})`} />
+              <Tooltip formatter={(v: any) => fmtIDR(Number(v))} labelFormatter={() => ''}
+                contentStyle={{ background: '#131a24', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, fontSize: 12 }} />
+              <Area type="monotone" dataKey="equity" stroke={line} strokeWidth={1.5} fill={`url(#eq-${bot.id})`} isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
-        ) : <div className="text-xs text-gray-300 flex items-center h-full">Equity curve muncul setelah beberapa jam</div>}
+        ) : (
+          <div className="h-full flex items-center justify-center text-xs txt-3 border border-dashed border-white/10 rounded-md">
+            Kurva ekuitas tersedia setelah beberapa jam berjalan
+          </div>
+        )}
       </div>
-      <div className="grid grid-cols-3 gap-2 mt-2 text-center text-xs">
-        <div className="bg-gray-50 rounded-lg py-1.5"><div className="text-gray-400">Budget</div><div className="font-semibold">{fmtIDR(bot.current_budget)}</div></div>
-        <div className="bg-gray-50 rounded-lg py-1.5"><div className="text-gray-400">Profit</div><div className={`font-semibold ${bot.stats.realized >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{fmtSignedIDR(bot.stats.realized)}</div></div>
-        <div className="bg-gray-50 rounded-lg py-1.5"><div className="text-gray-400">Win</div><div className="font-semibold">{winRate.toFixed(0)}%</div></div>
+
+      <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-white/[0.06]">
+        <div><div className="lbl !text-[10px]">Budget</div><div className="num text-[13px] font-semibold mt-0.5">{fmtIDR(bot.current_budget)}</div></div>
+        <div><div className="lbl !text-[10px]">Profit</div><div className={`num text-[13px] font-semibold mt-0.5 ${bot.stats.realized >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedIDR(bot.stats.realized)}</div></div>
+        <div><div className="lbl !text-[10px]">Win</div><div className="num text-[13px] font-semibold mt-0.5">{winRate.toFixed(0)}% <span className="txt-3 font-normal">· {bot.stats.trades}</span></div></div>
       </div>
+
       <div className="flex gap-2 mt-3">
-        <button onClick={() => act(bot.status === 'running' ? 'pause' : 'resume')} disabled={busy}
-          className="flex-1 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs font-medium disabled:opacity-50">
-          {bot.status === 'running' ? '⏸ Pause' : '▶️ Resume'}
+        <button onClick={() => act(running ? 'pause' : 'resume')} disabled={busy} className="btn btn-ghost btn-sm flex-1">
+          {running ? <><Icon.pause size={13} /> Jeda</> : <><Icon.play size={13} /> Lanjut</>}
         </button>
-        <button onClick={() => act('delete')} disabled={busy}
-          className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-xs font-medium disabled:opacity-50">🗑</button>
+        <button onClick={() => act('delete')} disabled={busy} className="btn btn-ghost btn-sm btn-icon !text-[#ff7a8c]" title="Hapus bot">
+          <Icon.trash size={14} />
+        </button>
       </div>
     </div>
   );
+}
+
+function tagClass(l: LogRow): string {
+  if (l.tag === 'TRADE') return 'text-[#8ba6ff]';
+  if (l.tag.includes('UNWIND') || l.tag.includes('HARVEST') || l.tag.includes('COMPOUND') || l.tag.includes('TP')) return 'txt-up';
+  if (l.tag.includes('SL')) return 'txt-down';
+  if (l.level === 'error') return 'txt-down';
+  if (l.level === 'warn') return 'text-[#f0b90b]';
+  return 'txt-3';
 }
 
 function LogFeed() {
@@ -89,39 +112,44 @@ function LogFeed() {
 
   const filtered = logs.filter(l => {
     if (filter === 'peringatan') return l.level === 'warn' || l.level === 'error';
-    if (filter === 'trades') return ['TRADE', 'GRID_UNWIND', 'DCA_TP', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'INVENTORY_HARVEST_RECYCLE', 'AUTO_COMPOUND'].includes(l.tag);
+    if (filter === 'trades') return TRADE_TAGS.includes(l.tag);
     return true;
   });
 
   return (
-    <div className="card mt-6">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-bold">Log Operasional Mesin Otomatis Live</h3>
-        <div className="flex gap-2">
-          {(['semua', 'peringatan', 'trades'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1 rounded-lg text-xs font-medium ${filter === f ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
-              {f === 'semua' ? 'Semua' : f === 'peringatan' ? 'Peringatan' : 'Trades'}
-            </button>
-          ))}
-          <button onClick={async () => { if (confirm('Bersihkan semua log?')) { await api.del('/logs'); load(); } }}
-            className="px-3 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">Bersihkan Log</button>
+    <section className="panel mt-4">
+      <div className="panel-head !py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="txt-up"><Icon.dot size={7} /></span>
+          <span className="text-[13px] font-semibold">Log operasional</span>
+          <span className="tag tag-dim">REALTIME</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="seg">
+            {(['semua', 'peringatan', 'trades'] as const).map(f => (
+              <button key={f} onClick={() => setFilter(f)} className={filter === f ? 'on' : ''}>
+                {f === 'semua' ? 'Semua' : f === 'peringatan' ? 'Peringatan' : 'Order'}
+              </button>
+            ))}
+          </div>
+          <button onClick={async () => { if (confirm('Hapus seluruh log?')) { await api.del('/logs'); load(); } }}
+            className="btn btn-ghost btn-sm">Bersihkan</button>
         </div>
       </div>
-      <div className="space-y-1 max-h-96 overflow-y-auto font-mono text-xs">
-        {filtered.length === 0 && <div className="text-gray-400 py-6 text-center">Belum ada log</div>}
+      <div className="max-h-[380px] overflow-y-auto px-4 py-2 font-mono text-[12px] leading-relaxed" style={{ background: '#0a0f16' }}>
+        {filtered.length === 0 && <div className="txt-3 py-8 text-center font-sans">Belum ada log.</div>}
         {[...filtered].reverse().map(l => (
-          <div key={l.id} className="flex gap-3 py-1.5 border-b border-gray-50 items-start">
-            <span className="text-gray-400 shrink-0">{fmtTime(l.created_at)}</span>
-            <span className={`shrink-0 px-1.5 rounded ${l.tag === 'TRADE' ? 'bg-blue-100 text-blue-700' : l.tag.includes('UNWIND') || l.tag.includes('HARVEST') ? 'bg-emerald-100 text-emerald-700' : l.level === 'error' ? 'bg-red-100 text-red-700' : l.level === 'warn' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>{l.tag}</span>
-            <span className="flex-1 text-gray-700">{l.message}</span>
+          <div key={l.id} className="flex gap-3 py-[5px] border-b border-white/[0.04] items-baseline">
+            <span className="txt-3 shrink-0 num">{fmtTime(l.created_at)}</span>
+            <span className={`shrink-0 font-semibold ${tagClass(l)}`}>[{l.tag}]</span>
+            <span className="flex-1 txt-2 break-words">{l.message}</span>
             {l.impact_rp != null && l.impact_rp !== 0 && (
-              <span className={`shrink-0 font-semibold ${l.impact_rp >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{fmtSignedIDR(l.impact_rp)}</span>
+              <span className={`shrink-0 num font-semibold ${l.impact_rp >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedIDR(l.impact_rp)}</span>
             )}
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -147,25 +175,29 @@ export default function Bots() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold">Bot Trading ({bots.length})</h2>
-        <a href="/wizard" className="px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-semibold hover:bg-brand-600">+ Bot Baru (Wizard)</a>
+        <div>
+          <h2 className="text-[17px] font-bold tracking-tight">Bot</h2>
+          <p className="text-xs txt-3 mt-0.5">{bots.length} bot terdaftar · {bots.filter(b => b.status === 'running').length} berjalan</p>
+        </div>
+        <a href="/wizard" className="btn btn-primary btn-sm"><Icon.plus size={14} /> Bot baru</a>
       </div>
 
       {bots.length === 0 ? (
-        <div className="card text-center py-12 text-gray-400">
-          Belum ada bot. <a href="/wizard" className="text-brand-600 font-medium">Buat bot pertama via Wizard AI →</a>
+        <div className="panel p-10 text-center">
+          <p className="txt-2 text-sm">Belum ada bot yang berjalan.</p>
+          <a href="/wizard" className="btn btn-primary btn-sm mt-4">Buat bot pertama</a>
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             {shown.map(b => <BotCard key={b.id} bot={b} onChanged={load} />)}
           </div>
-          <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-            <span>Menampilkan {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, bots.length)} dari {bots.length} bot</span>
+          <div className="flex items-center justify-between mt-3 text-xs txt-3">
+            <span className="num">{(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, bots.length)} dari {bots.length}</span>
             <div className="flex gap-1">
               {Array.from({ length: totalPages }, (_, i) => (
                 <button key={i} onClick={() => setPage(i + 1)}
-                  className={`w-8 h-8 rounded-lg text-sm font-medium ${page === i + 1 ? 'bg-brand-500 text-white' : 'bg-white border border-gray-200'}`}>{i + 1}</button>
+                  className={`w-7 h-7 rounded-md text-xs num font-medium border ${page === i + 1 ? 'bg-[#4f7cff] border-[#4f7cff] text-white' : 'border-white/10 txt-3 hover:text-white'}`}>{i + 1}</button>
               ))}
             </div>
           </div>

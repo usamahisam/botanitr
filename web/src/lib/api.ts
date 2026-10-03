@@ -55,3 +55,6 @@ export interface Preset {
 export interface PairRow {
   exchange_id: string; symbol: string; base: string; quote: string; label: string; kategori: string; min_lot: number;
 }
+export interface MarketRow {
+  pair: string; symbol: string; last: number; high: number; low: number;
+}
