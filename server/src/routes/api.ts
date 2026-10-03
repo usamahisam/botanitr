@@ -1,63 +1,72 @@
 import { Router } from 'express';
-import { db, queries, settings, now, BotRow, ExchangeRow } from '../db/index.js';
+import { db, queries, settings, now, BotRow, ExchangeRow, ensureUserExchanges } from '../db/index.js';
 import { encrypt, decrypt, mask } from '../crypto.js';
 import { registry } from '../exchange/registry.js';
 import { fetchExchangeBalance, getUsdtIdr } from '../engine/balances.js';
 import { pnl } from '../engine/pnl.js';
 import { recommend, backtest, PRESETS } from '../engine/wizard.js';
 import { restartTelegram, sendTestMessage } from '../telegram/bot.js';
-import { notify } from '../telegram/notify.js';
 import { registry as stratRegistry } from '../strategies/types.js';
 import { config } from '../config.js';
 import { createHttp } from '../exchange/http.js';
+import { uid } from '../auth.js';
 import '../strategies/grid.js';
 import '../strategies/dca.js';
 import '../strategies/scalper.js';
 import '../strategies/harvester.js';
+import '../strategies/rebalance.js';
 
 export const api = Router();
 
 const asyncH = (fn: any) => (req: any, res: any, next: any) => Promise.resolve(fn(req, res, next)).catch(next);
 
-// ===== Health =====
+function getUserExchange(userId: number, id: string) {
+  return db.prepare('SELECT * FROM exchanges WHERE id=? AND user_id=?').get(id, userId) as ExchangeRow | undefined;
+}
+
+function getUserBot(userId: number, id: string | number) {
+  return db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as BotRow | undefined;
+}
+
+// ===== Health (publik) =====
 api.get('/health', asyncH(async (_req: any, res: any) => {
-  const exchanges = (queries.allExchanges.all() as ExchangeRow[]).map(e => ({ id: e.id, mode: e.mode, status: e.status }));
-  res.json({ ok: true, time: now(), exchanges });
+  res.json({ ok: true, time: now() });
 }));
 
 // ===== Dashboard =====
-api.get('/dashboard', asyncH(async (_req: any, res: any) => {
+api.get('/dashboard', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
   const usdtIdr = await getUsdtIdr();
+  const rows = db.prepare('SELECT id FROM exchanges WHERE user_id=?').all(userId) as any[];
+  const ids = rows.length > 0 ? rows.map(r => r.id) : ['indodax', 'tokocrypto', 'binance'];
   const views = [];
-  for (const client of registry.list()) views.push(await fetchExchangeBalance(client.id));
+  for (const id of ids) views.push(await fetchExchangeBalance(id, userId));
 
   const totalIdr = views.reduce((s, v) => s + v.saldo_total_idr, 0);
 
-  // Perubahan 24j dari snapshot
+  // Perubahan 24j dari snapshot milik user
   let change24Idr = 0;
   for (const v of views) {
     const dayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-    const snap = db.prepare(`SELECT COALESCE(SUM(total_idr),0) s FROM balance_snapshots WHERE exchange_id=? AND created_at <= ? ORDER BY created_at DESC LIMIT 100`).get(v.id, dayAgo) as any;
+    const snap = db.prepare(`SELECT COALESCE(SUM(total_idr),0) s FROM balance_snapshots WHERE user_id=? AND exchange_id=? AND created_at <= ? ORDER BY created_at DESC LIMIT 100`).get(userId, v.id, dayAgo) as any;
     if (snap.s > 0) change24Idr += v.saldo_total_idr - snap.s;
   }
   const change24Pct = totalIdr - change24Idr > 0 ? (change24Idr / (totalIdr - change24Idr)) * 100 : 0;
 
-  // Win rate & realized (gabungan, konversi IDR)
   let realizedIdr = 0, realizedTodayIdr = 0;
   for (const v of views) {
     const mult = v.quote_asset === 'IDR' ? 1 : usdtIdr;
-    realizedIdr += pnl.realized(v.id) * mult;
-    realizedTodayIdr += pnl.realizedToday(v.id) * mult;
+    realizedIdr += pnl.realized(v.id, undefined, userId) * mult;
+    realizedTodayIdr += pnl.realizedToday(v.id, userId) * mult;
   }
-  const wr = pnl.winRate();
+  const wr = pnl.winRate(undefined, userId);
 
-  // Per-exchange profit
   const exCards = await Promise.all(views.map(async v => {
     const mult = v.quote_asset === 'IDR' ? 1 : usdtIdr;
     return {
       ...v,
-      profit_harian: pnl.realizedToday(v.id) * mult,
-      profit_total: pnl.realized(v.id) * mult,
+      profit_harian: pnl.realizedToday(v.id, userId) * mult,
+      profit_total: pnl.realized(v.id, undefined, userId) * mult,
       posisi_pct: v.saldo_total_idr > 0 ? ((v.saldo_total_idr - v.kas_bebas_idr) / v.saldo_total_idr) * 100 : 0
     };
   }));
@@ -70,8 +79,10 @@ api.get('/dashboard', asyncH(async (_req: any, res: any) => {
 }));
 
 // ===== Exchanges =====
-api.get('/exchanges', asyncH(async (_req: any, res: any) => {
-  const rows = queries.allExchanges.all() as ExchangeRow[];
+api.get('/exchanges', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
+  ensureUserExchanges(userId);
+  const rows = db.prepare('SELECT * FROM exchanges WHERE user_id=? ORDER BY id').all(userId) as ExchangeRow[];
   res.json(rows.map(e => ({
     id: e.id, name: e.name, mode: e.mode, status: e.status, enabled: e.enabled,
     proxy_url: e.proxy_url, min_lot_idr: e.min_lot_idr, last_sync: e.last_sync,
@@ -85,38 +96,38 @@ function safeDecrypt(enc: string): string {
 }
 
 api.put('/exchanges/:id', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
   const id = req.params.id;
-  const row = queries.getExchange.get(id) as ExchangeRow | undefined;
+  const row = getUserExchange(userId, id);
   if (!row) return res.status(404).json({ error: 'Exchange tidak ditemukan' });
   const { api_key, api_secret, proxy_url, mode } = req.body || {};
 
-  if (api_key) db.prepare('UPDATE exchanges SET api_key_enc=? WHERE id=?').run(encrypt(api_key), id);
-  if (api_secret) db.prepare('UPDATE exchanges SET api_secret_enc=? WHERE id=?').run(encrypt(api_secret), id);
-  if (proxy_url !== undefined) db.prepare('UPDATE exchanges SET proxy_url=? WHERE id=?').run(proxy_url || null, id);
+  if (api_key) db.prepare('UPDATE exchanges SET api_key_enc=? WHERE id=? AND user_id=?').run(encrypt(api_key), id, userId);
+  if (api_secret) db.prepare('UPDATE exchanges SET api_secret_enc=? WHERE id=? AND user_id=?').run(encrypt(api_secret), id, userId);
+  if (proxy_url !== undefined) db.prepare('UPDATE exchanges SET proxy_url=? WHERE id=? AND user_id=?').run(proxy_url || null, id, userId);
   if (mode && ['paper', 'live'].includes(mode)) {
-    // Guard: live butuh kredensial
     if (mode === 'live') {
-      const fresh = queries.getExchange.get(id) as ExchangeRow;
+      const fresh = getUserExchange(userId, id)!;
       if (!fresh.api_key_enc || !fresh.api_secret_enc) {
         return res.status(400).json({ error: 'Isi API key & secret dulu sebelum mode Riil' });
       }
     }
-    db.prepare('UPDATE exchanges SET mode=? WHERE id=?').run(mode, id);
+    db.prepare('UPDATE exchanges SET mode=? WHERE id=? AND user_id=?').run(mode, id, userId);
   }
-  registry.reloadFromDb();
+  registry.reloadUser(userId);
   res.json({ ok: true });
 }));
 
 api.post('/exchanges/:id/test', asyncH(async (req: any, res: any) => {
-  const client = registry.get(req.params.id);
+  const client = registry.getForUser(req.params.id, uid(req));
   res.json(await client.testConnection());
 }));
 
 api.post('/exchanges/:id/sync', asyncH(async (req: any, res: any) => {
-  res.json(await fetchExchangeBalance(req.params.id));
+  res.json(await fetchExchangeBalance(req.params.id, uid(req)));
 }));
 
-// ===== Pairs =====
+// ===== Pairs (global) =====
 api.get('/pairs', asyncH(async (req: any, res: any) => {
   const ex = String(req.query.exchange || '');
   const rows = ex
@@ -125,11 +136,11 @@ api.get('/pairs', asyncH(async (req: any, res: any) => {
   res.json(rows);
 }));
 
-// ===== Market tape (publik: top pair IDR by volume, cache 60 detik) =====
+// ===== Market tape (publik per user login; data publik Indodax) =====
 let marketCache: { data: any[]; ts: number } | null = null;
-api.get('/market', asyncH(async (_req: any, res: any) => {
+api.get('/market', asyncH(async (req: any, res: any) => {
   if (marketCache && Date.now() - marketCache.ts < 60000) return res.json(marketCache.data);
-  const row = queries.getExchange.get('indodax') as ExchangeRow | undefined;
+  const row = getUserExchange(uid(req), 'indodax');
   const http = createHttp(config.indodaxBaseUrl, row?.proxy_url || undefined);
   const { data } = await http.get('/api/summaries');
   const tickers = data.tickers || {};
@@ -153,10 +164,11 @@ api.get('/market', asyncH(async (_req: any, res: any) => {
 
 // ===== Bots =====
 api.get('/bots', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
   const status = String(req.query.status || '');
   const bots = (status
-    ? db.prepare('SELECT * FROM bots WHERE status=? ORDER BY id DESC').all(status)
-    : queries.allBots.all()) as BotRow[];
+    ? db.prepare('SELECT * FROM bots WHERE user_id=? AND status=? ORDER BY id DESC').all(userId, status)
+    : db.prepare('SELECT * FROM bots WHERE user_id=? ORDER BY id DESC').all(userId)) as BotRow[];
   res.json(bots.map(b => ({
     ...b, params: JSON.parse(b.params), state: undefined,
     stats: pnl.botStats(b.id),
@@ -165,22 +177,24 @@ api.get('/bots', asyncH(async (req: any, res: any) => {
 }));
 
 api.get('/bots/:id', asyncH(async (req: any, res: any) => {
-  const bot = queries.getBot.get(req.params.id) as BotRow | undefined;
+  const bot = getUserBot(uid(req), req.params.id);
   if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   res.json({ ...bot, params: JSON.parse(bot.params), state: JSON.parse(bot.state), stats: pnl.botStats(bot.id), trend: pnl.botTrend(bot.id) });
 }));
 
 api.post('/bots', asyncH(async (req: any, res: any) => {
-  const { name, exchange_id, pair, strategy, params, budget_idr, auto_compound_pct, mode, confirmed_live, max_daily_loss_pct } = req.body || {};
+  const userId = uid(req);
+  const { name, exchange_id, pair, strategy, params, budget_idr, auto_compound_pct, mode, confirmed_live, max_daily_loss_pct, status } = req.body || {};
   if (!name || !exchange_id || !pair || !strategy || !budget_idr) {
     return res.status(400).json({ error: 'Field wajib: name, exchange_id, pair, strategy, budget_idr' });
   }
   const strat = stratRegistry.get(strategy);
   if (!strat) return res.status(400).json({ error: `Strategi tidak dikenal: ${strategy}` });
-  const exRow = queries.getExchange.get(exchange_id) as ExchangeRow | undefined;
+  const exRow = getUserExchange(userId, exchange_id);
   if (!exRow) return res.status(400).json({ error: 'Exchange tidak dikenal' });
 
-  const finalMode = mode || (settings.get('default_paper_mode', String(config.defaultPaperMode)) === 'true' ? 'paper' : 'paper');
+  const defaultPaper = settings.get('default_paper_mode', String(config.defaultPaperMode), userId) !== 'false';
+  const finalMode = mode || (defaultPaper ? 'paper' : 'paper');
   if (finalMode === 'live') {
     if (exRow.mode !== 'live') return res.status(400).json({ error: 'Exchange masih mode Demo. Ubah di Pengaturan.' });
     if (!confirmed_live) return res.status(400).json({ error: 'Konfirmasi live trading diperlukan (confirmed_live)' });
@@ -189,13 +203,14 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
   const mergedParams = { ...strat.defaultParams, ...(params || {}) };
   const divisor = strategy === 'grid' ? Math.max(2, Number(mergedParams.levels ?? 6)) : Math.max(1, Number(mergedParams.max_buys ?? 5));
   const lot = Math.floor(Number(budget_idr) / divisor);
+  const finalStatus = status === 'paused' ? 'paused' : 'running';
 
   const info = queries.insertBot.run({
-    name, exchange_id, pair: pair.toUpperCase(), strategy,
+    user_id: userId, name, exchange_id, pair: pair.toUpperCase(), strategy,
     params: JSON.stringify(mergedParams), budget_idr: Number(budget_idr),
     current_budget: Number(budget_idr), lot,
     mode: finalMode, auto_compound_pct: Number(auto_compound_pct ?? 100),
-    status: 'running', state: JSON.stringify(strat.init(mergedParams)),
+    status: finalStatus, state: JSON.stringify(strat.init(mergedParams)),
     max_daily_loss_pct: Math.max(0, Number(max_daily_loss_pct ?? 0)),
     created_at: now(), updated_at: now()
   });
@@ -204,29 +219,35 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
 }));
 
 api.post('/bots/:id/pause', asyncH(async (req: any, res: any) => {
+  if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   queries.setBotStatus.run('paused', now(), req.params.id);
   res.json({ ok: true });
 }));
 api.post('/bots/:id/resume', asyncH(async (req: any, res: any) => {
+  if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   queries.setBotStatus.run('running', now(), req.params.id);
   res.json({ ok: true });
 }));
 api.delete('/bots/:id', asyncH(async (req: any, res: any) => {
+  if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   queries.deleteBot.run(req.params.id);
   res.json({ ok: true });
 }));
 api.get('/bots/:id/trend', asyncH(async (req: any, res: any) => {
+  if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   res.json(pnl.botTrend(Number(req.params.id), Number(req.query.days || 7)));
 }));
 
 // Equity curve per bot
 api.get('/bots/:id/equity', asyncH(async (req: any, res: any) => {
+  if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   const { getEquityCurve } = await import('../engine/equity.js');
   res.json(getEquityCurve(Number(req.params.id), Number(req.query.days || 30)));
 }));
 
 // ===== Quick Trade =====
 api.post('/trade/quick', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
   const { exchange_id, pair, side, amount, mode } = req.body || {};
   if (!exchange_id || !pair || !side || !amount) {
     return res.status(400).json({ error: 'Field wajib: exchange_id, pair, side, amount' });
@@ -234,12 +255,11 @@ api.post('/trade/quick', asyncH(async (req: any, res: any) => {
   if (!['buy', 'sell'].includes(side)) {
     return res.status(400).json({ error: 'side harus buy atau sell' });
   }
-  const exRow = queries.getExchange.get(exchange_id) as ExchangeRow;
+  const exRow = getUserExchange(userId, exchange_id);
   if (!exRow) return res.status(404).json({ error: 'Exchange tidak ditemukan' });
   const usePaper = mode ? mode === 'paper' : exRow.mode === 'paper';
-  const client = registry.get(exchange_id);
+  const client = registry.getForUser(exchange_id, userId);
 
-  // Guard live: kredensial + exchange mode
   if (!usePaper) {
     if (exRow.mode !== 'live') return res.status(400).json({ error: 'Exchange masih mode Demo. Ubah ke Riil di Pengaturan untuk quick trade live.' });
     if (!client.hasCredentials()) return res.status(400).json({ error: 'API key/secret belum diisi' });
@@ -254,7 +274,7 @@ api.post('/trade/quick', asyncH(async (req: any, res: any) => {
     return res.status(400).json({ error: `Nominal buy minimal ${minLot} ${client.quoteAsset}` });
   }
 
-  const trader = usePaper ? registry.getPaper(exchange_id) : client;
+  const trader = usePaper ? registry.getPaperForUser(exchange_id, userId) : client;
   const clientOrderId = `quick-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`.slice(0, 36);
 
   try {
@@ -265,7 +285,7 @@ api.post('/trade/quick', asyncH(async (req: any, res: any) => {
       result = await trader.sellMarket(pair, numAmount, clientOrderId);
     }
     const info = queries.insertTrade.run({
-      bot_id: null, exchange_id, pair: pair.toUpperCase(), side,
+      user_id: userId, bot_id: null, exchange_id, pair: pair.toUpperCase(), side,
       price: result.price, qty: result.qty, fee: result.fee, value: result.qty * result.price,
       realized_pnl: 0, cost_basis: 0, mode: usePaper ? 'paper' : 'live',
       order_id: result.order_id, client_order_id: clientOrderId, strategy_tag: 'QUICK',
@@ -278,38 +298,62 @@ api.post('/trade/quick', asyncH(async (req: any, res: any) => {
 }));
 
 // ===== Trades =====
-api.get('/trades', asyncH(async (req: any, res: any) => {
-  const { exchange, mode, strategy_tag, bot_id, limit = 50, offset = 0, from, to } = req.query as any;
-  let sql = 'SELECT * FROM trades WHERE 1=1';
-  const args: any[] = [];
+function tradeFilter(req: any) {
+  const { exchange, mode, strategy_tag, bot_id, from, to } = req.query as any;
+  let sql = 'SELECT * FROM trades WHERE user_id=?';
+  const args: any[] = [uid(req)];
   if (exchange) { sql += ' AND exchange_id=?'; args.push(exchange); }
   if (mode) { sql += ' AND mode=?'; args.push(mode); }
   if (strategy_tag) { sql += ' AND strategy_tag=?'; args.push(strategy_tag); }
   if (bot_id) { sql += ' AND bot_id=?'; args.push(bot_id); }
   if (from) { sql += ' AND created_at>=?'; args.push(from); }
   if (to) { sql += ' AND created_at<=?'; args.push(to); }
+  return { sql, args };
+}
+
+api.get('/trades', asyncH(async (req: any, res: any) => {
+  const { limit = 50, offset = 0 } = req.query as any;
+  const { sql, args } = tradeFilter(req);
   const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) c');
   const total = (db.prepare(countSql).get(...args) as any).c;
-  sql += ' ORDER BY id DESC LIMIT ? OFFSET ?';
-  args.push(Number(limit), Number(offset));
-  res.json({ total, rows: db.prepare(sql).all(...args) });
+  res.json({ total, rows: db.prepare(sql + ' ORDER BY id DESC LIMIT ? OFFSET ?').all(...args, Number(limit), Number(offset)) });
+}));
+
+// Ekspor CSV riwayat trades (filter sama, tanpa pagination)
+api.get('/trades/export', asyncH(async (req: any, res: any) => {
+  const { sql, args } = tradeFilter(req);
+  const rows = db.prepare(sql + ' ORDER BY id ASC LIMIT 50000').all(...args) as any[];
+  const header = ['id', 'waktu', 'bot_id', 'exchange', 'pair', 'sisi', 'harga', 'qty', 'nilai', 'fee', 'pnl', 'cost_basis', 'mode', 'order_id', 'strategi', 'catatan'];
+  const esc = (v: any) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push([r.id, r.created_at, r.bot_id ?? '', r.exchange_id, r.pair, r.side, r.price, r.qty, r.value, r.fee, r.realized_pnl, r.cost_basis, r.mode, r.order_id ?? '', r.strategy_tag ?? '', r.note ?? ''].map(esc).join(','));
+  }
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="trades-${stamp}.csv"`);
+  res.send('\uFEFF' + lines.join('\n'));
 }));
 
 // ===== Logs =====
 api.get('/logs', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
   const { level, tag, limit = 100 } = req.query as any;
-  let sql = 'SELECT * FROM logs WHERE 1=1';
-  const args: any[] = [];
+  let sql = 'SELECT * FROM logs WHERE (user_id=? OR user_id=0)';
+  const args: any[] = [userId];
   if (level === 'warn') sql += ` AND level IN ('warn','error')`;
   else if (level) { sql += ' AND level=?'; args.push(level); }
-  if (tag === 'trades') sql += ` AND tag IN ('TRADE','GRID_UNWIND','DCA_TP','SCALPER_TP','SCALPER_SL','SCALPER_EXIT','INVENTORY_HARVEST_RECYCLE','AUTO_COMPOUND')`;
+  if (tag === 'trades') sql += ` AND tag IN ('TRADE','GRID_UNWIND','DCA_TP','SCALPER_TP','SCALPER_SL','SCALPER_EXIT','INVENTORY_HARVEST_RECYCLE','REBALANCE','AUTO_COMPOUND')`;
   else if (tag) { sql += ' AND tag=?'; args.push(tag); }
   sql += ' ORDER BY id DESC LIMIT ?';
   args.push(Number(limit));
   res.json(db.prepare(sql).all(...args));
 }));
-api.delete('/logs', asyncH(async (_req: any, res: any) => {
-  db.prepare('DELETE FROM logs').run();
+api.delete('/logs', asyncH(async (req: any, res: any) => {
+  db.prepare('DELETE FROM logs WHERE user_id=?').run(uid(req));
   res.json({ ok: true });
 }));
 
@@ -335,58 +379,156 @@ api.post('/wizard/backtest', asyncH(async (req: any, res: any) => {
   }
 }));
 
+// Backtest interaktif: strategi + parameter + rentang hari pilihan user
+api.post('/backtest', asyncH(async (req: any, res: any) => {
+  const { exchange_id, pair, strategy, params, days = 14, budget = 100000 } = req.body || {};
+  if (!exchange_id || !pair || !strategy) {
+    return res.status(400).json({ error: 'Field wajib: exchange_id, pair, strategy' });
+  }
+  if (!stratRegistry.get(strategy)) return res.status(400).json({ error: `Strategi tidak dikenal: ${strategy}` });
+  const d = Math.min(Math.max(Number(days) || 14, 1), 90);
+  try {
+    const { runCustomBacktest } = await import('../engine/wizard.js');
+    res.json(await runCustomBacktest(exchange_id, pair.toUpperCase(), strategy, params || {}, d, Number(budget) || 100000));
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+}));
+
 // ===== Settings =====
 const SECRET_SETTINGS = new Set(['telegram_bot_token']);
-api.get('/settings', asyncH(async (_req: any, res: any) => {
-  const all = settings.all();
+api.get('/settings', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
+  const all = settings.all(userId);
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(all)) {
     out[k] = SECRET_SETTINGS.has(k) ? (v ? mask(v) : '') : v;
   }
-  out['telegram_configured'] = String(!!(settings.get('telegram_bot_token') && settings.get('telegram_allowed_chat_ids')));
+  const { telegramConfigured, userChats } = await import('../telegram/notify.js');
+  out['telegram_configured'] = String(telegramConfigured(userId) && userChats(userId).length > 0);
   out['secret_key_ok'] = String(config.secretKey.length >= 32);
   res.json(out);
 }));
 
 api.put('/settings', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
   const body = req.body || {};
   const allowed = ['telegram_bot_token', 'telegram_allowed_chat_ids', 'proxy_telegram', 'default_paper_mode', 'daily_summary_time'];
   for (const k of allowed) {
-    if (body[k] !== undefined && body[k] !== '') settings.set(k, String(body[k]));
+    if (body[k] !== undefined && body[k] !== '') settings.set(k, String(body[k]), userId);
   }
-  // Restart telegram jika konfigurasi berubah
-  if (body.telegram_bot_token !== undefined || body.telegram_allowed_chat_ids !== undefined || body.proxy_telegram !== undefined) {
+  // Sinkron chat Telegram milik user
+  if (body.telegram_allowed_chat_ids !== undefined) {
+    const { syncUserChats } = await import('../telegram/bot.js');
+    syncUserChats(userId);
+  }
+  if (body.telegram_bot_token !== undefined || body.proxy_telegram !== undefined) {
     await restartTelegram();
   }
   res.json({ ok: true });
 }));
 
-api.post('/telegram/test', asyncH(async (_req: any, res: any) => {
-  res.json(await sendTestMessage());
+api.post('/telegram/test', asyncH(async (req: any, res: any) => {
+  res.json(await sendTestMessage(uid(req)));
 }));
 
 // ===== Kill Switch =====
-api.post('/killswitch', asyncH(async (_req: any, res: any) => {
+api.post('/killswitch', asyncH(async (req: any, res: any) => {
   const { activateKillSwitch } = await import('../engine/killswitch.js');
-  res.json(await activateKillSwitch('Dashboard'));
+  res.json(await activateKillSwitch('Dashboard', uid(req)));
 }));
 
 // ===== Price Alerts =====
-api.get('/alerts', asyncH(async (_req: any, res: any) => {
-  res.json(db.prepare('SELECT * FROM price_alerts ORDER BY id DESC LIMIT 100').all());
+api.get('/alerts', asyncH(async (req: any, res: any) => {
+  res.json(db.prepare('SELECT * FROM price_alerts WHERE user_id=? ORDER BY id DESC LIMIT 100').all(uid(req)));
 }));
 api.post('/alerts', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
   const { exchange_id, pair, direction, target_price, note } = req.body || {};
   if (!exchange_id || !pair || !direction || !target_price) {
     return res.status(400).json({ error: 'Field wajib: exchange_id, pair, direction, target_price' });
   }
   if (!['above', 'below'].includes(direction)) return res.status(400).json({ error: 'direction harus above atau below' });
-  const info = db.prepare('INSERT INTO price_alerts (exchange_id, pair, direction, target_price, note, active, created_at) VALUES (?,?,?,?,?,1,?)')
-    .run(exchange_id, pair.toUpperCase(), direction, Number(target_price), note || null, now());
-  res.status(201).json(db.prepare('SELECT * FROM price_alerts WHERE id=?').get(info.lastInsertRowid));
+  const info = db.prepare('INSERT INTO price_alerts (user_id, exchange_id, pair, direction, target_price, note, active, created_at) VALUES (?,?,?,?,?,?,1,?)')
+    .run(userId, exchange_id, pair.toUpperCase(), direction, Number(target_price), note || null, now());
+  res.status(201).json(db.prepare('SELECT * FROM price_alerts WHERE id=? AND user_id=?').get(info.lastInsertRowid, userId));
 }));
 api.delete('/alerts/:id', asyncH(async (req: any, res: any) => {
+  const row = db.prepare('SELECT * FROM price_alerts WHERE id=? AND user_id=?').get(req.params.id, uid(req)) as any;
+  if (!row) return res.status(404).json({ error: 'Alert tidak ditemukan' });
   db.prepare('DELETE FROM price_alerts WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+}));
+
+// ===== Marketplace preset strategi (v2.0) =====
+api.get('/marketplace', asyncH(async (req: any, res: any) => {
+  const search = String(req.query.search || '').trim();
+  let sql = `SELECT m.*, COALESCE(AVG(r.stars),0) rating, COUNT(r.stars) ratings
+             FROM market_presets m LEFT JOIN market_ratings r ON r.preset_id=m.id
+             WHERE m.public=1`;
+  const args: any[] = [];
+  if (search) { sql += ' AND (m.name LIKE ? OR m.description LIKE ?)'; args.push(`%${search}%`, `%${search}%`); }
+  sql += ' GROUP BY m.id ORDER BY m.installs DESC, m.id ASC LIMIT 100';
+  const rows = db.prepare(sql).all(...args) as any[];
+  res.json(rows.map(r => ({ ...r, params: JSON.parse(r.params || '{}'), rating: Math.round(r.rating * 10) / 10 })));
+}));
+
+api.post('/marketplace', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
+  const { name, strategy, params, description, budget_quote } = req.body || {};
+  if (!name || !strategy) return res.status(400).json({ error: 'Field wajib: name, strategy' });
+  const strat = stratRegistry.get(strategy);
+  if (!strat) return res.status(400).json({ error: `Strategi tidak dikenal: ${strategy}` });
+  const merged = { ...strat.defaultParams, ...(params || {}) };
+  const info = db.prepare(`INSERT INTO market_presets (user_id, name, strategy, params, description, budget_quote, public, installs, created_at)
+    VALUES (?,?,?,?,?,?,1,0,?)`).run(userId, String(name).slice(0, 80), strategy, JSON.stringify(merged), String(description || '').slice(0, 500), Number(budget_quote) || 100000, now());
+  res.status(201).json({ id: info.lastInsertRowid });
+}));
+
+// Install preset → buat bot (default paused agar direview dulu)
+api.post('/marketplace/:id/install', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
+  const preset = db.prepare('SELECT * FROM market_presets WHERE id=? AND public=1').get(req.params.id) as any;
+  if (!preset) return res.status(404).json({ error: 'Preset tidak ditemukan' });
+  const { exchange_id, budget_quote, status, pair } = req.body || {};
+  if (!exchange_id) return res.status(400).json({ error: 'Field wajib: exchange_id' });
+  const exRow = getUserExchange(userId, exchange_id);
+  if (!exRow) return res.status(400).json({ error: 'Exchange tidak dikenal' });
+  const strat = stratRegistry.get(preset.strategy);
+  if (!strat) return res.status(400).json({ error: `Strategi tidak dikenal: ${preset.strategy}` });
+  const budget = Number(budget_quote) || preset.budget_quote || 100000;
+  const divisor = preset.strategy === 'grid' ? 6 : 5;
+  const info = queries.insertBot.run({
+    user_id: userId, name: `${preset.name} (market)`, exchange_id, pair: String(pair || 'XRPIDR').toUpperCase(),
+    strategy: preset.strategy, params: preset.params,
+    budget_idr: budget, current_budget: budget, lot: Math.floor(budget / divisor),
+    mode: 'paper', auto_compound_pct: 100,
+    status: status === 'running' ? 'running' : 'paused',
+    state: JSON.stringify(strat.init(JSON.parse(preset.params))),
+    max_daily_loss_pct: 0, created_at: now(), updated_at: now()
+  });
+  db.prepare('UPDATE market_presets SET installs=installs+1 WHERE id=?').run(preset.id);
+  const bot = queries.getBot.get(info.lastInsertRowid) as BotRow;
+  res.status(201).json({ ...bot, params: JSON.parse(bot.params), state: JSON.parse(bot.state) });
+}));
+
+// Rating preset (1-5)
+api.post('/marketplace/:id/rate', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
+  const preset = db.prepare('SELECT * FROM market_presets WHERE id=? AND public=1').get(req.params.id) as any;
+  if (!preset) return res.status(404).json({ error: 'Preset tidak ditemukan' });
+  const stars = Math.min(5, Math.max(1, Number(req.body?.stars) || 5));
+  db.prepare(`INSERT INTO market_ratings (preset_id, user_id, stars) VALUES (?,?,?)
+    ON CONFLICT(preset_id, user_id) DO UPDATE SET stars=excluded.stars`).run(preset.id, userId, stars);
+  res.json({ ok: true });
+}));
+
+// Hapus preset milik sendiri
+api.delete('/marketplace/:id', asyncH(async (req: any, res: any) => {
+  const preset = db.prepare('SELECT * FROM market_presets WHERE id=? AND user_id=?').get(req.params.id, uid(req)) as any;
+  if (!preset) return res.status(404).json({ error: 'Preset tidak ditemukan' });
+  db.prepare('DELETE FROM market_presets WHERE id=?').run(req.params.id);
+  db.prepare('DELETE FROM market_ratings WHERE preset_id=?').run(req.params.id);
   res.json({ ok: true });
 }));
 

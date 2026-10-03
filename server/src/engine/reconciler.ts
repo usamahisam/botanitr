@@ -29,10 +29,10 @@ export interface DriftReport {
 export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift?: boolean } = {}): Promise<DriftReport[]> {
   const tolerance = opts.tolerancePct ?? 5; // toleransi drift 5%
   const drifts: DriftReport[] = [];
-  const bots = (queries.allBots.all() as BotRow[]).filter(b => b.status !== 'stopped' && b.mode === 'live');
+  const bots = (db.prepare(`SELECT * FROM bots WHERE status != 'stopped' AND mode='live'`).all() as BotRow[]);
 
   for (const bot of bots) {
-    const client = registry.get(bot.exchange_id);
+    const client = registry.getForUser(bot.exchange_id, bot.user_id);
     if (!client.hasCredentials()) continue;
     const recorded = botRecordedQty(bot);
     if (recorded <= 0) continue; // tidak ada posisi tercatat → tidak ada yang direkonsiliasi
@@ -50,14 +50,24 @@ export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift
   }
 
   if (drifts.length > 0 && opts.notifyOnDrift !== false) {
-    const lines = ['⚠️ DRIFT POSISI TERDETEKSI (state bot ≠ saldo exchange):'];
+    // Kelompokkan per user agar notifikasi tidak bocor antar akun
+    const byUser = new Map<number, DriftReport[]>();
     for (const d of drifts) {
-      lines.push(`• ${d.name} (${d.pair}): tercatat ${d.recorded_qty.toFixed(6)}, aktual ${d.actual_qty.toFixed(6)} (drift ${d.drift_pct.toFixed(1)}%)`);
+      const bot = bots.find(b => b.id === d.bot_id);
+      const arr = byUser.get(bot?.user_id ?? 0) || [];
+      arr.push(d);
+      byUser.set(bot?.user_id ?? 0, arr);
     }
-    lines.push('Kemungkinan ada order manual/partial fill. Periksa & sesuaikan state bot.');
-    const msg = lines.join('\n');
-    log('warn', 'ENGINE', msg);
-    await notify(msg).catch(() => {});
+    for (const [userId, list] of byUser) {
+      const lines = ['⚠️ DRIFT POSISI TERDETEKSI (state bot ≠ saldo exchange):'];
+      for (const d of list) {
+        lines.push(`• ${d.name} (${d.pair}): tercatat ${d.recorded_qty.toFixed(6)}, aktual ${d.actual_qty.toFixed(6)} (drift ${d.drift_pct.toFixed(1)}%)`);
+      }
+      lines.push('Kemungkinan ada order manual/partial fill. Periksa & sesuaikan state bot.');
+      const msg = lines.join('\n');
+      log('warn', 'ENGINE', msg, { user_id: userId });
+      await notify(msg, userId).catch(() => {});
+    }
   }
 
   return drifts;

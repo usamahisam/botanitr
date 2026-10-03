@@ -11,7 +11,7 @@ import { fmtIDR } from '../utils/format.js';
  */
 
 export interface AlertRow {
-  id: number; exchange_id: string; pair: string; direction: 'above' | 'below';
+  id: number; user_id: number; exchange_id: string; pair: string; direction: 'above' | 'below';
   target_price: number; note: string | null; active: number; triggered_at: string | null; created_at: string;
 }
 
@@ -22,7 +22,7 @@ async function checkAlerts(): Promise<number> {
 
   for (const a of alerts) {
     try {
-      const client = registry.get(a.exchange_id);
+      const client = registry.getForUser(a.exchange_id, a.user_id);
       const ticker = await client.getTicker(a.pair);
       const hit = a.direction === 'above' ? ticker.last >= a.target_price : ticker.last <= a.target_price;
       if (hit) {
@@ -30,8 +30,8 @@ async function checkAlerts(): Promise<number> {
         const arrow = a.direction === 'above' ? '📈 NAIK ke' : '📉 TURUN ke';
         const msg = `🔔 PRICE ALERT: ${a.pair} ${arrow} target!\nHarga sekarang: ${fmtIDR(ticker.last * mult)}\nTarget: ${fmtIDR(a.target_price * mult)}${a.note ? `\nCatatan: ${a.note}` : ''}`;
         db.prepare('UPDATE price_alerts SET active=0, triggered_at=? WHERE id=?').run(now(), a.id);
-        log('info', 'SYSTEM', msg);
-        await notify(msg).catch(() => {});
+        log('info', 'SYSTEM', msg, { user_id: a.user_id });
+        await notify(msg, a.user_id).catch(() => {});
         triggered++;
       }
     } catch { /* lewati alert gagal */ }

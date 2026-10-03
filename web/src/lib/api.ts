@@ -1,13 +1,42 @@
 const BASE = '/api';
+const TOKEN_KEY = 'botani_token';
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+export function setToken(t: string | null) {
+  if (t) localStorage.setItem(TOKEN_KEY, t);
+  else localStorage.removeItem(TOKEN_KEY);
+}
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options
-  });
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(BASE + path, { headers, ...options });
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    setToken(null);
+    if (window.location.pathname !== '/login') window.location.href = '/login';
+    throw new Error('Sesi berakhir, silakan login ulang');
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data as T;
+}
+
+/** Unduh file (CSV) dengan token auth */
+export async function download(path: string, filename: string) {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(BASE + path, { headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export const api = {
@@ -16,6 +45,13 @@ export const api = {
   put: <T>(path: string, body?: any) => req<T>(path, { method: 'PUT', body: JSON.stringify(body ?? {}) }),
   del: <T>(path: string) => req<T>(path, { method: 'DELETE' })
 };
+
+export interface AuthUser { id: number; username: string; role: string }
+export interface MarketPreset {
+  id: number; user_id: number; name: string; strategy: string; params: Record<string, any>;
+  description: string | null; budget_quote: number; public: number; installs: number;
+  created_at: string; rating: number; ratings: number;
+}
 
 // ===== Types =====
 export interface DashboardData {

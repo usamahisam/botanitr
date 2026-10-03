@@ -4,12 +4,12 @@ import { createHttp } from './http.js';
 import { ExchangeClient, Ticker, Balance, OrderResult, Kline, ExchangeError } from './base.js';
 
 /** Error 3701 = IP diblokir/geo-restrict. Pesan jelas agar user tahu harus pakai proxy. */
-function normalizeError(e: any): ExchangeError {
+export function normalizeError(e: any, label = 'Tokocrypto'): ExchangeError {
   const code = e.response?.data?.code;
   if (code === 3701 || code === -2015) {
-    return new ExchangeError('Tokocrypto memblokir IP ini (geo-restrict). Isi proxy di Pengaturan → Exchange.', code);
+    return new ExchangeError(`${label} memblokir IP ini (geo-restrict). Isi proxy di Pengaturan → Exchange.`, code);
   }
-  return new ExchangeError(`Tokocrypto: ${e.response?.data?.msg || e.message}`, code);
+  return new ExchangeError(`${label}: ${e.response?.data?.msg || e.message}`, code);
 }
 
 /**
@@ -17,17 +17,19 @@ function normalizeError(e: any): ExchangeError {
  * Base URL configurable karena api.tokocrypto.com sering timeout dari jaringan ID.
  */
 export class TokocryptoClient implements ExchangeClient {
-  readonly id = 'tokocrypto';
+  readonly id: string = 'tokocrypto';
   readonly quoteAsset = 'USDT';
   readonly feeRate = 0.001;
+  protected label = 'Tokocrypto';
+  protected baseUrl(): string { return config.tokocryptoBaseUrl; }
   private apiKey = '';
   private apiSecret = '';
   private proxyUrl: string | null = null;
-  private http = createHttp(config.tokocryptoBaseUrl);
+  private http = createHttp(this.baseUrl());
 
   setProxy(url?: string | null) {
     this.proxyUrl = url || null;
-    this.http = createHttp(config.tokocryptoBaseUrl, this.proxyUrl);
+    this.http = createHttp(this.baseUrl(), this.proxyUrl);
   }
   setCredentials(key: string, secret: string) { this.apiKey = key; this.apiSecret = secret; }
   hasCredentials() { return !!(this.apiKey && this.apiSecret); }
@@ -50,14 +52,14 @@ export class TokocryptoClient implements ExchangeClient {
         this.http.get('/api/v3/ticker/bookTicker', { params: { symbol } })
       ]);
       const last = parseFloat(t24.lastPrice);
-      if (!Number.isFinite(last)) throw new ExchangeError('Tokocrypto: respons ticker tidak valid', t24?.code);
+      if (!Number.isFinite(last)) throw new ExchangeError(`${this.label}: respons ticker tidak valid`, t24?.code);
       return {
         pair: symbol,
         bid: parseFloat(book.bidPrice), ask: parseFloat(book.askPrice), last,
         high24: parseFloat(t24.highPrice), low24: parseFloat(t24.lowPrice),
         vol24: parseFloat(t24.quoteVolume || '0'), ts: Date.now()
       };
-    } catch (e: any) { throw normalizeError(e); }
+    } catch (e: any) { throw normalizeError(e, this.label); }
   }
 
   async getKlines(pair: string, interval: string, limit: number): Promise<Kline[]> {
@@ -65,11 +67,11 @@ export class TokocryptoClient implements ExchangeClient {
       const { data } = await this.http.get('/api/v3/klines', {
         params: { symbol: pair.toUpperCase(), interval, limit: Math.min(limit, 1000) }
       });
-      if (!Array.isArray(data)) throw new ExchangeError(`Tokocrypto: respons klines tidak valid`, data?.code);
+      if (!Array.isArray(data)) throw new ExchangeError(`${this.label}: respons klines tidak valid`, data?.code);
       return data.map((k: any[]) => [k[0], parseFloat(k[1]), parseFloat(k[2]), parseFloat(k[3]), parseFloat(k[4]), parseFloat(k[5])] as Kline);
     } catch (e: any) {
       if (e instanceof ExchangeError) throw e;
-      throw normalizeError(e);
+      throw normalizeError(e, this.label);
     }
   }
 
@@ -78,7 +80,7 @@ export class TokocryptoClient implements ExchangeClient {
   }
 
   private async signed(method: 'GET' | 'POST' | 'DELETE', path: string, params: Record<string, string | number> = {}): Promise<any> {
-    if (!this.hasCredentials()) throw new ExchangeError('Kredensial Tokocrypto belum diisi');
+    if (!this.hasCredentials()) throw new ExchangeError(`Kredensial ${this.label} belum diisi`);
     const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])), timestamp: Date.now().toString() }).toString();
     const signature = this.sign(query);
     try {
@@ -89,7 +91,7 @@ export class TokocryptoClient implements ExchangeClient {
       return data;
     } catch (e: any) {
       const msg = e.response?.data?.msg || e.message;
-      throw new ExchangeError(`Tokocrypto: ${msg}`, e.response?.data?.code);
+      throw new ExchangeError(`${this.label}: ${msg}`, e.response?.data?.code);
     }
   }
 

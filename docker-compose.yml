@@ -1,0 +1,28 @@
+services:
+  botani:
+    build: .
+    image: botanitr:latest
+    container_name: botanitr
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      # WAJIB diganti sebelum production:
+      SECRET_KEY: "${SECRET_KEY:-ganti_dengan_min_32_karakter_acak_di_env}"
+      # Opsional:
+      # TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      # TELEGRAM_ALLOWED_CHAT_IDS: "${TELEGRAM_ALLOWED_CHAT_IDS:-}"
+      # DEFAULT_PROXY: "${DEFAULT_PROXY:-}"
+    volumes:
+      - botani-data:/app/server/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  botani-data:

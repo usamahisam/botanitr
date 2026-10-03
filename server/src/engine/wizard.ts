@@ -12,7 +12,7 @@ export interface PresetDef {
   strategi: string;
   gaya: string;
   deskripsi: string;
-  params: Record<string, number | string>;
+  params: Record<string, any>;
   leverage_label: string;
   tp_sl_label: string;
   timeframe: string;
@@ -42,6 +42,12 @@ export const PRESETS: PresetDef[] = [
     deskripsi: 'PALING AMAN. Akumulasi saat turun, panen modal cair + profit saat rebound.',
     params: { drop_pct: 2.5, harvest_pct: 2, max_buys: 8 },
     leverage_label: '1x', tp_sl_label: 'Harvest 2%', timeframe: 'Tick'
+  },
+  {
+    id: 'rebalance-portfolio', nama: 'Rebalance Portfolio', strategi: 'rebalance', gaya: 'Alokasi',
+    deskripsi: 'Jaga komposisi aset sesuai target. Jual yang berlebih, beli yang kurang — disiplin ala manajer dana.',
+    params: { targets: { BTC: 50, ETH: 30 }, threshold_pct: 2, interval_min: 60 },
+    leverage_label: '1x', tp_sl_label: 'Auto rebalance', timeframe: 'Per jam'
   }
 ];
 
@@ -90,19 +96,33 @@ function scorePreset(preset: PresetDef, m: Metrics): number {
   return Math.max(5, Math.min(98, Math.round(score * 10) / 10));
 }
 
+export interface EquityPoint { t: number; v: number }
+export interface BacktestResult {
+  winRate: number; profitPct: number; trades: number; maxDrawdownPct: number;
+  equity: EquityPoint[];
+}
+
 /** Backtest replay sederhana di atas klines (simulasi murni, tanpa DB) */
-export function backtest(preset: PresetDef, klines: Kline[], budgetQuote: number): { winRate: number; profitPct: number; trades: number; maxDrawdownPct: number } {
+export function backtest(preset: PresetDef, klines: Kline[], budgetQuote: number): BacktestResult {
   const closes = klines.map(k => k[4]);
-  if (closes.length < 30) return { winRate: 0, profitPct: 0, trades: 0, maxDrawdownPct: 0 };
+  const times = klines.map(k => k[0]);
+  const empty: BacktestResult = { winRate: 0, profitPct: 0, trades: 0, maxDrawdownPct: 0, equity: [] };
+  if (closes.length < 30) return empty;
   const fee = 0.003;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const sampleEvery = Math.max(1, Math.floor(closes.length / 150));
+  const equity: EquityPoint[] = [];
   let wins = 0, total = 0, profit = 0, maxDd = 0, peak = budgetQuote;
+  const trackDd = (eq: number) => {
+    peak = Math.max(peak, eq);
+    if (peak > 0) maxDd = Math.max(maxDd, (peak - eq) / peak * 100);
+  };
 
   if (preset.strategi === 'scalper') {
     const p = preset.params;
     let pos: { entry: number; qty: number } | null = null;
     const ema = (arr: number[], per: number) => { const k = 2 / (per + 1); let e = arr[0]; for (let i = 1; i < arr.length; i++) e = arr[i] * k + e * (1 - k); return e; };
     let prevAbove: boolean | null = null;
-    let equity = budgetQuote;
     for (let i = Number(p.ema_slow) + 2; i < closes.length; i++) {
       const slice = closes.slice(0, i + 1);
       const fast = ema(slice.slice(-Number(p.ema_fast) - 1), Number(p.ema_fast));
@@ -116,59 +136,96 @@ export function backtest(preset: PresetDef, klines: Kline[], budgetQuote: number
           const value = pos.qty * price * (1 - fee);
           const pnl = value - budgetQuote;
           profit += pnl; total++; if (pnl > 0) wins++;
-          equity = budgetQuote + profit;
-          peak = Math.max(peak, equity);
-          maxDd = Math.max(maxDd, peak > 0 ? (peak - equity) / peak * 100 : 0);
+          trackDd(budgetQuote + profit);
           pos = null;
         }
       } else if (prevAbove === false && above) {
         pos = { entry: price, qty: (budgetQuote * (1 - fee)) / price };
       }
       prevAbove = above;
+      if (i % sampleEvery === 0 || i === closes.length - 1) {
+        const eq = pos ? profit + pos.qty * price * (1 - fee) : budgetQuote + profit;
+        equity.push({ t: times[i], v: r2(eq) });
+        trackDd(eq);
+      }
     }
   } else {
     // Grid/DCA/Harvester disederhanakan: simulasi mean-reversion
     const p = preset.params;
     const stepPct = Number(p.drop_pct ?? p.lower_pct ?? 2) / 100;
     const tpPct = Number(p.take_profit_pct ?? p.harvest_pct ?? 3) / 100;
+    const maxN = Number(p.max_buys ?? p.levels ?? 5);
     let entries: { price: number; cost: number }[] = [];
-    const lot = budgetQuote / Number(p.max_buys ?? p.levels ?? 5);
+    const lot = budgetQuote / maxN;
     let lastBuy = 0;
-    for (const price of closes) {
-      if (entries.length === 0) { entries.push({ price, cost: lot }); lastBuy = price; continue; }
-      const totalCost = entries.reduce((s, e) => s + e.cost, 0);
-      const avg = totalCost / entries.length;
-      if (price >= avg * (1 + tpPct + fee)) {
-        const pnl = totalCost * tpPct - totalCost * fee;
-        profit += pnl; total++; if (pnl > 0) wins++;
-        entries = [];
-        continue;
+    closes.forEach((price, i) => {
+      if (entries.length === 0) { entries.push({ price, cost: lot }); lastBuy = price; }
+      else {
+        const totalCost = entries.reduce((s, e) => s + e.cost, 0);
+        const avg = totalCost / entries.length;
+        if (price >= avg * (1 + tpPct + fee)) {
+          const pnl = totalCost * tpPct - totalCost * fee;
+          profit += pnl; total++; if (pnl > 0) wins++;
+          entries = [];
+          trackDd(budgetQuote + profit);
+        } else if (lastBuy > 0 && price <= lastBuy * (1 - stepPct) && entries.length < maxN) {
+          entries.push({ price, cost: lot }); lastBuy = price;
+        }
       }
-      if (lastBuy > 0 && price <= lastBuy * (1 - stepPct) && entries.length < Number(p.max_buys ?? p.levels ?? 5)) {
-        entries.push({ price, cost: lot }); lastBuy = price;
+      if (i % sampleEvery === 0 || i === closes.length - 1) {
+        const floating = entries.reduce((s, e) => s + ((e.cost / e.price) * price - e.cost), 0);
+        const eq = budgetQuote + profit + floating;
+        equity.push({ t: times[i], v: r2(eq) });
+        trackDd(eq);
       }
-    }
-    // Posisi mengambang dihitung drawdown
-    if (entries.length > 0) {
-      const totalCost = entries.reduce((s, e) => s + e.cost, 0);
-      const lastPrice = closes[closes.length - 1];
-      const floating = (lastPrice / (totalCost / entries.length) - 1) * 100;
-      maxDd = Math.max(maxDd, Math.max(0, -floating));
-    }
+    });
   }
 
   const profitPct = (profit / budgetQuote) * 100;
   return {
     winRate: total > 0 ? Math.round((wins / total) * 1000) / 10 : 0,
-    profitPct: Math.round(profitPct * 100) / 100,
+    profitPct: r2(profitPct),
     trades: total,
-    maxDrawdownPct: Math.round(maxDd * 100) / 100
+    maxDrawdownPct: r2(maxDd),
+    equity
   };
+}
+
+/** Backtest kustom: strategi + parameter + rentang hari pilihan user */
+export async function runCustomBacktest(
+  exchangeId: string, pair: string, strategy: string, params: Record<string, any>,
+  days: number, budgetQuote: number
+): Promise<BacktestResult & { candles: number; note?: string }> {
+  const client = registry.get(exchangeId);
+  // Rebalance butuh multi-aset: tampilkan buy-and-hold pembanding untuk pair ini
+  if (strategy === 'rebalance') {
+    const klines = await client.getKlines(pair, '1d', Math.min(Math.max(days, 7), 365));
+    const closes = klines.map(k => k[4]);
+    if (closes.length < 2) return { winRate: 0, profitPct: 0, trades: 0, maxDrawdownPct: 0, equity: [], candles: closes.length, note: 'Data kurang' };
+    const first = closes[0];
+    const equity = klines.map(k => ({ t: k[0], v: Math.round((budgetQuote * (k[4] / first)) * 100) / 100 }));
+    const profitPct = ((closes[closes.length - 1] - first) / first) * 100;
+    return {
+      winRate: 0, profitPct: Math.round(profitPct * 100) / 100, trades: 0,
+      maxDrawdownPct: 0, equity, candles: closes.length,
+      note: 'Buy-and-hold pembanding (rebalance butuh data multi-aset)'
+    };
+  }
+  const interval = strategy === 'scalper' ? '1m' : '1h';
+  const perDay = strategy === 'scalper' ? 500 : 24;
+  const limit = Math.min(Math.max(days, 1) * perDay, 1000);
+  const klines = await client.getKlines(pair, interval, limit);
+  const pseudo: PresetDef = {
+    id: 'custom', nama: 'Kustom', strategi: strategy, gaya: '', deskripsi: '',
+    params, leverage_label: '', tp_sl_label: '', timeframe: interval
+  };
+  const out = backtest(pseudo, klines, budgetQuote);
+  return { ...out, candles: klines.length };
 }
 
 export interface PresetRecommendation extends PresetDef {
   skor: number;
-  backtest: { winRate: number; profitPct: number; trades: number; maxDrawdownPct: number };
+  backtest: BacktestResult;
 }
 
 const recCache = new Map<string, { data: PresetRecommendation[]; ts: number }>();

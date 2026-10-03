@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, TradeRow } from '../lib/api';
+import { api, download, TradeRow } from '../lib/api';
 import { fmtIDR, fmtQty, fmtDateTime, fmtSignedIDR } from '../lib/format';
 
 export default function Riwayat() {
@@ -32,12 +32,21 @@ export default function Riwayat() {
             <option value="">Semua exchange</option>
             <option value="indodax">Indodax</option>
             <option value="tokocrypto">Tokocrypto</option>
+            <option value="binance">Binance</option>
           </select>
           <select value={mode} onChange={e => { setMode(e.target.value); setPage(1); }} className="input !w-auto !py-1.5 text-xs">
             <option value="">Semua mode</option>
             <option value="paper">Demo</option>
             <option value="live">Riil</option>
           </select>
+          <button
+            onClick={() => {
+              const q = new URLSearchParams({ ...(exchange ? { exchange } : {}), ...(mode ? { mode } : {}) }).toString();
+              download(`/trades/export${q ? `?${q}` : ''}`, `trades-${new Date().toISOString().slice(0, 10)}.csv`).catch(e => alert(e.message));
+            }}
+            className="btn btn-ghost btn-sm">
+            Ekspor CSV
+          </button>
         </div>
       </div>
 

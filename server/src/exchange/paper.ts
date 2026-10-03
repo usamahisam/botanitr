@@ -6,20 +6,20 @@ import { ExchangeClient, Balance, OrderResult, ExchangeError, parsePair } from '
  * Fill di harga ask (buy) / bid (sell) dari ticker live + fee exchange.
  */
 export class PaperTrader {
-  constructor(private liveClient: ExchangeClient) {}
+  constructor(private liveClient: ExchangeClient, private userId = 0) {}
 
   private seedIfNeeded(exchangeId: string, quoteAsset: string) {
-    const row = db.prepare('SELECT free FROM paper_balances WHERE exchange_id=? AND asset=?')
-      .get(exchangeId, quoteAsset) as any;
+    const row = db.prepare('SELECT free FROM paper_balances WHERE exchange_id=? AND asset=? AND user_id=?')
+      .get(exchangeId, quoteAsset, this.userId) as any;
     if (!row) {
       const seed = quoteAsset === 'IDR' ? 10_000_000 : 1000;
-      queries.upsertPaperBalance.run(exchangeId, quoteAsset, seed, 0);
+      queries.upsertPaperBalance.run(exchangeId, quoteAsset, seed, 0, this.userId);
     }
   }
 
   getBalances(): Balance[] {
     this.seedIfNeeded(this.liveClient.id, this.liveClient.quoteAsset);
-    return (queries.paperBalances.all(this.liveClient.id) as any[])
+    return (queries.paperBalances.all(this.liveClient.id, this.userId) as any[])
       .map(r => ({ asset: r.asset, free: r.free, locked: r.locked }))
       .filter(b => b.free > 0 || b.locked > 0);
   }
@@ -28,11 +28,11 @@ export class PaperTrader {
   async cancelOpenOrders(_pair?: string): Promise<number> { return 0; }
 
   private setBalance(asset: string, free: number) {
-    queries.upsertPaperBalance.run(this.liveClient.id, asset, Math.max(0, free), 0);
+    queries.upsertPaperBalance.run(this.liveClient.id, asset, Math.max(0, free), 0, this.userId);
   }
   private getFree(asset: string): number {
-    const row = db.prepare('SELECT free FROM paper_balances WHERE exchange_id=? AND asset=?')
-      .get(this.liveClient.id, asset) as any;
+    const row = db.prepare('SELECT free FROM paper_balances WHERE exchange_id=? AND asset=? AND user_id=?')
+      .get(this.liveClient.id, asset, this.userId) as any;
     return row?.free ?? 0;
   }
 

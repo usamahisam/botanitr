@@ -9,7 +9,7 @@
     "start": "node server/dist/index.js",
     "test:exchanges": "npm run test:exchanges -w server",
     "test:live": "npm run test:live-mock -w server && npm run test:live-e2e -w server",
-    "test:all": "npm run test:live-mock -w server && npm run test:live-e2e -w server && npm run test:killswitch -w server && npm run test:safety -w server && npm run test:features -w server"
+    "test:all": "npm run test:live-mock -w server && npm run test:live-e2e -w server && npm run test:killswitch -w server && npm run test:safety -w server && npm run test:features -w server && npm run test:v2 -w server && npm run test:auth -w server"
   },
   "workspaces": [
     "server",
@@ -21,5 +21,11 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "bcryptjs": "^3.0.3",
+    "jsonwebtoken": "^9.0.3"
   }
 }

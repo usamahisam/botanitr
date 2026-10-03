@@ -14,6 +14,8 @@
     "test:killswitch": "tsx scripts/test-killswitch.ts",
     "test:safety": "tsx scripts/test-safety.ts",
     "test:features": "tsx scripts/test-features-v11.ts",
+    "test:v2": "tsx scripts/test-v2.ts",
+    "test:auth": "tsx scripts/test-auth-http.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

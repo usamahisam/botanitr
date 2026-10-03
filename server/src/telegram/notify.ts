@@ -1,15 +1,36 @@
-import { settings } from '../db/index.js';
+import { db, settings } from '../db/index.js';
 import { fmtIDR, fmtQty } from '../utils/format.js';
 import { Action } from '../strategies/types.js';
 
 /** Modul ini di-bridge ke bot telegram agar tidak circular import */
-type Sender = (text: string) => Promise<void>;
+type Sender = (userId: number | null, text: string) => Promise<void>;
 let sender: Sender | null = null;
 export function setTelegramSender(fn: Sender | null) { sender = fn; }
 
-export async function notify(text: string) {
+/** Kirim notifikasi. userId null = ke semua chat terdaftar (untuk pesan sistem). */
+export async function notify(text: string, userId?: number | null) {
   if (!sender) return;
-  try { await sender(text); } catch { /* abaikan error telegram */ }
+  try { await sender(userId ?? null, text); } catch { /* abaikan error telegram */ }
+}
+
+/** Chat Telegram milik user (dari telegram_chats + settings miliknya) */
+export function userChats(userId: number): string[] {
+  const linked = (db.prepare('SELECT chat_id FROM telegram_chats WHERE user_id=?').all(userId) as any[]).map(r => String(r.chat_id));
+  const fromSettings = settings.get('telegram_allowed_chat_ids', '', userId).split(',').map(s => s.trim()).filter(Boolean);
+  return [...new Set([...linked, ...fromSettings])];
+}
+
+export function allChats(): string[] {
+  const rows = db.prepare('SELECT chat_id FROM telegram_chats').all() as any[];
+  const s = new Set<string>(rows.map(r => String(r.chat_id)));
+  // Fallback legacy: settings global (user_id=0) bila belum ada mapping
+  if (s.size === 0) {
+    for (const c of settings.get('telegram_allowed_chat_ids', '', 0).split(',')) {
+      const t = c.trim();
+      if (t) s.add(t);
+    }
+  }
+  return [...s];
 }
 
 const TAG_TITLES: Record<string, string> = {
@@ -19,6 +40,7 @@ const TAG_TITLES: Record<string, string> = {
   SCALPER_TP: '⚡ SCALPER: TAKE PROFIT',
   SCALPER_SL: '🛑 SCALPER: STOP LOSS',
   SCALPER_EXIT: '↩️ SCALPER: EXIT SIGNAL',
+  REBALANCE: '⚖️ REBALANCE PORTFOLIO',
   AUTO_COMPOUND: '📈 AUTO-COMPOUND'
 };
 
@@ -42,13 +64,13 @@ export async function notifyTrade(trade: any, action: Action, usdtIdr: number) {
   } else {
     lines.push(`Nominal: ${fmtIDR(trade.value * usdtIdr)}`);
   }
-  await notify(lines.join('\n'));
+  await notify(lines.join('\n'), trade.user_id ?? null);
 }
 
-export async function notifyDailySummary(summary: string) {
-  await notify(`📅 RINGKASAN HARIAN\n${summary}`);
+export async function notifyDailySummary(summary: string, userId?: number | null) {
+  await notify(`📅 RINGKASAN HARIAN\n${summary}`, userId ?? null);
 }
 
-export function telegramConfigured(): boolean {
-  return !!(settings.get('telegram_bot_token') && settings.get('telegram_allowed_chat_ids'));
+export function telegramConfigured(userId = 0): boolean {
+  return !!(settings.get('telegram_bot_token', '', userId) && userChats(userId).length > 0);
 }

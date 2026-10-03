@@ -1,6 +1,78 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
+import { api, AuthUser } from '../lib/api';
 import { Icon } from '../components/icons';
+
+interface ManagedUser { id: number; username: string; role: string; created_at: string }
+
+function UserManager({ me, onChanged }: { me: AuthUser; onChanged?: () => void }) {
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState('user');
+  const [msg, setMsg] = useState('');
+
+  const load = () => { api.get<ManagedUser[]>('/auth/users').then(setUsers).catch(() => {}); };
+  useEffect(load, []);
+
+  if (me.role !== 'admin') return null;
+
+  const create = async () => {
+    setMsg('');
+    try {
+      await api.post('/auth/users', { username, password, role });
+      setUsername(''); setPassword(''); setMsg('User dibuat.');
+      load(); onChanged?.();
+    } catch (e: any) { setMsg(e.message); }
+  };
+
+  const remove = async (u: ManagedUser) => {
+    if (!confirm(`Hapus user "${u.username}"? Data miliknya ikut terhapus? (bot & trade miliknya tetap tersimpan)`)) return;
+    try { await api.del(`/auth/users/${u.id}`); load(); }
+    catch (e: any) { setMsg(e.message); }
+  };
+
+  return (
+    <section className="panel p-4">
+      <div className="text-[14px] font-semibold mb-1">Pengguna</div>
+      <p className="text-xs txt-3 mb-3">Setiap user punya bot, saldo paper, kredensial, dan notifikasi sendiri.</p>
+      <table className="tbl mb-3">
+        <thead><tr><th>ID</th><th>Username</th><th>Peran</th><th>Dibuat</th><th className="!text-right">Aksi</th></tr></thead>
+        <tbody>
+          {users.map(u => (
+            <tr key={u.id}>
+              <td className="num txt-3">{u.id}</td>
+              <td className="font-medium">{u.username}{u.id === me.id && <span className="tag tag-accent ml-2">ANDA</span>}</td>
+              <td><span className={`tag ${u.role === 'admin' ? 'tag-warn' : 'tag-dim'}`}>{u.role === 'admin' ? 'ADMIN' : 'USER'}</span></td>
+              <td className="txt-3 text-xs">{u.created_at.slice(0, 10)}</td>
+              <td className="!text-right">
+                {u.id !== me.id && <button onClick={() => remove(u)} className="btn btn-ghost btn-sm">Hapus</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+        <div>
+          <div className="lbl mb-1.5">Username baru</div>
+          <input value={username} onChange={e => setUsername(e.target.value)} className="input" />
+        </div>
+        <div>
+          <div className="lbl mb-1.5">Password (min. 6)</div>
+          <input value={password} onChange={e => setPassword(e.target.value)} type="password" className="input" />
+        </div>
+        <div>
+          <div className="lbl mb-1.5">Peran</div>
+          <select value={role} onChange={e => setRole(e.target.value)} className="input">
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <button onClick={create} disabled={!username || !password} className="btn btn-primary btn-sm !py-2">Tambah user</button>
+      </div>
+      {msg && <div className="text-[13px] txt-2 mt-2">{msg}</div>}
+    </section>
+  );
+}
 
 interface ExchangeSettings {
   id: string; name: string; mode: string; status: string; proxy_url: string | null;
@@ -82,7 +154,40 @@ function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: 
   );
 }
 
-export default function Pengaturan() {
+function PasswordChanger() {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const save = async () => {
+    setMsg(null);
+    try {
+      await api.post('/auth/password', { current, password: next });
+      setMsg({ ok: true, text: 'Password berhasil diganti.' });
+      setCurrent(''); setNext('');
+    } catch (e: any) { setMsg({ ok: false, text: e.message }); }
+  };
+
+  return (
+    <section className="panel p-4">
+      <div className="text-[14px] font-semibold mb-1">Ganti password</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+        <div>
+          <div className="lbl mb-1.5">Password saat ini</div>
+          <input value={current} onChange={e => setCurrent(e.target.value)} type="password" className="input" autoComplete="current-password" />
+        </div>
+        <div>
+          <div className="lbl mb-1.5">Password baru (min. 6)</div>
+          <input value={next} onChange={e => setNext(e.target.value)} type="password" className="input" autoComplete="new-password" />
+        </div>
+        <button onClick={save} disabled={!current || !next} className="btn btn-primary btn-sm !py-2">Ganti password</button>
+      </div>
+      {msg && <div className={`text-[13px] mt-2 ${msg.ok ? 'txt-up' : 'txt-down'}`}>{msg.text}</div>}
+    </section>
+  );
+}
+
+export default function Pengaturan({ me }: { me: AuthUser }) {
   const [exchanges, setExchanges] = useState<ExchangeSettings[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [tgToken, setTgToken] = useState('');
@@ -124,6 +229,9 @@ export default function Pengaturan() {
         <h2 className="text-[17px] font-bold tracking-tight">Pengaturan</h2>
         <p className="text-xs txt-3 mt-0.5">Kredensial disimpan terenkripsi di server dan tidak pernah ditampilkan penuh.</p>
       </div>
+
+      <UserManager me={me} />
+      <PasswordChanger />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {exchanges.map(ex => <ExchangeSettingsCard key={ex.id} ex={ex} onSaved={load} />)}

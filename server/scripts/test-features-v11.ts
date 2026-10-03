@@ -56,7 +56,7 @@ async function main() {
   const info = queries.insertBot.run({
     name: 'EqBot', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca', params: '{}',
     budget_idr: 100000, current_budget: 105000, lot: 20000, mode: 'paper', auto_compound_pct: 100,
-    status: 'running', state: '{}', max_daily_loss_pct: 0, created_at: now(), updated_at: now()
+    status: 'running', state: '{}', max_daily_loss_pct: 0, user_id: 0, created_at: now(), updated_at: now()
   });
   const botId = Number(info.lastInsertRowid);
   const n = await recordDailyEquity();

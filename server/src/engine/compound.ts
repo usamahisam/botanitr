@@ -25,6 +25,6 @@ export const compound = {
 
     log('info', 'AUTO_COMPOUND',
       `Reinvested +${fmtIDR(reinvest * usdtIdr)} (${pct}%). New Budget: ${fmtIDR(newBudget * usdtIdr)}, Lot: ${fmtIDR(newLot * usdtIdr)}.`,
-      { bot_id: bot.id, impact_rp: reinvest * usdtIdr });
+      { bot_id: bot.id, impact_rp: reinvest * usdtIdr, user_id: bot.user_id });
   }
 };

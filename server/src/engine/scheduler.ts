@@ -11,14 +11,16 @@ import '../strategies/grid.js';
 import '../strategies/dca.js';
 import '../strategies/scalper.js';
 import '../strategies/harvester.js';
+import '../strategies/rebalance.js';
 
-/** Cache ticker in-memory 5 detik per exchange+pair */
+/** Cache ticker in-memory 5 detik per user+exchange+pair */
 const tickerCache = new Map<string, { data: Ticker; ts: number }>();
-async function getTickerCached(exchangeId: string, pair: string): Promise<Ticker> {
-  const key = `${exchangeId}:${pair}`;
+const balanceCache = new Map<string, { data: { asset: string; free: number; locked: number }[]; ts: number }>();
+async function getTickerCached(exchangeId: string, pair: string, userId = 0): Promise<Ticker> {
+  const key = `${userId}:${exchangeId}:${pair}`;
   const c = tickerCache.get(key);
   if (c && Date.now() - c.ts < 5000) return c.data;
-  const data = await registry.get(exchangeId).getTicker(pair);
+  const data = await registry.getForUser(exchangeId, userId).getTicker(pair);
   tickerCache.set(key, { data, ts: Date.now() });
   return data;
 }
@@ -37,15 +39,15 @@ const botCache = new Map<number, BotRow>();
 async function processBot(bot: BotRow) {
   // Guard: max daily loss — pause bot jika rugi realized hari ini melewati batas
   if (bot.max_daily_loss_pct > 0) {
-    const client0 = registry.get(bot.exchange_id);
+    const client0 = registry.getForUser(bot.exchange_id, bot.user_id);
     const mult = client0.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
     const realizedToday = pnl.botRealizedToday(bot.id);
     const lossLimit = (bot.max_daily_loss_pct / 100) * bot.current_budget;
     if (realizedToday < 0 && Math.abs(realizedToday) >= lossLimit) {
       queries.setBotStatus.run('paused', now(), bot.id);
       const msg = `🛑 MAX DAILY LOSS tercapai untuk "${bot.name}": rugi hari ini ${Math.round(realizedToday * mult).toLocaleString('id-ID')} ≥ batas ${Math.round(lossLimit * mult).toLocaleString('id-ID')} (${bot.max_daily_loss_pct}%). Bot di-pause otomatis.`;
-      log('warn', 'ENGINE', msg, { bot_id: bot.id });
-      await notify(msg).catch(() => {});
+      log('warn', 'ENGINE', msg, { bot_id: bot.id, user_id: bot.user_id });
+      await notify(msg, bot.user_id).catch(() => {});
       return;
     }
   }
@@ -54,13 +56,26 @@ async function processBot(bot: BotRow) {
   const params = JSON.parse(bot.params || '{}');
   let state = JSON.parse(bot.state || '{}');
 
-  const ticker = await getTickerCached(bot.exchange_id, bot.pair);
-  const client = registry.get(bot.exchange_id);
+  const ticker = await getTickerCached(bot.exchange_id, bot.pair, bot.user_id);
+  const client = registry.getForUser(bot.exchange_id, bot.user_id);
   const usdtIdr = client.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
+
+  // Cache saldo 60 detik per user+exchange+mode (dipakai rebalance)
+  const balKey = `${bot.user_id}:${bot.exchange_id}:${bot.mode}`;
+  let balEntry = balanceCache.get(balKey);
+  if (!balEntry || Date.now() - balEntry.ts > 60000) {
+    const balances = bot.mode === 'paper'
+      ? registry.getPaperForUser(bot.exchange_id, bot.user_id).getBalances()
+      : await client.getBalances();
+    balEntry = { data: balances, ts: Date.now() };
+    balanceCache.set(balKey, balEntry);
+  }
 
   const ctx: StrategyContext = {
     bot, ticker, usdtIdr, now: Date.now(),
-    getKlines: (interval, limit) => client.getKlines(bot.pair, interval, limit)
+    getKlines: (interval, limit) => client.getKlines(bot.pair, interval, limit),
+    getBalances: async () => balEntry!.data,
+    getPrice: async (pair: string) => (await getTickerCached(bot.exchange_id, pair, bot.user_id)).last
   };
 
   const actions = await strategy.onTick(ctx, state, params);
@@ -109,12 +124,12 @@ export function startScheduler(broadcast: (event: string, payload: any) => void)
           const errCount = (fresh.error_count || 0) + 1;
           queries.setBotError.run(errCount, now(), bot.id);
           if (errCount <= 3 || errCount % 10 === 0) {
-            log('error', 'ERROR', `Bot "${bot.name}" error (#${errCount}): ${e.message}`, { bot_id: bot.id });
+            log('error', 'ERROR', `Bot "${bot.name}" error (#${errCount}): ${e.message}`, { bot_id: bot.id, user_id: bot.user_id });
           }
           // Kredensial salah → pause otomatis
           if (/kredensial|Invalid API-key|permissions/i.test(e.message) && bot.mode === 'live') {
             queries.setBotStatus.run('paused', now(), bot.id);
-            log('warn', 'ENGINE', `Bot "${bot.name}" di-pause otomatis (masalah kredensial/izin)`, { bot_id: bot.id });
+            log('warn', 'ENGINE', `Bot "${bot.name}" di-pause otomatis (masalah kredensial/izin)`, { bot_id: bot.id, user_id: bot.user_id });
           }
         }
       }

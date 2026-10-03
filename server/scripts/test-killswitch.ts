@@ -81,17 +81,17 @@ async function main() {
 
   // Exchange live + kredensial mock
   db.prepare(`UPDATE exchanges SET mode='live', api_key_enc=?, api_secret_enc=? WHERE id='indodax'`).run(encrypt(API_KEY), encrypt(API_SECRET));
-  registry.reloadFromDb();
+  registry.reloadUser(0);
 
   // Buat 2 bot running
   for (const nm of ['Bot A', 'Bot B']) {
-    queries.insertBot.run({ name: nm, exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca', params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000, mode: 'live', auto_compound_pct: 100, status: 'running', state: '{}', max_daily_loss_pct: 0, created_at: now(), updated_at: now() });
+    queries.insertBot.run({ name: nm, exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca', params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000, mode: 'live', auto_compound_pct: 100, status: 'running', state: '{}', max_daily_loss_pct: 0, user_id: 0, created_at: now(), updated_at: now() });
   }
   const runningBefore = (queries.runningBots.all() as any[]).length;
   check('2 bot running sebelum kill switch', runningBefore === 2, `got ${runningBefore}`);
 
   // Aktifkan kill switch
-  const result = await activateKillSwitch('Test');
+  const result = await activateKillSwitch('Test', 0);
   check('semua bot di-pause', result.bots_paused === 2, `got ${result.bots_paused}`);
   check('2 order dibatalkan', result.orders_cancelled['indodax'] === 2, `got ${JSON.stringify(result.orders_cancelled)}`);
   check('tidak ada error', result.errors.length === 0, result.errors.join(';'));

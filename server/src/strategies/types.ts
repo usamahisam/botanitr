@@ -8,6 +8,10 @@ export interface StrategyContext {
   usdtIdr: number;
   /** Ambil klines (untuk scalper). Bisa lempar error jika tidak tersedia. */
   getKlines(interval: string, limit: number): Promise<number[][]>;
+  /** Saldo akun (untuk rebalance). Cache ringan di engine. */
+  getBalances(): Promise<{ asset: string; free: number; locked: number }[]>;
+  /** Harga last pair apa saja (untuk rebalance multi-aset). */
+  getPrice(pair: string): Promise<number>;
   now: number;
 }
 
@@ -27,7 +31,7 @@ export interface Action {
 export interface Strategy {
   readonly name: string;
   readonly label: string;
-  readonly defaultParams: Record<string, number | string>;
+  readonly defaultParams: Record<string, any>;
   init(params: any): any;
   onTick(ctx: StrategyContext, state: any, params: any): Action[] | Promise<Action[]>;
   describe(params: any): string;

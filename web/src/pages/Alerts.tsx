@@ -58,6 +58,7 @@ export default function Alerts() {
             <select value={exchange} onChange={e => setExchange(e.target.value)} className="input">
               <option value="indodax">Indodax</option>
               <option value="tokocrypto">Tokocrypto</option>
+              <option value="binance">Binance</option>
             </select>
           </div>
           <div>

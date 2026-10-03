@@ -26,10 +26,10 @@ export interface ExchangeBalanceView {
   error?: string;
 }
 
-/** Ambil saldo (paper/live) + estimasi nilai IDR per aset */
-export async function fetchExchangeBalance(exchangeId: string): Promise<ExchangeBalanceView> {
-  const row = queries.getExchange.get(exchangeId) as ExchangeRow;
-  const client = registry.get(exchangeId);
+/** Ambil saldo (paper/live) + estimasi nilai IDR per aset — terisolasi per user */
+export async function fetchExchangeBalance(exchangeId: string, userId = 0): Promise<ExchangeBalanceView> {
+  const row = db.prepare('SELECT * FROM exchanges WHERE id=? AND user_id=?').get(exchangeId, userId) as ExchangeRow | undefined;
+  const client = registry.getForUser(exchangeId, userId);
   const quote = client.quoteAsset;
   const usdtIdr = quote === 'IDR' ? 1 : await getUsdtIdr();
 
@@ -42,7 +42,7 @@ export async function fetchExchangeBalance(exchangeId: string): Promise<Exchange
 
   try {
     const isPaper = row?.mode === 'paper';
-    const balances = isPaper ? registry.getPaper(exchangeId).getBalances() : await client.getBalances();
+    const balances = isPaper ? registry.getPaperForUser(exchangeId, userId).getBalances() : await client.getBalances();
 
     let totalIdr = 0;
     const coins: ExchangeBalanceView['coins'] = [];
@@ -84,40 +84,49 @@ export async function fetchExchangeBalance(exchangeId: string): Promise<Exchange
     }
 
     if (row?.status !== 'ok') {
-      db.prepare(`UPDATE exchanges SET status='ok', last_sync=? WHERE id=?`).run(now(), exchangeId);
+      db.prepare(`UPDATE exchanges SET status='ok', last_sync=? WHERE id=? AND user_id=?`).run(now(), exchangeId, userId);
     } else {
-      db.prepare(`UPDATE exchanges SET last_sync=? WHERE id=?`).run(now(), exchangeId);
+      db.prepare(`UPDATE exchanges SET last_sync=? WHERE id=? AND user_id=?`).run(now(), exchangeId, userId);
     }
   } catch (e: any) {
     view.error = e.message;
     view.status = 'error';
-    db.prepare(`UPDATE exchanges SET status='error' WHERE id=?`).run(exchangeId);
+    db.prepare(`UPDATE exchanges SET status='error' WHERE id=? AND user_id=?`).run(exchangeId, userId);
   }
 
   return view;
 }
 
 /** Simpan snapshot untuk perhitungan profit harian & tren */
-export function snapshotBalances(views: ExchangeBalanceView[]) {
-  const ins = db.prepare(`INSERT INTO balance_snapshots (exchange_id, asset, free, locked, price_idr, total_idr, created_at) VALUES (?,?,?,?,?,?,?)`);
+export function snapshotBalances(views: ExchangeBalanceView[], userId = 0) {
+  const ins = db.prepare(`INSERT INTO balance_snapshots (user_id, exchange_id, asset, free, locked, price_idr, total_idr, created_at) VALUES (?,?,?,?,?,?,?,?)`);
   const ts = now();
   for (const v of views) {
     for (const c of v.coins) {
-      ins.run(v.id, c.symbol, c.qty, 0, c.qty > 0 ? c.value_idr / c.qty : 0, c.value_idr, ts);
+      ins.run(userId, v.id, c.symbol, c.qty, 0, c.qty > 0 ? c.value_idr / c.qty : 0, c.value_idr, ts);
     }
   }
 }
 
 let syncTimer: NodeJS.Timeout | null = null;
-/** Sinkron berkala tiap 60 detik */
-export function startBalanceSync(broadcast: (views: ExchangeBalanceView[]) => void) {
-  const run = async () => {
+/** Sinkron berkala tiap 60 detik — untuk semua user yang punya bot/data */
+export function startBalanceSync(broadcast: (views: ExchangeBalanceView[], userId: number) => void) {
+  const syncUser = async (userId: number) => {
+    const rows = db.prepare('SELECT id FROM exchanges WHERE user_id=?').all(userId) as any[];
+    const ids = rows.length > 0 ? rows.map(r => r.id) : ['indodax', 'tokocrypto', 'binance'];
     const views: ExchangeBalanceView[] = [];
-    for (const client of registry.list()) {
-      views.push(await fetchExchangeBalance(client.id));
+    for (const id of ids) {
+      views.push(await fetchExchangeBalance(id, userId));
     }
-    snapshotBalances(views);
-    broadcast(views);
+    snapshotBalances(views, userId);
+    broadcast(views, userId);
+  };
+  const run = async () => {
+    const users = db.prepare('SELECT id FROM users').all() as any[];
+    const ids = users.length > 0 ? users.map(u => u.id) : [0];
+    for (const uid of ids) {
+      await syncUser(uid).catch(e => log('error', 'ERROR', `Sinkron saldo gagal: ${e.message}`, { user_id: uid }));
+    }
   };
   run().catch(e => log('error', 'ERROR', `Sinkron saldo gagal: ${e.message}`));
   syncTimer = setInterval(() => run().catch(e => log('error', 'ERROR', `Sinkron saldo gagal: ${e.message}`)), 60000);

@@ -2,6 +2,87 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, PairRow, Preset } from '../lib/api';
 import { Icon } from '../components/icons';
+import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
+
+interface BtResult {
+  winRate: number; profitPct: number; trades: number; maxDrawdownPct: number;
+  equity: { t: number; v: number }[]; candles: number; note?: string;
+}
+
+function BacktestPanel({ exchange, pair, strategy, params, budget }: {
+  exchange: string; pair: string; strategy: string; params: Record<string, any>; budget: number;
+}) {
+  const [days, setDays] = useState(14);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<BtResult | null>(null);
+  const [err, setErr] = useState('');
+
+  const run = async () => {
+    setLoading(true); setErr(''); setResult(null);
+    try {
+      const r = await api.post<BtResult>('/backtest', { exchange_id: exchange, pair, strategy, params, days, budget });
+      setResult(r);
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const up = (result?.profitPct ?? 0) >= 0;
+  return (
+    <div className="mt-4 border-t border-white/[0.07] pt-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <span className="lbl">Uji backtest · {pair}</span>
+        <div className="flex items-center gap-2">
+          <div className="seg">
+            {[7, 14, 30].map(d => (
+              <button key={d} onClick={() => setDays(d)} className={days === d ? 'on' : ''}>{d} hari</button>
+            ))}
+          </div>
+          <button onClick={run} disabled={loading} className="btn btn-ghost btn-sm">
+            {loading ? 'Menguji…' : 'Jalankan uji'}
+          </button>
+        </div>
+      </div>
+      {err && <div className="text-[13px] txt-down mt-2">{err}</div>}
+      {result && (
+        <div className="mt-3">
+          {result.note && <div className="text-xs txt-3 mb-2">{result.note}</div>}
+          <div className="h-[140px]">
+            {result.equity.length > 1 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={result.equity.map((e, i) => ({ i, v: e.v }))} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
+                  <defs>
+                    <linearGradient id="bt-eq" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={up ? '#2ebd85' : '#f6465d'} stopOpacity={0.25} />
+                      <stop offset="100%" stopColor={up ? '#2ebd85' : '#f6465d'} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <YAxis hide domain={['dataMin', 'dataMax']} />
+                  <Tooltip formatter={(v: any) => Number(v).toLocaleString('id-ID')} labelFormatter={() => ''}
+                    contentStyle={{ background: '#131a24', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, fontSize: 12 }} />
+                  <Area type="monotone" dataKey="v" stroke={up ? '#2ebd85' : '#f6465d'} strokeWidth={1.5} fill="url(#bt-eq)" isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : <div className="h-full flex items-center justify-center text-xs txt-3 border border-dashed border-white/10 rounded-md">Data candle kurang untuk rentang ini.</div>}
+          </div>
+          <div className="grid grid-cols-4 gap-px bg-white/[0.06] border border-white/[0.06] rounded-md overflow-hidden mt-3">
+            {[
+              { l: 'Return', v: `${result.profitPct >= 0 ? '+' : ''}${result.profitPct.toFixed(2)}%`, up: result.profitPct >= 0 },
+              { l: 'Win rate', v: `${result.winRate.toFixed(1)}%`, up: result.winRate >= 50 },
+              { l: 'Trade', v: String(result.trades), up: undefined },
+              { l: 'Max DD', v: `${result.maxDrawdownPct.toFixed(1)}%`, up: result.maxDrawdownPct < 10 }
+            ].map((s, i) => (
+              <div key={i} className="bg-[#0f151d] px-3 py-2">
+                <div className="lbl !text-[10px]">{s.l}</div>
+                <div className={`num text-[13px] font-semibold mt-0.5 ${s.up === undefined ? '' : s.up ? 'txt-up' : 'txt-down'}`}>{s.v}</div>
+              </div>
+            ))}
+          </div>
+          <div className="text-[11px] txt-3 mt-1.5 num">{result.candles} candle · hasil simulasi, bukan jaminan performa.</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const PARAM_FIELDS: Record<string, { key: string; label: string; hint?: string }[]> = {
   grid: [
@@ -18,6 +99,9 @@ const PARAM_FIELDS: Record<string, { key: string; label: string; hint?: string }
   ],
   harvester: [
     { key: 'drop_pct', label: 'Akumulasi tiap turun (%)' }, { key: 'harvest_pct', label: 'Target panen (%)' }, { key: 'max_buys', label: 'Maks akumulasi' }
+  ],
+  rebalance: [
+    { key: 'threshold_pct', label: 'Threshold deviasi (%)' }, { key: 'interval_min', label: 'Cek tiap (menit)' }, { key: 'max_trade_quote', label: 'Maks nominal per order' }
   ]
 };
 
@@ -108,6 +192,7 @@ export default function Wizard() {
               <div className="lbl mb-1.5">Exchange</div>
               <select value={exchange} onChange={e => setExchange(e.target.value)} className="input">
                 <option value="indodax">Indodax (IDR)</option>
+                <option value="binance">Binance (USDT)</option>
                 <option value="tokocrypto">Tokocrypto (USDT)</option>
               </select>
             </div>
@@ -174,6 +259,16 @@ export default function Wizard() {
             <div className="lbl mb-1.5">Nama bot</div>
             <input value={botName} onChange={e => setBotName(e.target.value)} className="input" />
           </div>
+          {selected.strategi === 'rebalance' && (
+            <div className="mb-3">
+              <div className="lbl mb-1.5">Target alokasi (JSON, contoh: {'{"BTC": 50, "ETH": 30}'} — sisa jadi kas)</div>
+              <textarea
+                value={typeof params.targets === 'string' ? params.targets : JSON.stringify(params.targets ?? { BTC: 50, ETH: 30 })}
+                onChange={e => setParams({ ...params, targets: e.target.value })}
+                rows={2} spellCheck={false}
+                className="input num" />
+            </div>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {(PARAM_FIELDS[selected.strategi] || []).map(f => (
               <div key={f.key}>
@@ -197,6 +292,7 @@ export default function Wizard() {
             </div>
           </div>
           <p className="text-[11px] txt-3 mt-2">Batas rugi 0 = nonaktif. Bot dijeda otomatis bila rugi harian melewati batas.</p>
+          <BacktestPanel exchange={exchange} pair={pair} strategy={selected.strategi} params={params} budget={budget} />
           <div className="flex justify-between mt-4">
             <button onClick={() => setStep(1)} className="btn btn-ghost">Kembali</button>
             <button onClick={() => setStep(3)} className="btn btn-primary">Lanjut <Icon.arrowRight size={14} /></button>

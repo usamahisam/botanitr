@@ -7,6 +7,8 @@ import { Server as SocketIOServer } from 'socket.io';
 import { config, validateConfig } from './config.js';
 import { registry } from './exchange/registry.js';
 import { api, apiErrorHandler } from './routes/api.js';
+import { authRouter } from './routes/auth.js';
+import { requireAuth, verifyToken } from './auth.js';
 import { setBroadcaster, log } from './log.js';
 import { startScheduler, stopScheduler } from './engine/scheduler.js';
 import { startBalanceSync, stopBalanceSync } from './engine/balances.js';
@@ -26,7 +28,8 @@ async function main() {
   const app = express();
   app.use(cors());
   app.use(express.json());
-  app.use('/api', api);
+  app.use('/api', authRouter);
+  app.use('/api', requireAuth, api);
   app.use(apiErrorHandler);
 
   // Serve frontend build jika ada
@@ -38,17 +41,30 @@ async function main() {
   const server = http.createServer(app);
   const io = new SocketIOServer(server, { cors: { origin: '*' } });
 
-  // Broadcaster → WS
-  const broadcast = (event: string, payload: any) => io.emit(event, payload);
+  // Socket auth: token JWT → gabung room user-N (isolasi data antar user)
+  io.use((socket, next) => {
+    const token = (socket.handshake.auth as any)?.token;
+    const user = token ? verifyToken(String(token)) : null;
+    if (!user) return next(new Error('unauthorized'));
+    socket.data.userId = user.id;
+    next();
+  });
+
+  // Broadcaster → room user (tidak bocor antar akun)
+  const broadcast = (event: string, payload: any, userId?: number) => {
+    if (userId === undefined) io.emit(event, payload);
+    else io.to(`user-${userId}`).emit(event, payload);
+  };
   setBroadcaster(broadcast);
 
   io.on('connection', socket => {
+    socket.join(`user-${socket.data.userId}`);
     socket.emit('connected', { time: new Date().toISOString() });
   });
 
   // Jalankan engine
   startScheduler(broadcast);
-  startBalanceSync(views => broadcast('balances', views));
+  startBalanceSync((views, userId) => broadcast('balances', views, userId));
   startTelegram();
   startReconciler();
   startEquityRecorder();

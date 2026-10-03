@@ -19,11 +19,11 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
   // Idempotensi lokal (double-tick dalam satu proses)
   if (queries.tradeByClientId.get(clientOrderId)) return null;
 
-  const client = registry.get(bot.exchange_id);
+  const client = registry.getForUser(bot.exchange_id, bot.user_id);
   const paper = bot.mode === 'paper';
-  const trader = paper ? registry.getPaper(bot.exchange_id) : client;
+  const trader = paper ? registry.getPaperForUser(bot.exchange_id, bot.user_id) : client;
 
-  const minLot = (queries.getExchange.get(bot.exchange_id) as any)?.min_lot_idr ?? 10000;
+  const minLot = (db.prepare('SELECT * FROM exchanges WHERE id=? AND user_id=?').get(bot.exchange_id, bot.user_id) as any)?.min_lot_idr ?? 10000;
 
   try {
     let result: { order_id: string; price: number; qty: number; fee: number; side: 'buy' | 'sell' };
@@ -46,7 +46,7 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
 
     const realized = action.type === 'sell' ? value - result.fee - (action.costBasis ?? 0) : 0;
     const row: Omit<TradeRow, 'id'> = {
-      bot_id: bot.id, exchange_id: bot.exchange_id, pair: bot.pair,
+      user_id: bot.user_id, bot_id: bot.id, exchange_id: bot.exchange_id, pair: bot.pair,
       side: action.type, price: result.price, qty: result.qty, fee: result.fee,
       value, realized_pnl: realized, cost_basis: action.costBasis ?? 0,
       mode: bot.mode, order_id: result.order_id, client_order_id: clientOrderId,
@@ -59,7 +59,7 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
     const sideLabel = action.type === 'buy' ? 'BELI' : 'JUAL';
     log('info', (action.tag as any) || 'TRADE',
       `${modeBadge} ${sideLabel} ${bot.pair} ${result.qty.toFixed(8)} @ ${Math.round(result.price)} — ${action.reason}`,
-      { bot_id: bot.id, impact_rp: action.impactRp ?? (realized * usdtIdr || undefined) });
+      { bot_id: bot.id, impact_rp: action.impactRp ?? (realized * usdtIdr || undefined), user_id: bot.user_id });
 
     // Auto-compound setelah profit
     if (realized > 0) {
@@ -68,7 +68,7 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
 
     return trade;
   } catch (e: any) {
-    log('error', 'ERROR', `Eksekusi ${action.type} ${bot.pair} gagal: ${e.message}`, { bot_id: bot.id });
+    log('error', 'ERROR', `Eksekusi ${action.type} ${bot.pair} gagal: ${e.message}`, { bot_id: bot.id, user_id: bot.user_id });
     throw e;
   }
 }

@@ -9,24 +9,24 @@ function todayStartUtcIso(): string {
 }
 
 /**
- * Perhitungan PnL & statistik untuk dashboard.
+ * Perhitungan PnL & statistik untuk dashboard (terisolasi per user).
  * Semua dalam quote currency masing-masing; konversi IDR dilakukan pemanggil via usdtIdr.
  */
 export const pnl = {
   /** Realized PnL total per exchange + mode */
-  realized(exchangeId?: string, mode?: string): number {
-    let sql = 'SELECT COALESCE(SUM(realized_pnl),0) s FROM trades WHERE 1=1';
-    const args: any[] = [];
+  realized(exchangeId?: string, mode?: string, userId = 0): number {
+    let sql = 'SELECT COALESCE(SUM(realized_pnl),0) s FROM trades WHERE user_id=?';
+    const args: any[] = [userId];
     if (exchangeId) { sql += ' AND exchange_id=?'; args.push(exchangeId); }
     if (mode) { sql += ' AND mode=?'; args.push(mode); }
     return (db.prepare(sql).get(...args) as any).s;
   },
 
   /** Win rate dari siklus sell dengan realized_pnl != 0 */
-  winRate(exchangeId?: string): { wins: number; total: number; rate: number } {
+  winRate(exchangeId?: string, userId = 0): { wins: number; total: number; rate: number } {
     let sql = `SELECT COUNT(*) total, SUM(CASE WHEN realized_pnl>0 THEN 1 ELSE 0 END) wins
-               FROM trades WHERE side='sell' AND realized_pnl != 0`;
-    const args: any[] = [];
+               FROM trades WHERE side='sell' AND realized_pnl != 0 AND user_id=?`;
+    const args: any[] = [userId];
     if (exchangeId) { sql += ' AND exchange_id=?'; args.push(exchangeId); }
     const row = db.prepare(sql).get(...args) as any;
     const total = row.total || 0;
@@ -35,9 +35,9 @@ export const pnl = {
   },
 
   /** Realized PnL hari ini (WIB) */
-  realizedToday(exchangeId?: string): number {
-    let sql = `SELECT COALESCE(SUM(realized_pnl),0) s FROM trades WHERE created_at >= ?`;
-    const args: any[] = [todayStartUtcIso()];
+  realizedToday(exchangeId?: string, userId = 0): number {
+    let sql = `SELECT COALESCE(SUM(realized_pnl),0) s FROM trades WHERE user_id=? AND created_at >= ?`;
+    const args: any[] = [userId, todayStartUtcIso()];
     if (exchangeId) { sql += ' AND exchange_id=?'; args.push(exchangeId); }
     return (db.prepare(sql).get(...args) as any).s;
   },

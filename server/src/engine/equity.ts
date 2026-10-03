@@ -18,7 +18,7 @@ function todayWib(): string {
  *  dikelola bot. Karena bot tidak punya sub-akun terpisah, kita aproksimasi:
  *  equity ≈ current_budget (setelah compound) + floating PnL posisi terbuka. */
 async function computeBotEquity(bot: BotRow): Promise<number> {
-  const client = registry.get(bot.exchange_id);
+  const client = registry.getForUser(bot.exchange_id, bot.user_id);
   let floating = 0;
   try {
     const state = JSON.parse(bot.state || '{}');
@@ -35,7 +35,7 @@ async function computeBotEquity(bot: BotRow): Promise<number> {
 
 /** Rekam equity hari ini untuk semua bot aktif (upsert per tanggal) */
 export async function recordDailyEquity(): Promise<number> {
-  const bots = (queries.allBots.all() as BotRow[]).filter(b => b.status !== 'stopped');
+  const bots = (db.prepare(`SELECT * FROM bots WHERE status != 'stopped'`).all() as BotRow[]);
   const date = todayWib();
   const ts = now();
   const ins = db.prepare(`INSERT INTO bot_equity (bot_id, date, equity_quote, recorded_at)
