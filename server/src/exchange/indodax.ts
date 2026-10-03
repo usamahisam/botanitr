@@ -22,6 +22,20 @@ export class IndodaxClient implements ExchangeClient {
   /** Client TAPI v2 (dipakai otomatis jika kredensial adalah key v2) */
   private v2 = new IndodaxV2Client();
   private useV2: boolean | null = null; // null = belum dideteksi
+  /** Paksa versi API: 'auto' | 'v1' | 'v2' (dari Pengaturan) */
+  private forceVersion: 'auto' | 'v1' | 'v2' = 'auto';
+
+  setApiVersion(v: string) {
+    const mode = v === 'v1' || v === 'v2' ? v : 'auto';
+    if (mode !== this.forceVersion) {
+      this.forceVersion = mode;
+      this.useV2 = null; // reset deteksi saat pilihan berubah
+    }
+  }
+  /** Versi yang sedang aktif: 'v1' | 'v2' | null (belum dipakai/dideteksi) */
+  get activeVersion(): 'v1' | 'v2' | null {
+    return this.useV2 === null ? null : (this.useV2 ? 'v2' : 'v1');
+  }
 
   setProxy(url?: string | null) {
     this.proxyUrl = url || null;
@@ -38,8 +52,15 @@ export class IndodaxClient implements ExchangeClient {
   /** Deteksi versi API: true jika kredensial valid sebagai key TAPI v2 */
   private async detectV2(): Promise<boolean> {
     if (this.useV2 !== null) return this.useV2;
+    if (this.forceVersion === 'v1') { this.useV2 = false; return false; }
     if (!this.hasCredentials()) { this.useV2 = false; return false; }
     this.useV2 = await this.v2.probe();
+    if (this.forceVersion === 'v2' && !this.useV2) {
+      throw new ExchangeError(
+        'Mode paksa v2 tetapi kredensial bukan kunci TAPI v2 yang valid. ' +
+        'Buat kunci khusus di indodax.com/trade_api, atau pilih Otomatis.'
+      );
+    }
     log('info', 'SYSTEM', `Indodax: menggunakan TAPI ${this.useV2 ? 'v2' : 'v1 (legacy)'} untuk akun ini`);
     return this.useV2;
   }

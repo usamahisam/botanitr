@@ -1,4 +1,4 @@
-import { db, queries, ExchangeRow } from '../db/index.js';
+import { db, queries, settings, ExchangeRow } from '../db/index.js';
 import { decrypt } from '../crypto.js';
 import { ExchangeClient } from './base.js';
 import { IndodaxClient } from './indodax.js';
@@ -64,6 +64,10 @@ class ExchangeRegistry {
       try {
         client.setCredentials(decrypt(row.api_key_enc), decrypt(row.api_secret_enc));
       } catch { /* SECRET_KEY berubah → kredensial tidak bisa didekripsi */ }
+    }
+    // Pilihan versi API Indodax (auto/v1/v2) dari Pengaturan milik user
+    if (exchangeId === 'indodax' && client instanceof IndodaxClient) {
+      client.setApiVersion(settings.get('indodax_api_version', 'auto', userId));
     }
   }
 

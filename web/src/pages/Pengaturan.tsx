@@ -77,6 +77,7 @@ function UserManager({ me, onChanged }: { me: AuthUser; onChanged?: () => void }
 interface ExchangeSettings {
   id: string; name: string; mode: string; status: string; proxy_url: string | null;
   api_key_masked: string; has_credentials: boolean;
+  api_version_setting?: string; api_version_active?: string | null;
 }
 
 function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: () => void }) {
@@ -84,6 +85,7 @@ function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: 
   const [apiSecret, setApiSecret] = useState('');
   const [proxy, setProxy] = useState(ex.proxy_url || '');
   const [mode, setMode] = useState(ex.mode);
+  const [apiVersion, setApiVersion] = useState(ex.api_version_setting || 'auto');
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -95,6 +97,9 @@ function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: 
         ...(apiSecret ? { api_secret: apiSecret } : {}),
         proxy_url: proxy, mode
       });
+      if (ex.id === 'indodax') {
+        await api.put('/settings', { indodax_api_version: apiVersion });
+      }
       setResult({ ok: true, text: 'Konfigurasi tersimpan.' });
       setApiKey(''); setApiSecret('');
       onSaved();
@@ -139,6 +144,22 @@ function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: 
             <button onClick={() => setMode('live')} className={`btn btn-sm ${mode === 'live' ? 'btn-sell' : 'btn-ghost'}`}>Riil</button>
           </div>
         </div>
+        {ex.id === 'indodax' && (
+          <div>
+            <div className="lbl mb-1.5">Versi API {ex.api_version_active && (
+              <span className="tag tag-accent ml-1">aktif: {ex.api_version_active}</span>
+            )}</div>
+            <select value={apiVersion} onChange={e => setApiVersion(e.target.value)} className="input">
+              <option value="auto">Otomatis (deteksi dari kunci)</option>
+              <option value="v1">v1 Legacy (/tapi)</option>
+              <option value="v2">v2 (api.indodax.com)</option>
+            </select>
+            <p className="text-[11px] txt-3 mt-1.5 leading-relaxed">
+              v2 butuh kunci khusus TAPIv2 (buat di indodax.com/trade_api). Paksa v2 dengan kunci v1 akan error —
+              pilih Otomatis bila ragu.
+            </p>
+          </div>
+        )}
         {result && (
           <div className={`flex items-start gap-2 text-[13px] rounded-md px-3 py-2 border ${result.ok ? 'border-[rgba(46,189,133,0.3)] bg-[rgba(46,189,133,0.07)]' : 'border-[rgba(246,70,93,0.3)] bg-[rgba(246,70,93,0.07)]'}`}>
             {result.ok ? <Icon.check size={14} className="txt-up mt-0.5" /> : <Icon.warn size={14} className="txt-down mt-0.5" />}

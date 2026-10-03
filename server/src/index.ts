@@ -16,6 +16,7 @@ import { startTelegram, stopTelegram } from './telegram/bot.js';
 import { startReconciler, stopReconciler } from './engine/reconciler.js';
 import { startEquityRecorder, stopEquityRecorder } from './engine/equity.js';
 import { startAlertEngine, stopAlertEngine } from './engine/alerts.js';
+import { startHistoryRecorder, stopHistoryRecorder } from './engine/history.js';
 
 async function main() {
   // Validasi config
@@ -69,6 +70,7 @@ async function main() {
   startReconciler();
   startEquityRecorder();
   startAlertEngine();
+  startHistoryRecorder();
 
   server.listen(config.port, config.host, () => {
     log('info', 'SYSTEM', `Server berjalan di http://${config.host}:${config.port}`);
@@ -83,6 +85,7 @@ async function main() {
     stopReconciler();
     stopEquityRecorder();
     stopAlertEngine();
+    stopHistoryRecorder();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000);
   };

@@ -191,15 +191,46 @@ export function backtest(preset: PresetDef, klines: Kline[], budgetQuote: number
   };
 }
 
+/**
+ * Ambil candle secara cerdas: exchange dulu, fallback ke riwayat lokal.
+ * Mengembalikan sumber data agar UI bisa memberi catatan jujur.
+ */
+export async function fetchKlinesSmart(
+  exchangeId: string, pair: string, interval: string, limit: number, ms = 30000
+): Promise<{ klines: Kline[]; source: 'exchange' | 'local' | 'none' }> {
+  const client = registry.get(exchangeId);
+  try {
+    const kl = await klinesWithTimeout(client, pair, interval, limit, ms);
+    if (kl.length >= 30) return { klines: kl, source: 'exchange' };
+  } catch (e: any) {
+    if (e instanceof MarketDataError) throw e;
+  }
+  // Fallback: riwayat lokal yang dikumpulkan perekam tiap menit
+  const { getLocalKlines, localCoverage } = await import('./history.js');
+  const local = getLocalKlines(exchangeId, pair, interval, limit);
+  if (local.length >= 30) {
+    const cov = localCoverage(exchangeId, pair);
+    if (cov.since) {
+      // Sisipkan info cakupan via tanggal candle pertama (UI membaca note terpisah)
+      (local as any).__since = cov.since;
+    }
+    return { klines: local, source: 'local' };
+  }
+  const cov = localCoverage(exchangeId, pair);
+  const detail = cov.points > 0
+    ? `Riwayat lokal baru ${cov.points} titik sejak ${cov.since} — biarkan server berjalan agar terkumpul.`
+    : `Riwayat lokal belum ada — biarkan server berjalan agar harga tercatat tiap menit.`;
+  throw new MarketDataError(`Data candle kurang untuk rentang ini. ${detail}`);
+}
+
 /** Backtest kustom: strategi + parameter + rentang hari pilihan user */
 export async function runCustomBacktest(
   exchangeId: string, pair: string, strategy: string, params: Record<string, any>,
   days: number, budgetQuote: number
 ): Promise<BacktestResult & { candles: number; note?: string }> {
-  const client = registry.get(exchangeId);
   // Rebalance butuh multi-aset: tampilkan buy-and-hold pembanding untuk pair ini
   if (strategy === 'rebalance') {
-    const klines = await klinesWithTimeout(client, pair, '1d', Math.min(Math.max(days, 7), 365));
+    const { klines, source } = await fetchKlinesSmart(exchangeId, pair, '1d', Math.min(Math.max(days, 7), 365));
     const closes = klines.map(k => k[4]);
     if (closes.length < 2) return { winRate: 0, profitPct: 0, trades: 0, maxDrawdownPct: 0, equity: [], candles: closes.length, note: 'Data kurang' };
     const first = closes[0];
@@ -208,19 +239,23 @@ export async function runCustomBacktest(
     return {
       winRate: 0, profitPct: Math.round(profitPct * 100) / 100, trades: 0,
       maxDrawdownPct: 0, equity, candles: closes.length,
-      note: 'Buy-and-hold pembanding (rebalance butuh data multi-aset)'
+      note: `Buy-and-hold pembanding (rebalance butuh data multi-aset) · sumber: ${source === 'local' ? 'riwayat lokal' : 'exchange'}`
     };
   }
   const interval = strategy === 'scalper' ? '1m' : '1h';
   const perDay = strategy === 'scalper' ? 500 : 24;
   const limit = Math.min(Math.max(days, 1) * perDay, 1000);
-  const klines = await klinesWithTimeout(client, pair, interval, limit, 30000);
+  const { klines, source } = await fetchKlinesSmart(exchangeId, pair, interval, limit);
   const pseudo: PresetDef = {
     id: 'custom', nama: 'Kustom', strategi: strategy, gaya: '', deskripsi: '',
     params, leverage_label: '', tp_sl_label: '', timeframe: interval
   };
   const out = backtest(pseudo, klines, budgetQuote);
-  return { ...out, candles: klines.length };
+  return {
+    ...out,
+    candles: klines.length,
+    note: source === 'local' ? `Sumber: riwayat lokal (exchange hanya menyimpan histori pendek)` : undefined
+  };
 }
 
 export interface PresetRecommendation extends PresetDef {
@@ -245,20 +280,20 @@ async function klinesWithTimeout(client: any, pair: string, interval: string, li
   ]);
 }
 
-/** Analisis + skor 4 preset untuk satu pasangan (cache 15 menit) */
+/** Analisis + skor preset untuk satu pasangan (cache 15 menit) */
 export async function recommend(exchangeId: string, pair: string, budgetQuote = 100000): Promise<PresetRecommendation[]> {
   const key = `${exchangeId}:${pair}`;
   const c = recCache.get(key);
   if (c && Date.now() - c.ts < 15 * 60 * 1000) return c.data;
 
-  const client = registry.get(exchangeId);
-  // Candle harian untuk metrik + backtest (butuh ≥30 candle) + 1m untuk scalper
+  // Candle harian untuk metrik + backtest (butuh ≥30 candle) + 1m untuk scalper.
+  // Sumber: exchange dulu, fallback riwayat lokal.
   let daily: Kline[] = [];
   let micro: Kline[] = [];
-  try { daily = await klinesWithTimeout(client, pair, '1d', 120); } catch (e: any) {
+  try { daily = (await fetchKlinesSmart(exchangeId, pair, '1d', 120)).klines; } catch (e: any) {
     if (e instanceof MarketDataError) throw e;
   }
-  try { micro = await klinesWithTimeout(client, pair, '1m', 500); } catch (e: any) {
+  try { micro = (await fetchKlinesSmart(exchangeId, pair, '1m', 500)).klines; } catch (e: any) {
     if (e instanceof MarketDataError && daily.length === 0) throw e;
   }
   if (daily.length < 5 && micro.length >= 30) daily = micro;

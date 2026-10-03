@@ -187,8 +187,18 @@ CREATE TABLE IF NOT EXISTS market_ratings (
   PRIMARY KEY (preset_id, user_id)
 );
 
+-- Riwayat harga lokal (ticker snapshot, untuk backtest & analisis)
+CREATE TABLE IF NOT EXISTS price_history (
+  exchange_id TEXT NOT NULL,
+  pair TEXT NOT NULL,
+  ts INTEGER NOT NULL,          -- epoch ms
+  price REAL NOT NULL,
+  PRIMARY KEY (exchange_id, pair, ts)
+);
+
 -- Index bantu
 CREATE INDEX IF NOT EXISTS idx_equity_bot ON bot_equity(bot_id, date);
 CREATE INDEX IF NOT EXISTS idx_alerts_active ON price_alerts(active);
 CREATE INDEX IF NOT EXISTS idx_alerts_user ON price_alerts(user_id, active);
 CREATE INDEX IF NOT EXISTS idx_market_public ON market_presets(public, installs);
+CREATE INDEX IF NOT EXISTS idx_price_hist ON price_history(exchange_id, pair, ts);

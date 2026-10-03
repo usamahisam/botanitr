@@ -83,12 +83,22 @@ api.get('/exchanges', asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   ensureUserExchanges(userId);
   const rows = db.prepare('SELECT * FROM exchanges WHERE user_id=? ORDER BY id').all(userId) as ExchangeRow[];
-  res.json(rows.map(e => ({
-    id: e.id, name: e.name, mode: e.mode, status: e.status, enabled: e.enabled,
-    proxy_url: e.proxy_url, min_lot_idr: e.min_lot_idr, last_sync: e.last_sync,
-    api_key_masked: e.api_key_enc ? mask(safeDecrypt(e.api_key_enc)) : '',
-    has_credentials: !!(e.api_key_enc && e.api_secret_enc)
-  })));
+  const { IndodaxClient } = await import('../exchange/indodax.js');
+  res.json(rows.map(e => {
+    const out: any = {
+      id: e.id, name: e.name, mode: e.mode, status: e.status, enabled: e.enabled,
+      proxy_url: e.proxy_url, min_lot_idr: e.min_lot_idr, last_sync: e.last_sync,
+      api_key_masked: e.api_key_enc ? mask(safeDecrypt(e.api_key_enc)) : '',
+      has_credentials: !!(e.api_key_enc && e.api_secret_enc)
+    };
+    // Info versi API Indodax: pilihan user + hasil deteksi terakhir
+    if (e.id === 'indodax') {
+      const client = registry.getForUser('indodax', userId);
+      out.api_version_setting = settings.get('indodax_api_version', 'auto', userId);
+      out.api_version_active = client instanceof IndodaxClient ? client.activeVersion : null;
+    }
+    return out;
+  }));
 }));
 
 function safeDecrypt(enc: string): string {
@@ -413,9 +423,17 @@ api.get('/settings', asyncH(async (req: any, res: any) => {
 api.put('/settings', asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   const body = req.body || {};
-  const allowed = ['telegram_bot_token', 'telegram_allowed_chat_ids', 'proxy_telegram', 'default_paper_mode', 'daily_summary_time'];
+  if (body.indodax_api_version !== undefined && body.indodax_api_version !== '' &&
+      !['auto', 'v1', 'v2'].includes(String(body.indodax_api_version))) {
+    return res.status(400).json({ error: 'indodax_api_version harus auto, v1, atau v2' });
+  }
+  const allowed = ['telegram_bot_token', 'telegram_allowed_chat_ids', 'proxy_telegram', 'default_paper_mode', 'daily_summary_time', 'indodax_api_version'];
   for (const k of allowed) {
     if (body[k] !== undefined && body[k] !== '') settings.set(k, String(body[k]), userId);
+  }
+  // Pilihan versi API berubah → terapkan ulang ke client Indodax milik user
+  if (body.indodax_api_version !== undefined) {
+    registry.reloadUser(userId);
   }
   // Sinkron chat Telegram milik user
   if (body.telegram_allowed_chat_ids !== undefined) {

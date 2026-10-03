@@ -143,6 +143,14 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] E2E `test-v2` 21/21 ✅ + `test-auth-http` 12/12 ✅; total suite 88/88 ✅
 - [x] Dokumentasi `docs/15-v2-multipengguna-marketplace.md` + ROADMAP ditandai selesai
 
+## Revisi: Data Backtest Indodax + Pilihan Versi API (ditambahkan)
+- [x] Investigasi: `/api/trades` Indodax hanya ~500 trade (±5 jam) → mustahil backtest harian; tidak ada OHLC publik lain
+- [x] Perekam riwayat harga lokal (`price_history`, tiap menit, retensi 45 hari, via summaries sekaligus untuk IDR)
+- [x] Smart fetch wizard (exchange → fallback lokal + catatan sumber jujur di UI)
+- [x] Pilihan versi API Indodax auto/v1/v2 (client `setApiVersion`, settings, validasi, badge aktif di Pengaturan)
+- [x] Verifikasi live: scalper XRPIDR 193 candle jalan; grid gagal jujur + panduan akumulasi; selector v1/auto/invalid OK
+- [x] Suite tetap 88/88 ✅
+
 ## Redesain UI Terminal (ditambahkan)
 - [x] Tema gelap profesional: index.css (token, .panel/.tbl/.btn/.tag/.input/.seg/.num), tanpa emoji
 - [x] Set ikon SVG inline `components/icons.tsx` (18 ikon, stroke)
