@@ -238,11 +238,11 @@ api.get('/bots/:id/trend', asyncH(async (req: any, res: any) => {
   res.json(pnl.botTrend(Number(req.params.id), Number(req.query.days || 7)));
 }));
 
-// Equity curve per bot
+// Equity curve per bot (termasuk titik live agar langsung tampil)
 api.get('/bots/:id/equity', asyncH(async (req: any, res: any) => {
   if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   const { getEquityCurve } = await import('../engine/equity.js');
-  res.json(getEquityCurve(Number(req.params.id), Number(req.query.days || 30)));
+  res.json(await getEquityCurve(Number(req.params.id), Number(req.query.days || 30)));
 }));
 
 // ===== Quick Trade =====

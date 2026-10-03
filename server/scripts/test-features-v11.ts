@@ -61,7 +61,7 @@ async function main() {
   const botId = Number(info.lastInsertRowid);
   const n = await recordDailyEquity();
   check('recordDailyEquity mencatat ≥1 bot', n >= 1, `got ${n}`);
-  const curve = getEquityCurve(botId, 30);
+  const curve = await getEquityCurve(botId, 30);
   check('curve tidak kosong', curve.length >= 1, `len=${curve.length}`);
   check('curve punya titik equity hari ini (105000)', curve.some(c => c.equity === 105000), JSON.stringify(curve));
   // Titik awal budget hanya muncul jika bot dibuat di tanggal berbeda dari hari ini

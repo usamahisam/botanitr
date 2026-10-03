@@ -14,7 +14,15 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [equity, setEquity] = useState<{ date: string; equity: number }[]>([]);
   useEffect(() => {
-    api.get<{ date: string; equity: number }[]>(`/bots/${bot.id}/equity?days=30`).then(setEquity).catch(() => {});
+    let alive = true;
+    const fetchEq = () => {
+      api.get<{ date: string; equity: number }[]>(`/bots/${bot.id}/equity?days=30`)
+        .then(d => { if (alive) setEquity(d); })
+        .catch(() => {});
+    };
+    fetchEq();
+    const t = setInterval(fetchEq, 60000); // segarkan titik live tiap menit
+    return () => { alive = false; clearInterval(t); };
   }, [bot.id, bot.current_budget]);
   const act = async (action: string) => {
     setBusy(true);

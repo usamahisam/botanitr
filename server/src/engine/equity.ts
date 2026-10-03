@@ -60,8 +60,12 @@ export function startEquityRecorder() {
 }
 export function stopEquityRecorder() { if (timer) clearInterval(timer); }
 
-/** Data equity untuk grafik: gabungkan titik budget awal + equity harian */
-export function getEquityCurve(botId: number, days = 30): { date: string; equity: number }[] {
+/**
+ * Data equity untuk grafik: titik budget awal + equity harian + titik live.
+ * Titik live (equity saat ini, dihitung on-the-fly) menjamin kurva selalu
+ * punya ≥2 titik sehingga grafik langsung tampil walau bot baru dibuat.
+ */
+export async function getEquityCurve(botId: number, days = 30): Promise<{ date: string; equity: number }[]> {
   const bot = queries.getBot.get(botId) as BotRow | undefined;
   if (!bot) return [];
   const rows = db.prepare(`SELECT date, equity_quote FROM bot_equity WHERE bot_id=? ORDER BY date DESC LIMIT ?`)
@@ -70,6 +74,22 @@ export function getEquityCurve(botId: number, days = 30): { date: string; equity
   // Titik awal = budget awal saat bot dibuat
   const startDate = bot.created_at.slice(0, 10);
   if (curve.length === 0 || curve[0].date > startDate) {
+    curve.unshift({ date: startDate, equity: bot.budget_idr });
+  }
+  // Titik live: equity saat ini (budget + floating posisi terbuka)
+  try {
+    const live = await computeBotEquity(bot);
+    const today = todayWib();
+    const last = curve[curve.length - 1];
+    if (last && last.date === today) {
+      last.equity = live; // segarkan titik hari ini dengan nilai live
+    } else {
+      curve.push({ date: today, equity: live });
+    }
+  } catch { /* abaikan — kurva historis tetap dikembalikan */ }
+  // Jamin minimal 2 titik (mis. bot baru dibuat hari ini) agar grafik tampil.
+  // Sumbu-x grafik memakai indeks, jadi label tanggal yang sama tidak masalah.
+  if (curve.length === 1) {
     curve.unshift({ date: startDate, equity: bot.budget_idr });
   }
   return curve;
