@@ -114,3 +114,29 @@ CREATE TABLE IF NOT EXISTS ticker_cache (
   fetched_at INTEGER NOT NULL,
   PRIMARY KEY (exchange_id, pair)
 );
+
+-- Equity harian per bot (untuk grafik equity curve)
+CREATE TABLE IF NOT EXISTS bot_equity (
+  bot_id INTEGER NOT NULL,
+  date TEXT NOT NULL,           -- YYYY-MM-DD (WIB)
+  equity_quote REAL NOT NULL,   -- nilai equity dalam quote (IDR/USDT)
+  recorded_at TEXT NOT NULL,
+  PRIMARY KEY (bot_id, date)
+);
+
+-- Alert harga kustom (notifikasi Telegram)
+CREATE TABLE IF NOT EXISTS price_alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  exchange_id TEXT NOT NULL,
+  pair TEXT NOT NULL,
+  direction TEXT NOT NULL,      -- 'above' | 'below'
+  target_price REAL NOT NULL,
+  note TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  triggered_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+-- Index bantu
+CREATE INDEX IF NOT EXISTS idx_equity_bot ON bot_equity(bot_id, date);
+CREATE INDEX IF NOT EXISTS idx_alerts_active ON price_alerts(active);

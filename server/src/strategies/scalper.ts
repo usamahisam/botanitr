@@ -4,7 +4,7 @@ import { Strategy, StrategyContext, Action, registerStrategy } from './types.js'
  * Scalper 1m: EMA fast/slow cross + RSI filter, TP/SL % dari entry.
  */
 interface ScalperState {
-  position: { entryPrice: number; qty: number; cost: number } | null;
+  position: { entryPrice: number; qty: number; cost: number; peakPrice?: number } | null;
   prevFastAbove: boolean | null;
   candlesTs: number;
   candles: number[][];
@@ -32,7 +32,7 @@ function rsi(closes: number[], period: number): number {
 const scalper: Strategy = {
   name: 'scalper',
   label: 'Scalper',
-  defaultParams: { timeframe: '1m', ema_fast: 20, ema_slow: 50, rsi_period: 14, rsi_overbought: 70, tp_pct: 1.2, sl_pct: 0.6 },
+  defaultParams: { timeframe: '1m', ema_fast: 20, ema_slow: 50, rsi_period: 14, rsi_overbought: 70, tp_pct: 1.2, sl_pct: 0.6, trailing_pct: 0 },
 
   init(): ScalperState {
     return { position: null, prevFastAbove: null, candlesTs: 0, candles: [] };
@@ -42,6 +42,50 @@ const scalper: Strategy = {
     const actions: Action[] = [];
     const price = ctx.ticker.last;
 
+    // TP/SL/Trailing dievaluasi DULU (tidak butuh candle) — penting agar posisi
+    // selalu terproteksi walau data klines belum cukup.
+    if (state.position) {
+      const p = state.position;
+      const tpPrice = p.entryPrice * (1 + Number(params.tp_pct) / 100);
+      const slPrice = p.entryPrice * (1 - Number(params.sl_pct) / 100);
+      const trailingPct = Number(params.trailing_pct || 0);
+
+      // Trailing stop: catat puncak; exit jika turun trailing_pct% dari puncak
+      if (trailingPct > 0) {
+        if (p.peakPrice === undefined || price > p.peakPrice) p.peakPrice = price;
+        const trailPrice = p.peakPrice * (1 - trailingPct / 100);
+        if (p.peakPrice > p.entryPrice * (1 + trailingPct / 100) && price <= trailPrice) {
+          actions.push({
+            type: 'sell', qtyBase: p.qty, costBasis: p.cost,
+            reason: `[SCALPER_TRAIL] Trailing stop: turun ${trailingPct}% dari puncak ${Math.round(p.peakPrice)} → jual @ ${Math.round(price)}`,
+            tag: 'SCALPER_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
+          });
+          state.position = null;
+          return actions;
+        }
+      }
+
+      if (price >= tpPrice) {
+        actions.push({
+          type: 'sell', qtyBase: p.qty, costBasis: p.cost,
+          reason: `[SCALPER_TP] Take profit +${params.tp_pct}% @ ${Math.round(price)}`,
+          tag: 'SCALPER_TP', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
+        });
+        state.position = null;
+        return actions;
+      }
+      if (price <= slPrice) {
+        actions.push({
+          type: 'sell', qtyBase: p.qty, costBasis: p.cost,
+          reason: `[SCALPER_SL] Stop loss -${params.sl_pct}% @ ${Math.round(price)}`,
+          tag: 'SCALPER_SL', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
+        });
+        state.position = null;
+        return actions;
+      }
+    }
+
+    // === Bagian berbasis candle (entry & exit cross) ===
     // Cache klines 45 detik
     if (ctx.now - state.candlesTs > 45000) {
       try {
@@ -57,40 +101,17 @@ const scalper: Strategy = {
     const rsiNow = rsi(closes, Number(params.rsi_period));
     const fastAbove = fast > slow;
 
-    // TP/SL untuk posisi terbuka
-    if (state.position) {
+    // Exit jika EMA cross turun (posisi terbuka)
+    if (state.position && state.prevFastAbove === true && !fastAbove) {
       const p = state.position;
-      const tpPrice = p.entryPrice * (1 + Number(params.tp_pct) / 100);
-      const slPrice = p.entryPrice * (1 - Number(params.sl_pct) / 100);
-      if (price >= tpPrice) {
-        actions.push({
-          type: 'sell', qtyBase: p.qty, costBasis: p.cost,
-          reason: `[SCALPER_TP] Take profit +${params.tp_pct}% @ ${Math.round(price)}`,
-          tag: 'SCALPER_TP', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
-        });
-        state.position = null;
-        state.prevFastAbove = fastAbove;
-        return actions;
-      }
-      if (price <= slPrice) {
-        actions.push({
-          type: 'sell', qtyBase: p.qty, costBasis: p.cost,
-          reason: `[SCALPER_SL] Stop loss -${params.sl_pct}% @ ${Math.round(price)}`,
-          tag: 'SCALPER_SL', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
-        });
-        state.position = null;
-        state.prevFastAbove = fastAbove;
-        return actions;
-      }
-      // Exit jika EMA cross turun
-      if (state.prevFastAbove === true && !fastAbove) {
-        actions.push({
-          type: 'sell', qtyBase: p.qty, costBasis: p.cost,
-          reason: `[SCALPER_EXIT] EMA${params.ema_fast} cross-down EMA${params.ema_slow} @ ${Math.round(price)}`,
-          tag: 'SCALPER_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
-        });
-        state.position = null;
-      }
+      actions.push({
+        type: 'sell', qtyBase: p.qty, costBasis: p.cost,
+        reason: `[SCALPER_EXIT] EMA${params.ema_fast} cross-down EMA${params.ema_slow} @ ${Math.round(price)}`,
+        tag: 'SCALPER_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
+      });
+      state.position = null;
+      state.prevFastAbove = fastAbove;
+      return actions;
     }
 
     // Entry: cross-up + RSI tidak overbought

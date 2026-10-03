@@ -12,7 +12,8 @@ const PARAM_FIELDS: Record<string, { key: string; label: string }[]> = {
   scalper: [
     { key: 'ema_fast', label: 'EMA Cepat' }, { key: 'ema_slow', label: 'EMA Lambat' },
     { key: 'rsi_period', label: 'Periode RSI' }, { key: 'rsi_overbought', label: 'RSI Overbought' },
-    { key: 'tp_pct', label: 'Take Profit (%)' }, { key: 'sl_pct', label: 'Stop Loss (%)' }
+    { key: 'tp_pct', label: 'Take Profit (%)' }, { key: 'sl_pct', label: 'Stop Loss (%)' },
+    { key: 'trailing_pct', label: 'Trailing Stop (% — 0=nonaktif)' }
   ],
   harvester: [
     { key: 'drop_pct', label: 'Akumulasi Tiap Turun (%)' }, { key: 'harvest_pct', label: 'Target Panen (%)' }, { key: 'max_buys', label: 'Maks Akumulasi' }

@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard';
 import Bots from './pages/Bots';
 import Wizard from './pages/Wizard';
 import Riwayat from './pages/Riwayat';
+import Alerts from './pages/Alerts';
 import Pengaturan from './pages/Pengaturan';
 
 const NAV = [
@@ -10,6 +11,7 @@ const NAV = [
   { to: '/bots', label: 'Bot' },
   { to: '/wizard', label: 'Wizard AI' },
   { to: '/riwayat', label: 'Riwayat' },
+  { to: '/alerts', label: 'Alert' },
   { to: '/pengaturan', label: 'Pengaturan' }
 ];
 
@@ -37,6 +39,7 @@ export default function App() {
           <Route path="/bots" element={<Bots />} />
           <Route path="/wizard" element={<Wizard />} />
           <Route path="/riwayat" element={<Riwayat />} />
+          <Route path="/alerts" element={<Alerts />} />
           <Route path="/pengaturan" element={<Pengaturan />} />
         </Routes>
       </main>

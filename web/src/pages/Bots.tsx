@@ -2,13 +2,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, Bot, LogRow } from '../lib/api';
 import { fmtIDR, fmtSignedIDR, fmtTime } from '../lib/format';
 import { getSocket } from '../lib/ws';
-import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
+import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 
 const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester' };
 const PER_PAGE = 8;
 
 function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [equity, setEquity] = useState<{ date: string; equity: number }[]>([]);
+  useEffect(() => {
+    api.get<{ date: string; equity: number }[]>(`/bots/${bot.id}/equity?days=30`).then(setEquity).catch(() => {});
+  }, [bot.id, bot.current_budget]);
   const act = async (action: string) => {
     setBusy(true);
     try {
@@ -18,7 +22,8 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
     } finally { setBusy(false); }
   };
   const winRate = bot.stats.total > 0 ? (bot.stats.wins / bot.stats.total) * 100 : 0;
-  const trendData = bot.trend.map((t, i) => ({ i, pnl: t.pnl }));
+  const equityData = equity.map((e, i) => ({ i, equity: e.equity }));
+  const equityUp = equity.length > 1 ? equity[equity.length - 1].equity >= equity[0].equity : true;
 
   return (
     <div className="card !p-4">
@@ -31,15 +36,22 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
           {bot.status === 'running' ? '● Running' : '⏸ Paused'}
         </span>
       </div>
-      <div className="h-14 mt-2">
-        {trendData.length > 1 ? (
+      <div className="h-16 mt-2">
+        {equityData.length > 1 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={trendData}>
+            <AreaChart data={equityData}>
+              <defs>
+                <linearGradient id={`eq-${bot.id}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={equityUp ? '#16a34a' : '#dc2626'} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={equityUp ? '#16a34a' : '#dc2626'} stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <YAxis hide domain={['dataMin', 'dataMax']} />
-              <Line type="monotone" dataKey="pnl" stroke="#16a34a" strokeWidth={2} dot={false} />
-            </LineChart>
+              <Tooltip formatter={(v: any) => fmtIDR(Number(v))} labelFormatter={() => ''} />
+              <Area type="monotone" dataKey="equity" stroke={equityUp ? '#16a34a' : '#dc2626'} strokeWidth={2} fill={`url(#eq-${bot.id})`} />
+            </AreaChart>
           </ResponsiveContainer>
-        ) : <div className="text-xs text-gray-300 flex items-center h-full">Belum ada data tren</div>}
+        ) : <div className="text-xs text-gray-300 flex items-center h-full">Equity curve muncul setelah beberapa jam</div>}
       </div>
       <div className="grid grid-cols-3 gap-2 mt-2 text-center text-xs">
         <div className="bg-gray-50 rounded-lg py-1.5"><div className="text-gray-400">Budget</div><div className="font-semibold">{fmtIDR(bot.current_budget)}</div></div>

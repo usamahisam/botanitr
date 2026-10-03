@@ -12,6 +12,8 @@ import { startScheduler, stopScheduler } from './engine/scheduler.js';
 import { startBalanceSync, stopBalanceSync } from './engine/balances.js';
 import { startTelegram, stopTelegram } from './telegram/bot.js';
 import { startReconciler, stopReconciler } from './engine/reconciler.js';
+import { startEquityRecorder, stopEquityRecorder } from './engine/equity.js';
+import { startAlertEngine, stopAlertEngine } from './engine/alerts.js';
 
 async function main() {
   // Validasi config
@@ -49,6 +51,8 @@ async function main() {
   startBalanceSync(views => broadcast('balances', views));
   startTelegram();
   startReconciler();
+  startEquityRecorder();
+  startAlertEngine();
 
   server.listen(config.port, config.host, () => {
     log('info', 'SYSTEM', `Server berjalan di http://${config.host}:${config.port}`);
@@ -61,6 +65,8 @@ async function main() {
     stopBalanceSync();
     stopTelegram();
     stopReconciler();
+    stopEquityRecorder();
+    stopAlertEngine();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000);
   };

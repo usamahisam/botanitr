@@ -192,6 +192,12 @@ api.get('/bots/:id/trend', asyncH(async (req: any, res: any) => {
   res.json(pnl.botTrend(Number(req.params.id), Number(req.query.days || 7)));
 }));
 
+// Equity curve per bot
+api.get('/bots/:id/equity', asyncH(async (req: any, res: any) => {
+  const { getEquityCurve } = await import('../engine/equity.js');
+  res.json(getEquityCurve(Number(req.params.id), Number(req.query.days || 30)));
+}));
+
 // ===== Quick Trade =====
 api.post('/trade/quick', asyncH(async (req: any, res: any) => {
   const { exchange_id, pair, side, amount, mode } = req.body || {};
@@ -336,6 +342,25 @@ api.post('/telegram/test', asyncH(async (_req: any, res: any) => {
 api.post('/killswitch', asyncH(async (_req: any, res: any) => {
   const { activateKillSwitch } = await import('../engine/killswitch.js');
   res.json(await activateKillSwitch('Dashboard'));
+}));
+
+// ===== Price Alerts =====
+api.get('/alerts', asyncH(async (_req: any, res: any) => {
+  res.json(db.prepare('SELECT * FROM price_alerts ORDER BY id DESC LIMIT 100').all());
+}));
+api.post('/alerts', asyncH(async (req: any, res: any) => {
+  const { exchange_id, pair, direction, target_price, note } = req.body || {};
+  if (!exchange_id || !pair || !direction || !target_price) {
+    return res.status(400).json({ error: 'Field wajib: exchange_id, pair, direction, target_price' });
+  }
+  if (!['above', 'below'].includes(direction)) return res.status(400).json({ error: 'direction harus above atau below' });
+  const info = db.prepare('INSERT INTO price_alerts (exchange_id, pair, direction, target_price, note, active, created_at) VALUES (?,?,?,?,?,1,?)')
+    .run(exchange_id, pair.toUpperCase(), direction, Number(target_price), note || null, now());
+  res.status(201).json(db.prepare('SELECT * FROM price_alerts WHERE id=?').get(info.lastInsertRowid));
+}));
+api.delete('/alerts/:id', asyncH(async (req: any, res: any) => {
+  db.prepare('DELETE FROM price_alerts WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
 }));
 
 // ===== Error handler =====

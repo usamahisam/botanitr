@@ -125,6 +125,13 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] E2E `test:safety` 12/12 ✅; total suite 43/43 ✅
 - [x] Dokumentasi `docs/12-security-hardening-v1.1.md`
 
+## Fitur Roadmap v1 (ditambahkan)
+- [x] Trailing stop Scalper (param `trailing_pct`, evaluasi pre-candle, tag SCALPER_EXIT)
+- [x] Equity curve per bot (tabel `bot_equity`, recorder 6 jam, endpoint, AreaChart di kartu bot)
+- [x] Price alert kustom (tabel `price_alerts`, engine 20s, endpoint, halaman Alert + navigasi)
+- [x] E2E `test:features` 12/12 ✅; total suite 55/55 ✅
+- [x] Dokumentasi `docs/13-features-roadmap-v1.md`
+
 ## Catatan Operasional
 - Server bind `127.0.0.1:3000`; `npm start` untuk produksi, `npm run dev` untuk development.
 - Jika `npm install` ulang bermasalah di esbuild: `npm install -D esbuild@0.25.12 --ignore-scripts`, lalu build native better-sqlite3: `cd node_modules/better-sqlite3 && npx prebuild-install`.
