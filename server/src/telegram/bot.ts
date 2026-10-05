@@ -1,4 +1,4 @@
-import { Telegraf } from 'telegraf';
+import { Telegraf, Markup } from 'telegraf';
 import { db, queries, settings, now } from '../db/index.js';
 import type { UserRow } from '../db/index.js';
 import { registry, KNOWN_EXCHANGES } from '../exchange/registry.js';
@@ -87,73 +87,187 @@ function userExchangeIds(userId: number): string[] {
   return rows.length > 0 ? rows.map(r => r.id) : [...KNOWN_EXCHANGES];
 }
 
+/** Escape teks untuk parse_mode HTML (nama bot dll. diketik user) */
+export function esc(s: any): string {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Daftar perintah resmi bot — tampil sebagai saran otomatis saat mengetik "/"
+ * di Telegram (tombol Menu). Didaftarkan via setMyCommands tiap launch.
+ */
+export const BOT_COMMANDS = [
+  { command: 'start', description: 'Mulai & tampilkan menu utama' },
+  { command: 'menu', description: 'Tampilkan tombol menu' },
+  { command: 'status', description: 'Ringkasan bot & total portfolio' },
+  { command: 'balance', description: 'Saldo & koin per exchange' },
+  { command: 'positions', description: 'Posisi terbuka tiap bot' },
+  { command: 'bots', description: 'Daftar bot + tombol pause/resume' },
+  { command: 'price', description: 'Cek harga — /price XRPIDR' },
+  { command: 'pnl', description: 'Profit, PnL hari ini & win rate' },
+  { command: 'pause', description: 'Pause bot — /pause [id] (kosong = semua)' },
+  { command: 'resume', description: 'Lanjutkan bot — /resume [id] (kosong = semua)' },
+  { command: 'stop', description: 'Hapus bot — /stop <id>' },
+  { command: 'logs', description: 'Log terakhir — /logs [jumlah]' },
+  { command: 'panic', description: '🚨 Kill switch darurat' },
+  { command: 'help', description: 'Panduan lengkap semua perintah' },
+];
+
+/** Keyboard menu persisten (tombol di bawah kolom chat) */
+function mainMenuKeyboard() {
+  return Markup.keyboard([
+    ['📊 Status', '💰 Saldo'],
+    ['📌 Posisi', '🤖 Bot Saya'],
+    ['📈 PnL', '📜 Log'],
+    ['❓ Bantuan'],
+  ]).resize().reply_markup;
+}
+
+const HELP_TEXT =
+  `<b>🌱 PANDUAN TRADING BOTANI</b>\n\n` +
+  `<b>📊 Pantau</b>\n` +
+  `/status — ringkasan bot &amp; total portfolio\n` +
+  `/balance — saldo &amp; koin per exchange\n` +
+  `/positions — posisi terbuka tiap bot\n` +
+  `/bots — daftar bot + tombol pause/resume\n` +
+  `/price <code>PAIR</code> — harga, mis. <code>/price XRPIDR</code>\n` +
+  `/pnl — profit, rugi/laba hari ini &amp; win rate\n` +
+  `/logs <code>[n]</code> — log terakhir (maks 15)\n\n` +
+  `<b>🎛 Kontrol</b>\n` +
+  `/pause <code>[id]</code> — pause satu bot / semua bila kosong\n` +
+  `/resume <code>[id]</code> — lanjutkan satu bot / semua\n` +
+  `/stop <code>&lt;id&gt;</code> — hapus bot (dengan konfirmasi)\n` +
+  `/panic — 🚨 kill switch: pause SEMUA + batalkan order live\n\n` +
+  `<b>💡 Tips</b>\n` +
+  `• Ketik <code>/</code> untuk melihat semua perintah\n` +
+  `• Gunakan tombol menu di bawah untuk akses cepat\n` +
+  `• ID bot bisa dilihat di /bots atau /positions\n` +
+  `• Pengaturan lengkap (exchange, budget, strategi) di dashboard web`;
+
+const WELCOME_TEXT =
+  `<b>🌱 Trading Botani siap!</b>\n\n` +
+  `Pantau &amp; kendalikan bot trading Anda langsung dari sini.\n` +
+  `Ketik <code>/</code> untuk daftar perintah, atau pakai tombol menu di bawah.\n\n` +
+  `<b>🚀 Mulai cepat:</b> /status · /balance · /bots · /help`;
+
+function statusIcon(s: string): string {
+  return s === 'running' ? '🟢' : s === 'paused' ? '⏸' : '⚪';
+}
+
 async function buildStatus(userId: number): Promise<string> {
   const bots = (db.prepare('SELECT * FROM bots WHERE user_id=?').all(userId) as any[]);
   const running = bots.filter(b => b.status === 'running').length;
   const paused = bots.filter(b => b.status === 'paused').length;
-  const usdtIdr = await getUsdtIdr();
   let totalIdr = 0;
-  const lines = ['🤖 STATUS BOTANI', `Bot aktif: ${running} | pause: ${paused} | total: ${bots.length}`, ''];
+  const lines = [
+    `<b>🤖 STATUS BOTANI</b>`,
+    `🟢 Aktif: <b>${running}</b> · ⏸ Pause: <b>${paused}</b> · Total: <b>${bots.length}</b>`,
+    `────────────────`,
+  ];
   for (const id of userExchangeIds(userId)) {
-    const v = await fetchExchangeBalance(id, userId);
-    totalIdr += v.saldo_total_idr;
-    lines.push(`${v.name} [${v.mode === 'paper' ? 'DEMO' : 'RIIL'}${v.error ? ' ⚠️' : ''}]`);
-    lines.push(`  Saldo: ${fmtIDR(v.saldo_total_idr)} | Kas: ${fmtIDR(v.kas_bebas_idr)}`);
+    try {
+      const v = await fetchExchangeBalance(id, userId);
+      totalIdr += v.saldo_total_idr;
+      const badge = v.mode === 'paper' ? '📄 DEMO' : '💰 RIIL';
+      lines.push(`<b>${esc(v.name)}</b> ${badge}${v.error ? ' ⚠️' : ''}`);
+      if (v.error) lines.push(`  <i>${esc(v.error)}</i>`);
+      else lines.push(`  Saldo <b>${fmtIDR(v.saldo_total_idr)}</b> · Kas ${fmtIDR(v.kas_bebas_idr)}`);
+    } catch (e: any) {
+      lines.push(`<b>${esc(id)}</b> ⚠️ <i>${esc(e.message)}</i>`);
+    }
   }
-  lines.push('', `💼 Total Portfolio: ${fmtIDR(totalIdr)}`);
+  lines.push(`────────────────`, `💼 <b>Total Portfolio: ${fmtIDR(totalIdr)}</b>`);
   return lines.join('\n');
 }
 
 async function buildBalance(userId: number): Promise<string> {
-  const lines = ['💰 SALDO PER EXCHANGE', ''];
+  const lines = [`<b>💰 SALDO PER EXCHANGE</b>`, ''];
   for (const id of userExchangeIds(userId)) {
-    const v = await fetchExchangeBalance(id, userId);
-    lines.push(`── ${v.name} ──`);
-    if (v.error) { lines.push(`  ⚠️ ${v.error}`); continue; }
-    lines.push(`  Kas Bebas: ${fmtIDR(v.kas_bebas_idr)}`);
-    const top = v.coins.filter(c => c.symbol !== v.quote_asset).slice(0, 6);
-    for (const c of top) lines.push(`  ${c.symbol}: ${c.qty.toFixed(6)} ≈ ${fmtIDR(c.value_idr)}`);
-    lines.push(`  Total: ${fmtIDR(v.saldo_total_idr)}`, '');
+    try {
+      const v = await fetchExchangeBalance(id, userId);
+      lines.push(`── <b>${esc(v.name)}</b> ──`);
+      if (v.error) { lines.push(`⚠️ <i>${esc(v.error)}</i>`, ''); continue; }
+      lines.push(`Kas Bebas: <b>${fmtIDR(v.kas_bebas_idr)}</b>`);
+      const top = v.coins.filter(c => c.symbol !== v.quote_asset).slice(0, 6);
+      for (const c of top) lines.push(`  <code>${esc(c.symbol)}</code> ${c.qty.toFixed(6)} ≈ ${fmtIDR(c.value_idr)}`);
+      lines.push(`Total: <b>${fmtIDR(v.saldo_total_idr)}</b>`, '');
+    } catch (e: any) {
+      lines.push(`── <b>${esc(id)}</b> ──`, `⚠️ <i>${esc(e.message)}</i>`, '');
+    }
   }
   return lines.join('\n');
 }
 
 async function buildPositions(userId: number): Promise<string> {
   const bots = (db.prepare('SELECT * FROM bots WHERE user_id=?').all(userId) as any[]).filter(b => b.status !== 'stopped');
-  if (bots.length === 0) return '📭 Tidak ada posisi/bot aktif.';
+  if (bots.length === 0) return '📭 Tidak ada posisi/bot aktif.\nBuat bot baru di dashboard web atau /help.';
   const usdtIdr = await getUsdtIdr();
-  const lines = ['📌 POSISI BOT', ''];
+  const lines = [`<b>📌 POSISI BOT</b>`, ''];
   for (const b of bots) {
-    const state = JSON.parse(b.state || '{}');
-    const entries: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
-    const qty = entries.reduce((s: number, e: any) => s + (e.qty || 0), 0);
-    const cost = entries.reduce((s: number, e: any) => s + (e.cost || 0), 0);
-    lines.push(`#${b.id} ${b.name} [${b.status}]`);
-    lines.push(`  ${b.pair} · ${b.strategy} · budget ${fmtIDR(b.current_budget * (b.exchange_id === 'indodax' ? 1 : usdtIdr))}`);
-    if (qty > 0) lines.push(`  Posisi: ${qty.toFixed(8)} (modal ${fmtIDR(cost * (b.exchange_id === 'indodax' ? 1 : usdtIdr))})`);
+    let entries: any[] = [];
+    try {
+      const state = JSON.parse(b.state || '{}');
+      entries = state.entries || state.filledBuys || (state.position ? [state.position] : []);
+    } catch { /* state korup → tampilkan tanpa posisi */ }
+    const qty = entries.reduce((s: number, e: any) => s + (Number(e.qty) || 0), 0);
+    const cost = entries.reduce((s: number, e: any) => s + (Number(e.cost) || 0), 0);
+    const mult = b.exchange_id === 'indodax' ? 1 : usdtIdr;
+    lines.push(`${statusIcon(b.status)} <b>#${b.id} ${esc(b.name)}</b>`);
+    lines.push(`  <code>${esc(b.pair)}</code> · ${esc(b.strategy)} · ${esc(b.status)}`);
+    lines.push(`  Budget ${fmtIDR(b.current_budget * mult)}`);
+    if (qty > 0) lines.push(`  📦 Posisi <code>${qty.toFixed(8)}</code> (modal ${fmtIDR(cost * mult)})`);
+    lines.push('');
   }
   return lines.join('\n');
+}
+
+/** Daftar bot + tombol aksi inline per bot (dipakai /bots) */
+function buildBotsKeyboard(userId: number) {
+  const bots = (db.prepare('SELECT * FROM bots WHERE user_id=? ORDER BY id DESC LIMIT 10').all(userId) as any[]);
+  if (bots.length === 0) return null;
+  const rows = bots.map(b => {
+    const btn = b.status === 'running'
+      ? { text: `⏸ #${b.id}`, callback_data: `bot_p_${b.id}` }
+      : { text: `▶️ #${b.id}`, callback_data: `bot_r_${b.id}` };
+    return [btn, { text: `🗑 #${b.id}`, callback_data: `bot_s_${b.id}` }];
+  });
+  return { inline_keyboard: rows };
 }
 
 async function buildPnl(userId: number): Promise<string> {
   const usdtIdr = await getUsdtIdr();
   const wr = pnl.winRate(undefined, userId);
-  const lines = ['📊 PROFIT & WIN RATE', ''];
+  const lines = [`<b>📊 PROFIT &amp; WIN RATE</b>`, ''];
   let totalRealizedIdr = 0;
   for (const id of userExchangeIds(userId)) {
-    const client = registry.get(id);
-    const r = pnl.realized(id, undefined, userId);
-    const today = pnl.realizedToday(id, userId);
-    const mult = client.quoteAsset === 'IDR' ? 1 : usdtIdr;
-    const idr = r * mult;
-    const todayIdr = today * mult;
-    totalRealizedIdr += idr;
-    const label = id === 'indodax' ? 'Indodax' : id === 'tokocrypto' ? 'Tokocrypto' : 'Binance';
-    lines.push(`${label}: total ${fmtIDR(idr)} | hari ini ${fmtIDR(todayIdr)}`);
+    try {
+      const client = registry.get(id);
+      const r = pnl.realized(id, undefined, userId);
+      const today = pnl.realizedToday(id, userId);
+      const mult = client.quoteAsset === 'IDR' ? 1 : usdtIdr;
+      const idr = r * mult;
+      const todayIdr = today * mult;
+      totalRealizedIdr += idr;
+      const label = id === 'indodax' ? 'Indodax' : id === 'tokocrypto' ? 'Tokocrypto' : id === 'binance' ? 'Binance' : id;
+      const emo = idr >= 0 ? '🟢' : '🔴';
+      lines.push(`${emo} <b>${esc(label)}</b>`);
+      lines.push(`  Total <b>${fmtIDR(idr)}</b> · Hari ini ${fmtIDR(todayIdr)}`);
+    } catch (e: any) {
+      lines.push(`⚠️ <b>${esc(id)}</b> <i>${esc(e.message)}</i>`);
+    }
   }
-  lines.push('', `Total Realized: ${fmtIDR(totalRealizedIdr)}`);
-  lines.push(`Win Rate: ${wr.wins}/${wr.total} (${fmtPct(wr.rate * 100)})`);
+  lines.push('', `💰 <b>Total Realized: ${fmtIDR(totalRealizedIdr)}</b>`);
+  lines.push(`🎯 Win Rate: <b>${wr.wins}/${wr.total}</b> (${fmtPct(wr.rate * 100)})`);
   return lines.join('\n');
+}
+
+/** Format baris log DB menjadi teks HTML ringkas (urut terbaru → terlama) */
+export function formatLogs(rows: any[]): string {
+  return rows.map(r => {
+    const t = String(r.created_at || '').slice(11, 19);
+    const icon = r.level === 'error' ? '❌' : r.level === 'warn' ? '⚠️' : 'ℹ️';
+    return `<code>${esc(t)}</code> ${icon} [${esc(r.tag)}] ${esc(String(r.message || '').slice(0, 120))}`;
+  }).join('\n');
 }
 
 function ensureInstance(key: string, token: string, proxy: string): Telegraf {
@@ -168,45 +282,108 @@ function ensureInstance(key: string, token: string, proxy: string): Telegraf {
   setupHandlers(inst);
   bots.set(key, { inst, token });
   inst.launch()
-    .then(() => log('info', 'TELEGRAM', `Bot Telegram aktif (${key})`))
+    .then(async () => {
+      log('info', 'TELEGRAM', `Bot Telegram aktif (${key})`);
+      // Daftarkan menu perintah "/" (tombol Menu di kolom chat)
+      try { await inst.telegram.setMyCommands(BOT_COMMANDS); }
+      catch (e: any) { log('warn', 'TELEGRAM', `setMyCommands gagal (${key}): ${e.message}`); }
+    })
     .catch(e => log('error', 'TELEGRAM', `Gagal launch (${key}): ${e.message}`));
   return inst;
 }
 
 function setupHandlers(inst: Telegraf) {
   inst.use((ctx, next) => { if (maskChat(ctx) !== null) return next(); });
+  const html = { parse_mode: 'HTML' } as const;
 
-  inst.start(ctx => ctx.reply(
-    '🌱 Trading Botani siap!\n\n' +
-    '/status — ringkasan bot & portfolio\n' +
-    '/balance — saldo per exchange\n' +
-    '/positions — posisi terbuka\n' +
-    '/price <PAIR> — harga (mis. /price XRPIDR)\n' +
-    '/pnl — profit & win rate\n' +
-    '/pause [id] /resume [id] — kontrol bot\n' +
-    '/stop [id] — hapus bot (konfirmasi)\n' +
-    '/logs [n] — log terakhir\n' +
-    '/panic — 🚨 kill switch (pause semua + batalkan order)\n' +
-    '/help — bantuan'
-  ));
-  inst.help(ctx => ctx.reply('Perintah: /status /balance /positions /price /pnl /pause /resume /stop /logs /panic\nQuick trade dari dashboard web.'));
+  inst.start(ctx => ctx.reply(WELCOME_TEXT, { ...html, reply_markup: mainMenuKeyboard() }));
+  inst.help(ctx => ctx.reply(HELP_TEXT, html));
+  inst.command('menu', ctx => ctx.reply('📋 <b>Menu utama</b> — pilih tombol di bawah:', { ...html, reply_markup: mainMenuKeyboard() }));
 
-  inst.command('status', async ctx => ctx.reply(await buildStatus(ctx.state.userId)));
-  inst.command('balance', async ctx => ctx.reply(await buildBalance(ctx.state.userId)));
-  inst.command('positions', async ctx => ctx.reply(await buildPositions(ctx.state.userId)));
-  inst.command('pnl', async ctx => ctx.reply(await buildPnl(ctx.state.userId)));
+  inst.command('status', async ctx => ctx.reply(await buildStatus(ctx.state.userId), html));
+  inst.command('balance', async ctx => ctx.reply(await buildBalance(ctx.state.userId), html));
+  inst.command('positions', async ctx => ctx.reply(await buildPositions(ctx.state.userId), html));
+  inst.command('pnl', async ctx => ctx.reply(await buildPnl(ctx.state.userId), html));
+
+  // Tombol keyboard menu → handler yang sama dengan perintah slash
+  inst.hears('📊 Status', async ctx => ctx.reply(await buildStatus(ctx.state.userId), html));
+  inst.hears('💰 Saldo', async ctx => ctx.reply(await buildBalance(ctx.state.userId), html));
+  inst.hears('📌 Posisi', async ctx => ctx.reply(await buildPositions(ctx.state.userId), html));
+  inst.hears('📈 PnL', async ctx => ctx.reply(await buildPnl(ctx.state.userId), html));
+  inst.hears('🤖 Bot Saya', async ctx => {
+    const kb = buildBotsKeyboard(ctx.state.userId);
+    if (!kb) return ctx.reply('📭 Belum ada bot.\nBuat bot baru di dashboard web atau /help.', html);
+    await ctx.reply(await buildPositions(ctx.state.userId), { ...html, reply_markup: kb });
+  });
+  inst.hears('📜 Log', async ctx => {
+    const rows = db.prepare('SELECT * FROM logs WHERE (user_id=? OR user_id=0) ORDER BY id DESC LIMIT 5').all(ctx.state.userId) as any[];
+    if (rows.length === 0) return ctx.reply('📭 Belum ada log.');
+    await ctx.reply(`📜 <b>5 LOG TERAKHIR</b>\n\n${formatLogs(rows)}`, html);
+  });
+  inst.hears('❓ Bantuan', ctx => ctx.reply(HELP_TEXT, html));
+
+  inst.command('bots', async ctx => {
+    const kb = buildBotsKeyboard(ctx.state.userId);
+    if (!kb) return ctx.reply('📭 Belum ada bot.\nBuat bot baru di dashboard web atau /help.', html);
+    await ctx.reply(await buildPositions(ctx.state.userId), { ...html, reply_markup: kb });
+  });
+
+  // Aksi inline per bot dari /bots (pause / resume / hapus)
+  const botToggle = async (ctx: any, id: number, to: 'paused' | 'running') => {
+    const userId = ctx.state?.userId;
+    if (!userId || !id) { await ctx.answerCbQuery('Sesi kedaluwarsa, ulangi /bots.'); return; }
+    const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
+    if (!botRow) { await ctx.answerCbQuery('Bot tidak ditemukan.'); return; }
+    queries.setBotStatus.run(to, now(), id);
+    await ctx.answerCbQuery(to === 'paused' ? `Bot #${id} di-pause` : `Bot #${id} dilanjutkan`);
+    try { await ctx.editMessageReplyMarkup(buildBotsKeyboard(userId) ?? undefined); } catch { /* abaikan */ }
+  };
+  inst.action(/^bot_p_(\d+)$/, async ctx => botToggle(ctx, Number((ctx as any).match?.[1]), 'paused'));
+  inst.action(/^bot_r_(\d+)$/, async ctx => botToggle(ctx, Number((ctx as any).match?.[1]), 'running'));
+  inst.action(/^bot_s_(\d+)$/, async ctx => {
+    const userId = (ctx as any).state?.userId;
+    const id = Number((ctx as any).match?.[1]);
+    if (!userId || !id) { await ctx.answerCbQuery('Sesi kedaluwarsa, ulangi /bots.'); return; }
+    const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
+    if (!botRow) { await ctx.answerCbQuery('Bot tidak ditemukan.'); return; }
+    await ctx.answerCbQuery('Menghapus…');
+    queries.deleteBot.run(id);
+    log('info', 'TELEGRAM', `Bot #${id} "${botRow.name}" dihapus via Telegram oleh @${(ctx as any).from?.username || (ctx as any).from?.id}`, { user_id: userId });
+    try {
+      await ctx.editMessageText(`🗑 Bot #${id} "${esc(botRow.name)}" dihapus.`, html);
+    } catch { /* abaikan */ }
+  });
 
   inst.command('price', async ctx => {
     const pair = (ctx.payload || '').toUpperCase().trim();
-    if (!pair) return ctx.reply('Format: /price XRPIDR');
-    const exchangeId = pair.endsWith('USDT') ? 'tokocrypto' : 'indodax';
-    try {
-      const t = await registry.getForUser(exchangeId, ctx.state.userId).getTicker(pair);
-      const usdtIdr = exchangeId === 'indodax' ? 1 : await getUsdtIdr();
-      ctx.reply(`💹 ${pair}\nLast: ${fmtIDR(t.last * usdtIdr)}\nBid: ${fmtIDR(t.bid * usdtIdr)} | Ask: ${fmtIDR(t.ask * usdtIdr)}\n24J: ${fmtIDR(t.low24 * usdtIdr)} – ${fmtIDR(t.high24 * usdtIdr)}`);
-    } catch (e: any) {
-      ctx.reply(`⚠️ Gagal ambil harga: ${e.message}`);
+    if (!pair) return ctx.reply('Format: <code>/price XRPIDR</code>\nContoh: <code>/price BTCIDR</code> atau <code>/price BTCUSDT</code>', html);
+    // Coba semua exchange milik user (tebak dulu dari suffix pair)
+    const ids = userExchangeIds(ctx.state.userId);
+    const ordered = [...ids].sort((a, b) => {
+      const score = (id: string) => {
+        if (pair.endsWith('USDT')) return id === 'tokocrypto' || id === 'binance' ? 0 : 1;
+        return id === 'indodax' ? 0 : 1;
+      };
+      return score(a) - score(b);
+    });
+    const errors: string[] = [];
+    for (const exchangeId of ordered) {
+      try {
+        const client = registry.getForUser(exchangeId, ctx.state.userId);
+        const t = await client.getTicker(pair);
+        const mult = client.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
+        return ctx.reply(
+          `💹 <b>${esc(pair)}</b> <i>via ${esc(exchangeId)}</i>\n` +
+          `Last: <b>${fmtIDR(t.last * mult)}</b>\n` +
+          `Bid: ${fmtIDR(t.bid * mult)} · Ask: ${fmtIDR(t.ask * mult)}\n` +
+          `24J: ${fmtIDR(t.low24 * mult)} – ${fmtIDR(t.high24 * mult)}`,
+          html
+        );
+      } catch (e: any) {
+        errors.push(`${exchangeId}: ${e.message}`);
+      }
     }
+    ctx.reply(`⚠️ Gagal ambil harga <b>${esc(pair)}</b> di semua exchange:\n<i>${esc(errors.slice(0, 3).join('; '))}</i>`, html);
   });
 
   inst.command('pause', ctx => {
@@ -214,12 +391,12 @@ function setupHandlers(inst: Telegraf) {
     const id = parseInt(ctx.payload || '', 10);
     if (id) {
       const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
-      if (!botRow) return ctx.reply('Bot tidak ditemukan.');
+      if (!botRow) return ctx.reply('Bot tidak ditemukan. Lihat ID di /bots.', html);
       queries.setBotStatus.run('paused', now(), id);
-      ctx.reply(`⏸ Bot #${id} di-pause.`);
+      ctx.reply(`⏸ <b>#${id} ${esc(botRow.name)}</b> di-pause.`, html);
     } else {
-      db.prepare(`UPDATE bots SET status='paused' WHERE status='running' AND user_id=?`).run(userId);
-      ctx.reply('⏸ Semua bot di-pause.');
+      const info = db.prepare(`UPDATE bots SET status='paused' WHERE status='running' AND user_id=?`).run(userId);
+      ctx.reply(`⏸ <b>${info.changes} bot</b> di-pause.`, html);
     }
     log('info', 'TELEGRAM', `Pause via Telegram ${id ? '#' + id : '(semua)'} oleh chat ${ctx.chat.id}`, { user_id: userId });
   });
@@ -229,31 +406,31 @@ function setupHandlers(inst: Telegraf) {
     const id = parseInt(ctx.payload || '', 10);
     if (id) {
       const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
-      if (!botRow) return ctx.reply('Bot tidak ditemukan.');
+      if (!botRow) return ctx.reply('Bot tidak ditemukan. Lihat ID di /bots.', html);
       queries.setBotStatus.run('running', now(), id);
-      ctx.reply(`▶️ Bot #${id} dilanjutkan.`);
+      ctx.reply(`▶️ <b>#${id} ${esc(botRow.name)}</b> dilanjutkan.`, html);
     } else {
-      db.prepare(`UPDATE bots SET status='running' WHERE status='paused' AND user_id=?`).run(userId);
-      ctx.reply('▶️ Semua bot dilanjutkan.');
+      const info = db.prepare(`UPDATE bots SET status='running' WHERE status='paused' AND user_id=?`).run(userId);
+      ctx.reply(`▶️ <b>${info.changes} bot</b> dilanjutkan.`, html);
     }
   });
 
   inst.command('stop', async ctx => {
     const userId = ctx.state.userId;
     const id = parseInt(ctx.payload || '', 10);
-    if (!id) return ctx.reply('Format: /stop <id> — lihat ID di /positions.');
+    if (!id) return ctx.reply('Format: <code>/stop &lt;id&gt;</code> — lihat ID di /bots.', html);
     const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
-    if (!botRow) return ctx.reply('Bot tidak ditemukan.');
+    if (!botRow) return ctx.reply('Bot tidak ditemukan.', html);
     let warn = '';
     try {
       const st = JSON.parse(botRow.state || '{}');
       const entries: any[] = st.entries || st.filledBuys || (st.position ? [st.position] : []);
-      const qty = entries.reduce((s: number, e: any) => s + (e.qty || 0), 0);
-      if (qty > 0) warn = `\n⚠️ Masih ada posisi ±${qty.toFixed(8)} — aset tetap di exchange, hanya berhenti dipantau.`;
+      const qty = entries.reduce((s: number, e: any) => s + (Number(e.qty) || 0), 0);
+      if (qty > 0) warn = `\n\n⚠️ Masih ada posisi <code>±${qty.toFixed(8)}</code> — aset tetap di exchange, hanya berhenti dipantau.`;
     } catch { /* abaikan */ }
     await ctx.reply(
-      `Hapus bot #${id} "${botRow.name}" (${botRow.pair})?${warn}`,
-      { reply_markup: { inline_keyboard: [[{ text: '✅ Ya, hapus', callback_data: `stop_yes_${id}` }, { text: '❌ Batal', callback_data: 'stop_no' }]] } }
+      `Hapus bot <b>#${id} "${esc(botRow.name)}"</b> (<code>${esc(botRow.pair)}</code>)?${warn}`,
+      { ...html, reply_markup: { inline_keyboard: [[{ text: '✅ Ya, hapus', callback_data: `stop_yes_${id}` }, { text: '❌ Batal', callback_data: 'stop_no' }]] } }
     );
   });
 
@@ -278,13 +455,15 @@ function setupHandlers(inst: Telegraf) {
     await ctx.answerCbQuery('Menghapus…');
     queries.deleteBot.run(id);
     log('info', 'TELEGRAM', `Bot #${id} "${botRow.name}" dihapus via Telegram oleh @${(ctx as any).from?.username || (ctx as any).from?.id}`, { user_id: userId });
-    await ctx.editMessageText(`🗑 Bot #${id} "${botRow.name}" dihapus.`);
+    await ctx.editMessageText(`🗑 Bot <b>#${id} "${esc(botRow.name)}"</b> dihapus.`, { parse_mode: 'HTML' });
   });
 
   inst.command('panic', async ctx => {
     await ctx.reply(
-      '🚨 KILL SWITCH akan ME-PAUSE semua bot & MEMBATALKAN semua open order live.\nLanjutkan?',
-      { reply_markup: { inline_keyboard: [[{ text: '✅ Ya, AKTIFKAN', callback_data: 'panic_confirm' }, { text: '❌ Batal', callback_data: 'panic_cancel' }]] } }
+      '🚨 <b>KILL SWITCH</b> akan:\n' +
+      '• ME-PAUSE <b>semua bot</b>\n' +
+      '• MEMBATALKAN <b>semua open order live</b>\n\nLanjutkan?',
+      { ...html, reply_markup: { inline_keyboard: [[{ text: '✅ Ya, AKTIFKAN', callback_data: 'panic_confirm' }, { text: '❌ Batal', callback_data: 'panic_cancel' }]] } }
     );
   });
 
@@ -302,19 +481,21 @@ function setupHandlers(inst: Telegraf) {
     const { activateKillSwitch } = await import('../engine/killswitch.js');
     const r = await activateKillSwitch(`Telegram @${ctx.from?.username || ctx.from?.id}`, userId);
     const total = Object.values(r.orders_cancelled).reduce((s, n) => s + n, 0);
-    await ctx.editMessageText(`🚨 KILL SWITCH AKTIF\n${r.bots_paused} bot di-pause\n${total} open order dibatalkan${r.errors.length ? `\n⚠️ ${r.errors.join('; ')}` : ''}\n\nGunakan /resume untuk menjalankan lagi.`);
+    await ctx.editMessageText(
+      `🚨 <b>KILL SWITCH AKTIF</b>\n` +
+      `⏸ <b>${r.bots_paused} bot</b> di-pause\n` +
+      `❌ <b>${total} open order</b> dibatalkan` +
+      `${r.errors.length ? `\n⚠️ <i>${esc(r.errors.join('; '))}</i>` : ''}\n\n` +
+      `Gunakan /resume untuk menjalankan lagi.`,
+      html
+    );
   });
 
   inst.command('logs', ctx => {
     const n = Math.min(parseInt(ctx.payload || '5', 10) || 5, 15);
     const rows = db.prepare('SELECT * FROM logs WHERE (user_id=? OR user_id=0) ORDER BY id DESC LIMIT ?').all(ctx.state.userId, n) as any[];
     if (rows.length === 0) return ctx.reply('📭 Belum ada log.');
-    const text = rows.reverse().map(r => {
-      const t = r.created_at.slice(11, 19);
-      const icon = r.level === 'error' ? '❌' : r.level === 'warn' ? '⚠️' : 'ℹ️';
-      return `${t} ${icon} [${r.tag}] ${r.message.slice(0, 120)}`;
-    }).join('\n');
-    ctx.reply(`📜 ${n} LOG TERAKHIR\n\n${text}`);
+    ctx.reply(`📜 <b>${n} LOG TERAKHIR</b>\n\n${formatLogs(rows)}`, html);
   });
 } // end setupHandlers
 
@@ -348,7 +529,13 @@ export function startTelegram(): boolean {
     }
     for (const [inst, chats] of targets) {
       for (const chatId of chats) {
-        try { await inst.telegram.sendMessage(chatId, text); } catch { /* abaikan */ }
+        try {
+          // Coba render HTML dulu (ringkasan & status kaya format); bila gagal
+          // (tag tak valid dari teks dinamis), kirim versi teks polos.
+          await inst.telegram.sendMessage(chatId, text, { parse_mode: 'HTML' });
+        } catch {
+          try { await inst.telegram.sendMessage(chatId, text.replace(/<[^>]*>/g, '')); } catch { /* abaikan */ }
+        }
       }
     }
   });

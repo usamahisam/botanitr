@@ -23,7 +23,8 @@
     "test:backtest": "tsx scripts/test-backtest-fallback.ts",
     "typecheck": "tsc --noEmit",
     "test:resume": "tsx scripts/test-resume.ts",
-    "test:audit": "tsx scripts/test-audit-http.ts"
+    "test:audit": "tsx scripts/test-audit-http.ts",
+    "test:tgui": "tsx scripts/test-telegram-ui.ts"
   },
   "dependencies": {
     "axios": "^1.7.9",
