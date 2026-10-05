@@ -3,7 +3,7 @@ import { db, queries, settings, now } from '../db/index.js';
 import type { UserRow } from '../db/index.js';
 import { registry, KNOWN_EXCHANGES } from '../exchange/registry.js';
 import { log } from '../log.js';
-import { fmtIDR, fmtPct } from '../utils/format.js';
+import { fmtIDR, fmtMoney, fmtPct, fmtTimeWib, quoteOfPair } from '../utils/format.js';
 import { fetchExchangeBalance, getUsdtIdr } from '../engine/balances.js';
 import { pnl } from '../engine/pnl.js';
 import { setTelegramSender, notifyDailySummary, userChats, allChats } from './notify.js';
@@ -201,7 +201,6 @@ async function buildBalance(userId: number): Promise<string> {
 async function buildPositions(userId: number): Promise<string> {
   const bots = (db.prepare('SELECT * FROM bots WHERE user_id=?').all(userId) as any[]).filter(b => b.status !== 'stopped');
   if (bots.length === 0) return '📭 Tidak ada posisi/bot aktif.\nBuat bot baru di dashboard web atau /help.';
-  const usdtIdr = await getUsdtIdr();
   const lines = [`<b>📌 POSISI BOT</b>`, ''];
   for (const b of bots) {
     let entries: any[] = [];
@@ -211,11 +210,13 @@ async function buildPositions(userId: number): Promise<string> {
     } catch { /* state korup → tampilkan tanpa posisi */ }
     const qty = entries.reduce((s: number, e: any) => s + (Number(e.qty) || 0), 0);
     const cost = entries.reduce((s: number, e: any) => s + (Number(e.cost) || 0), 0);
-    const mult = b.exchange_id === 'indodax' ? 1 : usdtIdr;
+    // Nominal dalam quote pair (USDT untuk *USDT) — JANGAN dikali kurs.
+    // (Kode lama mengalikan semua non-Indodax dengan kurs → Bittime/IDR ikut rusak.)
+    const quote = quoteOfPair(b.pair);
     lines.push(`${statusIcon(b.status)} <b>#${b.id} ${esc(b.name)}</b>`);
     lines.push(`  <code>${esc(b.pair)}</code> · ${esc(b.strategy)} · ${esc(b.status)}`);
-    lines.push(`  Budget ${fmtIDR(b.current_budget * mult)}`);
-    if (qty > 0) lines.push(`  📦 Posisi <code>${qty.toFixed(8)}</code> (modal ${fmtIDR(cost * mult)})`);
+    lines.push(`  Budget ${fmtMoney(b.current_budget, quote)}`);
+    if (qty > 0) lines.push(`  📦 Posisi <code>${qty.toFixed(8)}</code> (modal ${fmtMoney(cost, quote)})`);
     lines.push('');
   }
   return lines.join('\n');
@@ -242,16 +243,17 @@ async function buildPnl(userId: number): Promise<string> {
   for (const id of userExchangeIds(userId)) {
     try {
       const client = registry.get(id);
+      // Per-exchange tampil dalam quote aslinya (USDT tetap USDT);
+      // total gabungan (beda quote) dikonversi ke Rp.
+      const quote = client.quoteAsset === 'USDT' ? 'USDT' : 'IDR';
       const r = pnl.realized(id, undefined, userId);
       const today = pnl.realizedToday(id, userId);
-      const mult = client.quoteAsset === 'IDR' ? 1 : usdtIdr;
-      const idr = r * mult;
-      const todayIdr = today * mult;
-      totalRealizedIdr += idr;
+      const mult = quote === 'IDR' ? 1 : usdtIdr;
+      totalRealizedIdr += r * mult;
       const label = id === 'indodax' ? 'Indodax' : id === 'tokocrypto' ? 'Tokocrypto' : id === 'binance' ? 'Binance' : id;
-      const emo = idr >= 0 ? '🟢' : '🔴';
+      const emo = r >= 0 ? '🟢' : '🔴';
       lines.push(`${emo} <b>${esc(label)}</b>`);
-      lines.push(`  Total <b>${fmtIDR(idr)}</b> · Hari ini ${fmtIDR(todayIdr)}`);
+      lines.push(`  Total <b>${fmtMoney(r, quote)}</b> · Hari ini ${fmtMoney(today, quote)}`);
     } catch (e: any) {
       lines.push(`⚠️ <b>${esc(id)}</b> <i>${esc(e.message)}</i>`);
     }
@@ -264,7 +266,7 @@ async function buildPnl(userId: number): Promise<string> {
 /** Format baris log DB menjadi teks HTML ringkas (urut terbaru → terlama) */
 export function formatLogs(rows: any[]): string {
   return rows.map(r => {
-    const t = String(r.created_at || '').slice(11, 19);
+    const t = fmtTimeWib(String(r.created_at || ''));
     const icon = r.level === 'error' ? '❌' : r.level === 'warn' ? '⚠️' : 'ℹ️';
     return `<code>${esc(t)}</code> ${icon} [${esc(r.tag)}] ${esc(String(r.message || '').slice(0, 120))}`;
   }).join('\n');
@@ -371,12 +373,12 @@ function setupHandlers(inst: Telegraf) {
       try {
         const client = registry.getForUser(exchangeId, ctx.state.userId);
         const t = await client.getTicker(pair);
-        const mult = client.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
+        const quote = quoteOfPair(pair);
         return ctx.reply(
           `💹 <b>${esc(pair)}</b> <i>via ${esc(exchangeId)}</i>\n` +
-          `Last: <b>${fmtIDR(t.last * mult)}</b>\n` +
-          `Bid: ${fmtIDR(t.bid * mult)} · Ask: ${fmtIDR(t.ask * mult)}\n` +
-          `24J: ${fmtIDR(t.low24 * mult)} – ${fmtIDR(t.high24 * mult)}`,
+          `Last: <b>${fmtMoney(t.last, quote)}</b>\n` +
+          `Bid: ${fmtMoney(t.bid, quote)} · Ask: ${fmtMoney(t.ask, quote)}\n` +
+          `24J: ${fmtMoney(t.low24, quote)} – ${fmtMoney(t.high24, quote)}`,
           html
         );
       } catch (e: any) {

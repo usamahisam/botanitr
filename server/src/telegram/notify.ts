@@ -1,5 +1,5 @@
 import { db, settings } from '../db/index.js';
-import { fmtIDR, fmtQty } from '../utils/format.js';
+import { fmtMoney, fmtQty, quoteOfPair } from '../utils/format.js';
 import { Action } from '../strategies/types.js';
 
 /** Modul ini di-bridge ke bot telegram agar tidak circular import */
@@ -35,34 +35,49 @@ export function allChats(): string[] {
 
 const TAG_TITLES: Record<string, string> = {
   INVENTORY_HARVEST_RECYCLE: '🌾 INVENTORY HARVESTER: MODAL KEMBALI CAIR',
+  GRID_SELL: '📊 GRID: LEVEL PANEN',
   GRID_UNWIND: '📊 GRID UNWIND: LIKUIDASI BREAKEVEN',
   DCA_TP: '🎯 DCA: TARGET PROFIT TERCAPAI',
+  DCA_TP1: '🎯 DCA: PANEN PARSIAL',
   SCALPER_TP: '⚡ SCALPER: TAKE PROFIT',
   SCALPER_SL: '🛑 SCALPER: STOP LOSS',
   SCALPER_EXIT: '↩️ SCALPER: EXIT SIGNAL',
+  REVERT_TP: '🔄 REVERT: PANTULAN DIKUNCI',
+  REVERT_SL: '🛑 REVERT: STOP DARURAT',
+  REVERT_EXIT: '🔄 REVERT: EXIT MOMENTUM',
+  BB_EXIT: '📉 BOLLINGER: EXIT BAND',
+  BB_SL: '🛑 BOLLINGER: STOP DARURAT',
+  BRK_TP: '🚀 BREAKOUT: TAKE PROFIT',
+  BRK_SL: '🛑 BREAKOUT: STOP DARURAT',
+  BRK_EXIT: '🚀 BREAKOUT: MOMENTUM HABIS',
   REBALANCE: '⚖️ REBALANCE PORTFOLIO',
   AUTO_COMPOUND: '📈 AUTO-COMPOUND'
 };
 
-export async function notifyTrade(trade: any, action: Action, usdtIdr: number) {
+/**
+ * Notifikasi trade SADAR QUOTE: nilai ditampilkan dalam quote pair
+ * (USDT untuk pair *USDT, IDR untuk *IDR) — bukan semuanya di-Rp-kan.
+ */
+export async function notifyTrade(trade: any, action: Action, _usdtIdr: number) {
   const title = TAG_TITLES[action.tag] || (trade.side === 'buy' ? '🟢 BELI' : '🔴 JUAL');
   const exchange = trade.exchange_id.toUpperCase();
   const base = trade.pair.replace(/IDR$|USDT$/, '');
+  const quote = quoteOfPair(trade.pair);
   const modeBadge = trade.mode === 'paper' ? '📄 DEMO' : '💰 RIIL';
   const lines = [
     `${title}`,
     `Bursa: ${exchange} ${modeBadge}`,
     `Aset: ${base} (${fmtQty(trade.qty)})`,
-    `Harga ${trade.side === 'buy' ? 'Beli' : 'Jual'}: ${fmtIDR(trade.price * usdtIdr)}`
+    `Harga ${trade.side === 'buy' ? 'Beli' : 'Jual'}: ${fmtMoney(trade.price, quote)}`
   ];
   if (trade.side === 'sell') {
-    lines.push(`Nilai: ${fmtIDR(trade.value * usdtIdr)}`);
+    lines.push(`Nilai: ${fmtMoney(trade.value, quote)}`);
     if (trade.realized_pnl !== 0) {
-      const pnlIdr = trade.realized_pnl * usdtIdr;
-      lines.push(`Net Profit Realized: ${pnlIdr >= 0 ? '+' : ''}${fmtIDR(pnlIdr)}`);
+      const sign = trade.realized_pnl >= 0 ? '+' : '';
+      lines.push(`Net Profit Realized: ${sign}${fmtMoney(trade.realized_pnl, quote)}`);
     }
   } else {
-    lines.push(`Nominal: ${fmtIDR(trade.value * usdtIdr)}`);
+    lines.push(`Nominal: ${fmtMoney(trade.value, quote)}`);
   }
   await notify(lines.join('\n'), trade.user_id ?? null);
 }

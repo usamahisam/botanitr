@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, PairRow } from '../lib/api'
-import { EXCHANGES } from '../lib/exchanges';
-import { fmtIDR, fmtDateTime } from '../lib/format';
+import { EXCHANGES, QUOTE } from '../lib/exchanges';
+import { fmtDateTime, fmtMoney, quoteOfPair } from '../lib/format';
 import { Icon } from '../components/icons';
 
 interface Alert {
@@ -74,7 +74,7 @@ export default function Alerts() {
             </select>
           </div>
           <div>
-            <div className="lbl mb-1.5">Target ({exchange === 'indodax' ? 'IDR' : 'USDT'})</div>
+            <div className="lbl mb-1.5">Target ({QUOTE[exchange] || 'IDR'})</div>
             <input type="number" value={target} onChange={e => setTarget(e.target.value)} className="input num" placeholder="0" />
           </div>
           <div>
@@ -99,7 +99,7 @@ export default function Alerts() {
                     <span className="font-semibold">{a.pair}</span> <span className="txt-3 text-xs">· {a.exchange_id}</span>
                     <div className="text-xs txt-3 mt-0.5">{a.direction === 'above' ? 'Naik di atas' : 'Turun di bawah'}{a.note ? ` · ${a.note}` : ''}</div>
                   </td>
-                  <td className="!text-right num font-semibold">{fmtIDR(a.target_price)}</td>
+                  <td className="!text-right num font-semibold">{fmtMoney(a.target_price, quoteOfPair(a.pair))}</td>
                   <td className="!text-right w-24">
                     <button onClick={async () => { try { await api.del(`/alerts/${a.id}`); load(); } catch (e: any) { alert(e.message || 'Hapus gagal'); } }} className="btn btn-ghost btn-sm">Hapus</button>
                   </td>
@@ -119,7 +119,7 @@ export default function Alerts() {
                 <tr key={a.id}>
                   <td className="w-10"><Icon.check size={15} className="txt-up" /></td>
                   <td>
-                    <span className="font-semibold line-through">{a.pair} {a.direction === 'above' ? '≥' : '≤'} {fmtIDR(a.target_price)}</span>
+                    <span className="font-semibold line-through">{a.pair} {a.direction === 'above' ? '≥' : '≤'} {fmtMoney(a.target_price, quoteOfPair(a.pair))}</span>
                     <div className="text-xs txt-3 mt-0.5">Terpicu {a.triggered_at ? fmtDateTime(a.triggered_at) : '—'}</div>
                   </td>
                   <td className="!text-right w-24">

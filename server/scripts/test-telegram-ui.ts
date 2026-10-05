@@ -34,7 +34,7 @@ async function main() {
   ]);
   check('ikon error + info', out.includes('❌') && out.includes('ℹ️'), out);
   check('pesan di-escape', out.includes('&lt;hack&gt;') && !out.includes('<hack>'));
-  check('jam tampil', out.includes('10:00:01'));
+  check('jam WIB (10 UTC → 17 WIB)', out.includes('17.00.01'), out);
 
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);

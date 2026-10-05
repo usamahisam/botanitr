@@ -25,7 +25,8 @@
     "test:resume": "tsx scripts/test-resume.ts",
     "test:audit": "tsx scripts/test-audit-http.ts",
     "test:tgui": "tsx scripts/test-telegram-ui.ts",
-    "test:strat": "tsx scripts/test-strategies.ts"
+    "test:strat": "tsx scripts/test-strategies.ts",
+    "test:format": "tsx scripts/test-format.ts"
   },
   "dependencies": {
     "axios": "^1.7.9",

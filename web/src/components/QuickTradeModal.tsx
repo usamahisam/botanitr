@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, PairRow } from '../lib/api';
-import { fmtIDR } from '../lib/format';
+import { fmtMoney, quoteOfPair } from '../lib/format';
 import { Icon } from './icons';
 import { EXCHANGES, QUOTE } from '../lib/exchanges';
 
@@ -25,7 +25,7 @@ export default function QuickTradeModal({ onClose, onDone }: { onClose: () => vo
     setLoading(true); setResult(null);
     try {
       const r: any = await api.post('/trade/quick', { exchange_id: exchange, pair, side, amount: Number(amount), mode });
-      setResult({ ok: true, text: `${side === 'buy' ? 'Beli' : 'Jual'} ${Number(r.qty).toFixed(8)} @ ${fmtIDR(r.price)}` });
+      setResult({ ok: true, text: `${side === 'buy' ? 'Beli' : 'Jual'} ${Number(r.qty).toFixed(8)} @ ${fmtMoney(r.price, quoteOfPair(pair))}` });
       onDone();
     } catch (e: any) {
       setResult({ ok: false, text: e.message });

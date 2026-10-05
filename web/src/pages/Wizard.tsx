@@ -293,7 +293,7 @@ export default function Wizard() {
             <button onClick={() => setMode('paper')}
               className={`text-left rounded-md border p-3 transition-colors ${mode === 'paper' ? 'border-[#2ebd85]/70 bg-[#2ebd85]/[0.06]' : 'border-white/[0.08] hover:border-white/20'}`}>
               <div className="font-semibold text-[14px] txt-up">Demo — uang mainan</div>
-              <p className="text-xs txt-2 mt-1 leading-relaxed">Saldo virtual Rp 10 juta. Aman untuk belajar & uji strategi. Bisa di-reset kapan saja.</p>
+              <p className="text-xs txt-2 mt-1 leading-relaxed">Saldo virtual {QUOTE[exchange] === 'USDT' ? '1.000 USDT' : 'Rp 10 juta'}. Aman untuk belajar & uji strategi. Bisa di-reset kapan saja.</p>
             </button>
             <button onClick={() => setMode('live')}
               className={`text-left rounded-md border p-3 transition-colors ${mode === 'live' ? 'border-[#f6465d]/70 bg-[#f6465d]/[0.06]' : 'border-white/[0.08] hover:border-white/20'}`}>

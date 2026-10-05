@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, Bot, LogRow } from '../lib/api';
-import { fmtIDR, fmtSignedIDR, fmtTime } from '../lib/format';
+import { fmtMoney, fmtSignedMoney, fmtTime, quoteOfPair } from '../lib/format';
 import { getSocket } from '../lib/ws';
 import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 import { Icon } from '../components/icons';
@@ -9,7 +9,7 @@ import { Icon } from '../components/icons';
 const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester', rebalance: 'Rebalance', revert: 'Revert', bollinger: 'Bollinger', breakout: 'Breakout' };
 const PER_PAGE = 8;
 
-const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'DCA_TP', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'INVENTORY_HARVEST_RECYCLE', 'REBALANCE', 'AUTO_COMPOUND'];
+const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'GRID_SELL', 'DCA_TP', 'DCA_TP1', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'REVERT_TP', 'REVERT_SL', 'REVERT_EXIT', 'BB_EXIT', 'BB_SL', 'BRK_TP', 'BRK_SL', 'BRK_EXIT', 'INVENTORY_HARVEST_RECYCLE', 'REBALANCE', 'AUTO_COMPOUND'];
 
 function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -64,7 +64,7 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
                 </linearGradient>
               </defs>
               <YAxis hide domain={['dataMin', 'dataMax']} />
-              <Tooltip formatter={(v: any) => fmtIDR(Number(v))} labelFormatter={() => ''}
+              <Tooltip formatter={(v: any) => fmtMoney(Number(v), quoteOfPair(bot.pair))} labelFormatter={() => ''}
                 contentStyle={{ background: '#131a24', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, fontSize: 12 }} />
               <Area type="monotone" dataKey="equity" stroke={line} strokeWidth={1.5} fill={`url(#eq-${bot.id})`} isAnimationActive={false} />
             </AreaChart>
@@ -77,8 +77,8 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
       </div>
 
       <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-white/[0.06]">
-        <div><div className="lbl !text-[10px]">Budget</div><div className="num text-[13px] font-semibold mt-0.5">{fmtIDR(bot.current_budget)}</div></div>
-        <div><div className="lbl !text-[10px]">Profit</div><div className={`num text-[13px] font-semibold mt-0.5 ${bot.stats.realized >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedIDR(bot.stats.realized)}</div></div>
+        <div><div className="lbl !text-[10px]">Budget</div><div className="num text-[13px] font-semibold mt-0.5">{fmtMoney(bot.current_budget, quoteOfPair(bot.pair))}</div></div>
+        <div><div className="lbl !text-[10px]">Profit</div><div className={`num text-[13px] font-semibold mt-0.5 ${bot.stats.realized >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedMoney(bot.stats.realized, quoteOfPair(bot.pair))}</div></div>
         <div><div className="lbl !text-[10px]">Win</div><div className="num text-[13px] font-semibold mt-0.5">{winRate.toFixed(0)}% <span className="txt-3 font-normal">· {bot.stats.trades}</span></div></div>
       </div>
 
@@ -154,7 +154,7 @@ function LogFeed() {
             <span className={`shrink-0 font-semibold ${tagClass(l)}`}>[{l.tag}]</span>
             <span className="flex-1 txt-2 break-words">{l.message}</span>
             {l.impact_rp != null && l.impact_rp !== 0 && (
-              <span className={`shrink-0 num font-semibold ${l.impact_rp >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedIDR(l.impact_rp)}</span>
+              <span className={`shrink-0 num font-semibold ${l.impact_rp >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtMoney(l.impact_rp, 'IDR')}</span>
             )}
           </div>
         ))}

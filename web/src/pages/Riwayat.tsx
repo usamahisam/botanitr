@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, download, TradeRow } from '../lib/api'
 import { EXCHANGES } from '../lib/exchanges';
-import { fmtIDR, fmtQty, fmtDateTime, fmtSignedIDR } from '../lib/format';
+import { fmtQty, fmtDateTime, fmtMoney, fmtSignedMoney, quoteOfPair } from '../lib/format';
 
 export default function Riwayat() {
   const [rows, setRows] = useState<TradeRow[]>([]);
@@ -66,12 +66,12 @@ export default function Riwayat() {
                 <td className="txt-3 whitespace-nowrap !text-[12px]">{fmtDateTime(t.created_at)}</td>
                 <td><span className="font-semibold font-sans">{t.pair}</span> <span className="txt-3 text-[11px] font-sans">{t.exchange_id}</span></td>
                 <td><span className={`text-[12px] font-bold tracking-wide ${t.side === 'buy' ? 'txt-up' : 'txt-down'}`}>{t.side === 'buy' ? 'BELI' : 'JUAL'}</span></td>
-                <td className="!text-right">{fmtIDR(t.price)}</td>
+                <td className="!text-right">{fmtMoney(t.price, quoteOfPair(t.pair))}</td>
                 <td className="!text-right txt-2">{fmtQty(t.qty)}</td>
-                <td className="!text-right">{fmtIDR(t.value)}</td>
-                <td className="!text-right txt-3">{fmtIDR(t.fee)}</td>
+                <td className="!text-right">{fmtMoney(t.value, quoteOfPair(t.pair))}</td>
+                <td className="!text-right txt-3">{fmtMoney(t.fee, quoteOfPair(t.pair))}</td>
                 <td className={`!text-right font-semibold ${t.realized_pnl > 0 ? 'txt-up' : t.realized_pnl < 0 ? 'txt-down' : 'txt-3'}`}>
-                  {t.realized_pnl !== 0 ? fmtSignedIDR(t.realized_pnl) : '—'}
+                  {t.realized_pnl !== 0 ? fmtSignedMoney(t.realized_pnl, quoteOfPair(t.pair)) : '—'}
                 </td>
                 <td><span className={`tag ${t.mode === 'live' ? 'tag-down' : 'tag-dim'}`}>{t.mode === 'live' ? 'RIIL' : 'DEMO'}</span></td>
                 <td className="txt-3 text-xs font-sans">{t.strategy_tag || '—'}</td>
