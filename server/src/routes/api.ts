@@ -291,6 +291,11 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
     created_at: now(), updated_at: now()
   });
   const bot = queries.getBot.get(info.lastInsertRowid) as BotRow;
+  // Titik awal kurva equity agar grafik langsung punya data (bukan menunggu perekam)
+  try {
+    const { recordEquityPoint } = await import('../engine/equity.js');
+    recordEquityPoint(bot.id, budgetNum);
+  } catch { /* abaikan */ }
   res.status(201).json({ ...bot, params: JSON.parse(bot.params), state: JSON.parse(bot.state) });
 }));
 
@@ -743,6 +748,10 @@ api.post('/marketplace/:id/install', asyncH(async (req: any, res: any) => {
   });
   db.prepare('UPDATE market_presets SET installs=installs+1 WHERE id=?').run(preset.id);
   const bot = queries.getBot.get(info.lastInsertRowid) as BotRow;
+  try {
+    const { recordEquityPoint } = await import('../engine/equity.js');
+    recordEquityPoint(bot.id, budget);
+  } catch { /* abaikan */ }
   res.status(201).json({ ...bot, params: safeJson(bot.params, {}), state: safeJson(bot.state, {}) });
 }));
 

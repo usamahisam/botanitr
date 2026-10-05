@@ -72,6 +72,9 @@ async function main() {
   r = await post('/bots', { name: 'E2E Grid', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid', params: {}, budget_idr: 100000, mode: 'paper' }, T);
   check('buat bot paper 201', r.status === 201 && !!r.data.id, `got ${r.status} ${JSON.stringify(r.data).slice(0, 100)}`);
   const botId = r.data.id;
+  const { db: dbEq } = await import('../src/db/index.js');
+  const eqRows = (dbEq.prepare('SELECT COUNT(*) c FROM bot_equity WHERE bot_id=?').get(botId) as any).c;
+  check('titik equity awal terekam saat bot dibuat', eqRows >= 1, `got ${eqRows}`);
   r = await post('/bots', { name: 'X', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'ngawur', params: {}, budget_idr: 1000, mode: 'paper' }, T);
   check('strategi asing → 400', r.status === 400, `got ${r.status}`);
   r = await post('/bots', { name: ' Sultan', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid', params: {}, budget_idr: 999999999999, mode: 'paper' }, T);

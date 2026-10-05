@@ -53,8 +53,8 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
         <span className={`tag ${running ? 'tag-up' : 'tag-dim'}`}>{running ? 'JALAN' : 'BERHENTI'}</span>
       </div>
 
-      <div className="h-[64px] mt-3 -mx-1">
-        {equityData.length > 1 ? (
+      <div className="h-[64px] mt-3 -mx-1 relative">
+        {equityData.length > 1 && equityData.some((d, i, a) => i > 0 && d.equity !== a[0].equity) ? (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={equityData} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
               <defs>
@@ -70,8 +70,10 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
             </AreaChart>
           </ResponsiveContainer>
         ) : (
-          <div className="h-full flex items-center justify-center text-xs txt-3 border border-dashed border-white/10 rounded-md">
-            Kurva ekuitas tersedia setelah beberapa jam berjalan
+          <div className="h-full flex items-center justify-center text-xs txt-3 border border-dashed border-white/10 rounded-md px-2 text-center">
+            {equityData.length > 1
+              ? 'Equity belum bergerak — bot belum punya posisi/fill'
+              : 'Kurva ekuitas tersedia setelah beberapa jam berjalan'}
           </div>
         )}
       </div>
