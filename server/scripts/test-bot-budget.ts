@@ -78,6 +78,16 @@ async function main() {
   const claimOk = await validateBudget(0, 'indodax', 3000000, 'paper');
   check('6jt diklaim + 3jt baru <= 10jt -> lolos', claimOk.ok === true, claimOk.message.slice(0, 120));
 
+  // ===== G1) Klaim = sisa kas, bukan full budget (anti alarm palsu) =====
+  console.log('\nG1) unspentClaim');
+  const { unspentClaim } = await import('../src/engine/budget.js');
+  check('ada cash ledger -> pakai cash', unspentClaim({ current_budget: 99306, state: JSON.stringify({ cash: 10364 }) }) === 10364);
+  check('legacy: budget - openCost', unspentClaim({ current_budget: 99306, state: JSON.stringify({ filledBuys: [{ cost: 89000 }] }) }) === 10306);
+  check('tanpa posisi -> full budget', unspentClaim({ current_budget: 6000000, state: '{}' }) === 6000000);
+  // Kasus user: bot revert live 1x beli — klaim tersisa ~10rb, bukan 99rb
+  const claimAfterBuy = await validateBudget(0, 'indodax', 5000, 'paper');
+  check('klaim tersisa kecil -> bot baru lolos', claimAfterBuy.ok === true, claimAfterBuy.message.slice(0, 120));
+
   // ===== G) Guard ledger kas bot =====
   console.log('\nG) checkLedgerCash');
   const { checkLedgerCash } = await import('../src/engine/trader.js');

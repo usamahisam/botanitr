@@ -12,6 +12,25 @@ export interface BudgetCheck {
 }
 
 /**
+ * Sisa klaim bot atas kas bebas: kas ledger (state.cash) bila sudah ada,
+ * jika tidak = budget - modal nyangkut. WAJIB sisa (bukan full budget) —
+ * uang yang sudah dibelikan barang sudah keluar dari kas bebas, menghitung
+ * full budget berarti menghitung uang yang sama dua kali (alarm palsu
+ * "klaim 99rb > kas 10rb" padahal 89rb-nya sudah jadi barang).
+ */
+export function unspentClaim(bot: any): number {
+  try {
+    const state = JSON.parse(bot.state || '{}');
+    if (Number.isFinite(state.cash)) return Math.max(0, state.cash);
+    const open: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
+    const openCost = open.reduce((s: number, e: any) => s + (Number(e.cost) || 0), 0);
+    return Math.max(0, (Number(bot.current_budget) || 0) - openCost);
+  } catch {
+    return Math.max(0, Number(bot.current_budget) || 0);
+  }
+}
+
+/**
  * Validasi budget bot terhadap kas exchange (demo = saldo virtual, live = riil).
  * Dipakai saat pembuatan bot agar user langsung tahu bila budget melebihi kas
  * (bukan gagal diam-diam saat engine jalan — kasus bot paper 1M vs kas 99rb).
@@ -29,10 +48,12 @@ export async function validateBudget(userId: number, exchangeId: string, budgetQ
     return { ok: true, skipped: true, freeQuote: 0, quote, message: `Saldo tak terbaca (${e.message}) — validasi dilewati` };
   }
   const freeQuote = balances.find(b => b.asset === quote)?.free ?? 0;
-  // Satu akun dipakai ramai-ramai: kurangi modal yang sudah diklaim bot running
-  // lain (mode sama) agar dua bot tak mengklaim kas yang sama (double-spend).
-  const committed = (db.prepare(`SELECT COALESCE(SUM(current_budget),0) s FROM bots
-    WHERE user_id=? AND exchange_id=? AND mode=? AND status='running'`).get(userId, exchangeId, mode) as any).s || 0;
+  // Satu akun dipakai ramai-ramai: kurangi SISA klaim bot running lain
+  // (kas ledger, bukan full budget) agar dua bot tak mengklaim kas yang
+  // sama (double-spend) — tanpa alarm palsu untuk uang yang sudah jadi barang.
+  const running = db.prepare(`SELECT * FROM bots
+    WHERE user_id=? AND exchange_id=? AND mode=? AND status='running'`).all(userId, exchangeId, mode) as any[];
+  const committed = running.reduce((s: number, b: any) => s + unspentClaim(b), 0);
   const available = freeQuote - committed;
   if (budgetQuote > available) {
     const hint = mode === 'paper'

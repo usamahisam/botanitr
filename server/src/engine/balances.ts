@@ -145,13 +145,14 @@ export async function checkBalancesHealth(userId: number): Promise<BalanceHealth
     const needs: BalanceNeed[] = bots
       .filter(b => b.exchange_id === id)
       .map(b => ({ bot_id: b.id, name: b.name, lot: b.lot, mode: b.mode, ok: error ? false : freeQuote >= b.lot }));
-    // Monitor alokasi ganda: total klaim bot running vs kas akun (per mode).
+    // Monitor alokasi ganda: total SISA klaim (kas ledger) bot running vs kas.
     // Quick-trade manual / bot lama bisa membuat klaim melebihi kas nyata.
-    const committedByMode = new Map<string, number>();
-    for (const b of bots.filter(x => x.exchange_id === id && x.status === 'running')) {
-      committedByMode.set(b.mode, (committedByMode.get(b.mode) || 0) + (Number(b.current_budget) || 0));
-    }
-    const committed = [...committedByMode.values()].reduce((s, v) => s + v, 0);
+    // PENTING: pakai sisa kas, bukan full budget — barang yang sudah dibeli
+    // sudah keluar dari kas bebas (menghitung full = hitung ganda = alarm palsu).
+    const { unspentClaim } = await import('./budget.js');
+    const committed = bots
+      .filter(x => x.exchange_id === id && x.status === 'running')
+      .reduce((s: number, b: any) => s + unspentClaim(b), 0);
     const overallocated = !error && committed > freeQuote;
     if (overallocated) {
       log('warn', 'ENGINE', `Alokasi berlebih di ${id}: klaim bot ${Math.round(committed)} > kas ${Math.round(freeQuote)} ${quote}`, { user_id: userId });
