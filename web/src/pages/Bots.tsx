@@ -126,13 +126,13 @@ function LogFeed() {
 
   return (
     <section className="panel mt-4">
-      <div className="panel-head !py-2.5">
+      <div className="panel-head !py-2.5 !flex-wrap gap-y-2">
         <div className="flex items-center gap-2">
           <span className="txt-up"><Icon.dot size={7} /></span>
           <span className="text-[13px] font-semibold">Log operasional</span>
           <span className="tag tag-dim">REALTIME</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="seg">
             {(['semua', 'peringatan', 'trades'] as const).map(f => (
               <button key={f} onClick={() => setFilter(f)} className={filter === f ? 'on' : ''}>
@@ -182,12 +182,12 @@ export default function Bots() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="min-w-0">
           <h2 className="text-[17px] font-bold tracking-tight">Bot</h2>
           <p className="text-xs txt-3 mt-0.5">{bots.length} bot terdaftar · {bots.filter(b => b.status === 'running').length} berjalan</p>
         </div>
-        <a href="/wizard" className="btn btn-primary btn-sm"><Icon.plus size={14} /> Bot baru</a>
+        <a href="/wizard" className="btn btn-primary btn-sm shrink-0"><Icon.plus size={14} /> Bot baru</a>
       </div>
 
       {bots.length === 0 ? (

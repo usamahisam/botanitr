@@ -51,7 +51,7 @@ function UserManager({ me, onChanged }: { me: AuthUser; onChanged?: () => void }
           ))}
         </tbody>
       </table>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end">
         <div>
           <div className="lbl mb-1.5">Username baru</div>
           <input value={username} onChange={e => setUsername(e.target.value)} className="input" />

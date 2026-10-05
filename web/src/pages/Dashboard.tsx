@@ -73,17 +73,17 @@ export default function Dashboard() {
       <Tape />
 
       {/* Hero portofolio */}
-      <section className="panel px-5 py-4 flex items-center gap-6 flex-wrap">
-        <div className="min-w-0">
+      <section className="panel px-4 sm:px-5 py-4 flex items-center gap-4 sm:gap-6 flex-wrap">
+        <div className="min-w-0 flex-1 basis-56">
           <div className="lbl">Total portofolio · IDR</div>
-          <div className="num text-[34px] leading-tight font-semibold tracking-tight">{fmtIDR(p.total_idr)}</div>
+          <div className="num text-[26px] sm:text-[34px] leading-tight font-semibold tracking-tight break-all">{fmtIDR(p.total_idr)}</div>
           <div className={`num text-[13px] font-medium flex items-center gap-1.5 mt-0.5 ${up ? 'txt-up' : 'txt-down'}`}>
             {up ? <Icon.up size={14} /> : <Icon.down size={14} />}
             {fmtPct(p.change_24h_pct)} · {fmtSignedIDR(p.change_24h_idr)}
             <span className="txt-3 font-normal">/ 24J</span>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-6 text-right">
+        <div className="flex items-center gap-4 sm:gap-6 text-right sm:ml-auto">
           <div>
             <div className="lbl">USDT / IDR</div>
             <div className="num text-[15px] font-semibold mt-1">{fmtIDR(p.usdt_idr)}</div>

@@ -39,8 +39,11 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [checking, setChecking] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
   const loc = useLocation();
   const navigate = useNavigate();
+
+  useEffect(() => { setMenuOpen(false); }, [loc.pathname]);
 
   const loadMe = useCallback(() => {
     if (!getToken()) { setUser(null); setChecking(false); return; }
@@ -89,12 +92,15 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b border-white/[0.07]" style={{ background: 'rgba(9,13,19,0.92)', backdropFilter: 'blur(8px)' }}>
-        <div className="max-w-[1400px] mx-auto px-4 h-[52px] flex items-center gap-6">
+        <div className="max-w-[1400px] mx-auto px-3 sm:px-4 h-[52px] flex items-center gap-3 sm:gap-6">
+          <button onClick={() => setMenuOpen(o => !o)} className="btn btn-ghost btn-sm btn-icon md:hidden" aria-label="Menu">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
           <div className="flex items-center gap-2.5 select-none">
             <span className="text-[#2ebd85]"><Icon.logo size={22} /></span>
-            <span className="font-bold text-[15px] tracking-tight">BOTANI<span className="txt-3 font-medium"> / TERMINAL</span></span>
+            <span className="font-bold text-[15px] tracking-tight hidden min-[400px]:inline">BOTANI<span className="txt-3 font-medium"> / TERMINAL</span></span>
           </div>
-          <nav className="flex items-center gap-1 overflow-x-auto">
+          <nav className="hidden md:flex items-center gap-1 overflow-x-auto">
             {NAV.map(n => (
               <NavLink key={n.to} to={n.to} end={n.end as any}
                 className={({ isActive }) =>
@@ -105,18 +111,32 @@ export default function App() {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-4">
-            <Clock />
+          <div className="ml-auto flex items-center gap-3 sm:gap-4">
+            <span className="hidden sm:inline"><Clock /></span>
             <span className={`flex items-center gap-1.5 text-xs font-medium ${connected ? 'txt-up' : 'txt-down'}`}>
               <Icon.dot size={7} />
               {connected ? 'LIVE' : 'OFFLINE'}
             </span>
-            <span className="text-xs txt-2 hidden sm:inline" title={user.role}>{user.username}{user.role === 'admin' ? ' · admin' : ''}</span>
-            <button onClick={logout} className="btn btn-ghost btn-sm" title="Keluar">
+            <span className="text-xs txt-2 hidden lg:inline" title={user.role}>{user.username}{user.role === 'admin' ? ' · admin' : ''}</span>
+            <button onClick={logout} className="btn btn-ghost btn-sm btn-icon" title="Keluar">
               <Icon.power size={14} />
             </button>
           </div>
         </div>
+        {menuOpen && (
+          <nav className="md:hidden border-t border-white/[0.07] px-3 py-2 grid gap-1" style={{ background: 'rgba(9,13,19,0.97)' }}>
+            {NAV.map(n => (
+              <NavLink key={n.to} to={n.to} end={n.end as any}
+                className={({ isActive }) =>
+                  `flex items-center gap-2.5 px-3 h-10 rounded-md text-[14px] font-medium ${isActive ? 'text-white bg-white/[0.08]' : 'txt-2'}`
+                }>
+                <n.icon size={16} />
+                {n.label}
+              </NavLink>
+            ))}
+            <div className="px-3 py-2 text-xs txt-3 num">{user.username}{user.role === 'admin' ? ' · admin' : ''}</div>
+          </nav>
+        )}
       </header>
       <main className="max-w-[1400px] mx-auto px-4 py-5">
         <Routes>

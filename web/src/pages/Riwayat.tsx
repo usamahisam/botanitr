@@ -22,12 +22,12 @@ export default function Riwayat() {
 
   return (
     <section className="panel">
-      <div className="panel-head">
+      <div className="panel-head !flex-wrap gap-y-2">
         <div>
           <span className="text-[14px] font-semibold">Riwayat transaksi</span>
           <span className="num text-xs txt-3 ml-2">{total} baris</span>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <select value={exchange} onChange={e => { setExchange(e.target.value); setPage(1); }} className="input !w-auto !py-1.5 text-xs">
             <option value="">Semua exchange</option>
             <option value="indodax">Indodax</option>

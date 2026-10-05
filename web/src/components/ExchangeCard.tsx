@@ -45,14 +45,14 @@ export default function ExchangeCard({ ex, onSynced }: { ex: ExchangeView; onSyn
         )}
         <div className="lbl">Nilai portofolio</div>
         <div className="flex items-baseline gap-3 mt-1 flex-wrap">
-          <span className="num text-[28px] font-semibold tracking-tight">{fmtIDR(ex.saldo_total_idr)}</span>
+          <span className="num text-[24px] sm:text-[28px] font-semibold tracking-tight break-all">{fmtIDR(ex.saldo_total_idr)}</span>
           <span className={`num text-[13px] font-medium flex items-center gap-1 ${changePct >= 0 ? 'txt-up' : 'txt-down'}`}>
             {changePct >= 0 ? <Icon.up size={13} /> : <Icon.down size={13} />}
             {fmtPct(changePct)} · {fmtSignedIDR(ex.profit_harian)}
           </span>
         </div>
 
-        <div className="grid grid-cols-4 gap-px bg-white/[0.06] border border-white/[0.06] rounded-md overflow-hidden mt-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/[0.06] border border-white/[0.06] rounded-md overflow-hidden mt-4">
           {[
             { l: 'Profit 24J', v: fmtSignedIDR(ex.profit_harian), up: ex.profit_harian >= 0 },
             { l: 'Profit Total', v: fmtSignedIDR(ex.profit_total), up: ex.profit_total >= 0 },
@@ -67,7 +67,8 @@ export default function ExchangeCard({ ex, onSynced }: { ex: ExchangeView; onSyn
         </div>
       </div>
 
-      <table className="tbl">
+      <div className="overflow-x-auto">
+      <table className="tbl min-w-[340px]">
         <thead>
           <tr><th>Aset</th><th className="!text-right">Jumlah</th><th className="!text-right">Nilai</th><th className="!text-right">Porsi</th></tr>
         </thead>
@@ -95,6 +96,7 @@ export default function ExchangeCard({ ex, onSynced }: { ex: ExchangeView; onSyn
           ))}
         </tbody>
       </table>
+      </div>
 
       {coins.length > 5 && (
         <button onClick={() => setShowAll(!showAll)} className="w-full py-2 text-xs txt-3 hover:text-white border-t border-white/[0.06] transition-colors">

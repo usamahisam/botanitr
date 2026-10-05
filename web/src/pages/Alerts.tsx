@@ -52,7 +52,7 @@ export default function Alerts() {
             <Icon.warn size={15} /> <span>{err}</span>
           </div>
         )}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
           <div>
             <div className="lbl mb-1.5">Exchange</div>
             <select value={exchange} onChange={e => setExchange(e.target.value)} className="input">

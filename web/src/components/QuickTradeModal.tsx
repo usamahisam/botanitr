@@ -32,14 +32,14 @@ export default function QuickTradeModal({ onClose, onDone }: { onClose: () => vo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(4,6,10,0.7)' }} onClick={onClose}>
-      <div className="panel w-full max-w-[420px]" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-4 overflow-y-auto" style={{ background: 'rgba(4,6,10,0.7)' }} onClick={onClose}>
+      <div className="panel w-full max-w-[420px] my-auto" onClick={e => e.stopPropagation()}>
         <div className="panel-head">
           <span className="text-sm font-semibold flex items-center gap-2"><Icon.zap size={15} className="text-[#4f7cff]" /> Perdagangan Cepat</span>
           <button onClick={onClose} className="txt-3 hover:text-white"><Icon.x size={16} /></button>
         </div>
         <div className="p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
             <div>
               <div className="lbl mb-1.5">Exchange</div>
               <select value={exchange} onChange={e => setExchange(e.target.value)} className="input">
@@ -64,7 +64,7 @@ export default function QuickTradeModal({ onClose, onDone }: { onClose: () => vo
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
             <div>
               <div className="lbl mb-1.5">{side === 'buy' ? `Nominal (${exchange === 'indodax' ? 'IDR' : 'USDT'})` : 'Qty aset'}</div>
               <input value={amount} onChange={e => setAmount(e.target.value)} type="number" className="input num" />

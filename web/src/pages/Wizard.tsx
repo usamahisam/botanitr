@@ -64,7 +64,7 @@ function BacktestPanel({ exchange, pair, strategy, params, budget }: {
               </ResponsiveContainer>
             ) : <div className="h-full flex items-center justify-center text-xs txt-3 border border-dashed border-white/10 rounded-md">Data candle kurang untuk rentang ini.</div>}
           </div>
-          <div className="grid grid-cols-4 gap-px bg-white/[0.06] border border-white/[0.06] rounded-md overflow-hidden mt-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/[0.06] border border-white/[0.06] rounded-md overflow-hidden mt-3">
             {[
               { l: 'Return', v: `${result.profitPct >= 0 ? '+' : ''}${result.profitPct.toFixed(2)}%`, up: result.profitPct >= 0 },
               { l: 'Win rate', v: `${result.winRate.toFixed(1)}%`, up: result.winRate >= 50 },
@@ -172,9 +172,9 @@ export default function Wizard() {
 
       <div className="flex items-center gap-0 mb-5 border border-white/[0.07] rounded-lg overflow-hidden">
         {STEPS.map((label, i) => (
-          <div key={i} className={`flex-1 flex items-center gap-2.5 px-4 py-2.5 text-[13px] ${i + 1 === step ? 'bg-white/[0.06]' : ''} ${i > 0 ? 'border-l border-white/[0.07]' : ''}`}>
-            <span className={`num w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border ${i + 1 <= step ? 'bg-[#4f7cff] border-[#4f7cff] text-white' : 'border-white/15 txt-3'}`}>{i + 1}</span>
-            <span className={i + 1 === step ? 'font-semibold' : 'txt-3'}>{label}</span>
+          <div key={i} className={`flex-1 flex items-center gap-2 px-2.5 sm:px-4 py-2.5 text-[13px] min-w-0 ${i + 1 === step ? 'bg-white/[0.06]' : ''} ${i > 0 ? 'border-l border-white/[0.07]' : ''}`}>
+            <span className={`num w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold border ${i + 1 <= step ? 'bg-[#4f7cff] border-[#4f7cff] text-white' : 'border-white/15 txt-3'}`}>{i + 1}</span>
+            <span className={`truncate ${i + 1 === step ? 'font-semibold' : 'txt-3'}`}>{label}</span>
           </div>
         ))}
       </div>
@@ -187,7 +187,7 @@ export default function Wizard() {
 
       {step === 1 && (
         <section className="panel p-4">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <div className="lbl mb-1.5">Exchange</div>
               <select value={exchange} onChange={e => setExchange(e.target.value)} className="input">

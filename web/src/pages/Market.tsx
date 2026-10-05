@@ -60,8 +60,8 @@ export default function Market() {
           <h2 className="text-[17px] font-bold tracking-tight">Marketplace strategi</h2>
           <p className="text-xs txt-3 mt-0.5">Preset siap pakai dari sistem & komunitas. Instalasi selalu dimulai dalam keadaan dijeda.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari preset…" className="input !w-48" />
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari preset…" className="input !w-full sm:!w-48" />
           <select value={exchange} onChange={e => setExchange(e.target.value)} className="input !w-auto">
             <option value="indodax">Indodax</option>
             <option value="tokocrypto">Tokocrypto</option>
