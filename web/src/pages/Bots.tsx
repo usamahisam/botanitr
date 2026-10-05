@@ -49,6 +49,12 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
             <span className="font-semibold text-[14px] truncate">{bot.name}</span>
           </div>
           <div className="num text-xs txt-3 mt-1">{bot.pair} · {STRAT_LABEL[bot.strategy] || bot.strategy} · {bot.exchange_id} · {bot.mode === 'live' ? 'RIIL' : 'DEMO'}</div>
+          {bot.sellDist && (
+            <div className="num text-[11px] mt-1 txt-3" title="Kenaikan harga yang ditunggu hingga posisi terjual">
+              🎯 Jual terdekat <b className={bot.sellDist.pctAway <= 0 ? 'txt-up' : 'txt-2'}>{bot.sellDist.pctAway >= 0 ? '+' : ''}{bot.sellDist.pctAway.toFixed(2)}%</b>
+              <span className="txt-3"> · {bot.sellDist.label}</span>
+            </div>
+          )}
         </div>
         <span className={`tag ${running ? 'tag-up' : 'tag-dim'}`}>{running ? 'JALAN' : 'BERHENTI'}</span>
       </div>

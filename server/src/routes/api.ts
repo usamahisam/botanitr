@@ -233,14 +233,30 @@ api.get('/bots', asyncH(async (req: any, res: any) => {
   const bots = (status
     ? db.prepare('SELECT * FROM bots WHERE user_id=? AND status=? ORDER BY id DESC').all(userId, status)
     : db.prepare('SELECT * FROM bots WHERE user_id=? ORDER BY id DESC').all(userId)) as BotRow[];
-  res.json(bots.map(b => ({
-    ...b, params: safeJson(b.params, {}), state: undefined,
-    stats: pnl.botStats(b.id),
-    trend: pnl.botTrend(b.id),
-    // Sisa kas ledger + modal nyangkut: budget terlihat dipotong saat beli,
-    // bertambah saat jual (tanpa mengubah modal acuan untuk lot sizing).
-    ...cashInfo(b)
-  })));
+  const { nearestSellTarget } = await import('../engine/targets.js');
+  const out: any[] = [];
+  for (const b of bots) {
+    let sellDist: any = null;
+    try {
+      const st = JSON.parse(b.state || '{}');
+      const hasPos = (st.entries || st.filledBuys || (st.position ? [st.position] : [])).length > 0;
+      if (hasPos) {
+        const client = registry.getForUser(b.exchange_id, userId);
+        const ticker = await client.getTicker(b.pair);
+        sellDist = nearestSellTarget(b.strategy, st, safeJson(b.params, {}), b.exchange_id, ticker.last);
+      }
+    } catch { /* tanpa jarak jual */ }
+    out.push({
+      ...b, params: safeJson(b.params, {}), state: undefined,
+      stats: pnl.botStats(b.id),
+      trend: pnl.botTrend(b.id),
+      // Sisa kas ledger + modal nyangkut: budget terlihat dipotong saat beli,
+      // bertambah saat jual (tanpa mengubah modal acuan untuk lot sizing).
+      ...cashInfo(b),
+      sellDist,
+    });
+  }
+  res.json(out);
 }));
 
 /** Sisa kas ledger + modal terbuka dari state bot (untuk display). */
@@ -435,6 +451,53 @@ api.delete('/bots/:id', asyncH(async (req: any, res: any) => {
   queries.deleteBot.run(req.params.id);
   res.json({ ok: true });
 }));
+/**
+ * Sesuaikan state bot dengan saldo exchange (atasi drift):
+ * qty catatan diskalakan proporsional ke saldo aktual (cost ikut proporsional
+ * agar harga rata-rata terjaga). Hanya mengecilkan — bila saldo aktual LEBIH
+ * besar (deposit manual), hanya dilaporkan tanpa mengubah state.
+ */
+api.post('/bots/:id/reconcile', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
+  const bot = getUserBot(userId, req.params.id);
+  if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  const { parsePair } = await import('../exchange/base.js');
+  const client = registry.getForUser(bot.exchange_id, userId);
+  const { base } = parsePair(bot.pair, client.quoteAsset);
+  let bals: { asset: string; free: number; locked: number }[];
+  try {
+    bals = bot.mode === 'paper'
+      ? registry.getPaperForUser(bot.exchange_id, userId).getBalances()
+      : await client.getBalances();
+  } catch (e: any) {
+    return res.status(400).json({ error: `Saldo tak terbaca: ${e.message}` });
+  }
+  const actual = (bals.find(b => b.asset === base.toUpperCase())?.free ?? 0)
+    + (bals.find(b => b.asset === base.toUpperCase())?.locked ?? 0);
+  const state = JSON.parse(bot.state || '{}');
+  const lists = (['entries', 'filledBuys'] as const).filter(k => Array.isArray(state[k]));
+  const single = !lists.length && state.position ? [state.position] : [];
+  const all = [...lists.flatMap(k => state[k] as any[]), ...single];
+  const recorded = all.reduce((s: number, e: any) => s + (Number(e.qty) || 0), 0);
+  if (recorded <= 0) return res.json({ ok: true, drift: false, recorded, actual });
+  const tol = Math.max(recorded * 0.05, 1e-12);
+  if (Math.abs(actual - recorded) <= tol) return res.json({ ok: true, drift: false, recorded, actual });
+  if (actual > recorded) {
+    return res.json({
+      ok: true, drift: true, recorded, actual, adjusted: false,
+      message: `Saldo aktual (${actual}) LEBIH besar dari catatan (${recorded}) — kemungkinan deposit manual. State tidak diubah.`
+    });
+  }
+  const ratio = actual / recorded;
+  for (const e of all) {
+    e.qty = (Number(e.qty) || 0) * ratio;
+    e.cost = (Number(e.cost) || 0) * ratio;
+  }
+  queries.updateBotState.run(JSON.stringify(state), now(), bot.id);
+  log('info', 'ENGINE', `State bot "${bot.name}" disesuaikan ke saldo exchange: ${recorded.toFixed(6)} → ${actual.toFixed(6)} ${base}`, { bot_id: bot.id, user_id: userId });
+  res.json({ ok: true, drift: true, recorded, actual, adjusted: true });
+}));
+
 // Ringkasan riwayat per bot (untuk halaman riwayat terfilter)
 api.get('/bots/:id/summary', asyncH(async (req: any, res: any) => {
   const bot = getUserBot(uid(req), req.params.id);
@@ -444,7 +507,33 @@ api.get('/bots/:id/summary', asyncH(async (req: any, res: any) => {
       SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) sells,
       COALESCE(SUM(realized_pnl),0) realized,
       COUNT(*) trades FROM trades WHERE bot_id=?`).get(bot.id) as any;
-  res.json({ bot: { id: bot.id, name: bot.name, pair: bot.pair, strategy: bot.strategy, mode: bot.mode }, ...s });
+  // Drift state vs exchange (bila bisa dibaca) + jarak ke target jual
+  let drift: any = null;
+  try {
+    const { parsePair } = await import('../exchange/base.js');
+    const client = registry.getForUser(bot.exchange_id, uid(req));
+    const { base } = parsePair(bot.pair, client.quoteAsset);
+    const bals = bot.mode === 'paper'
+      ? registry.getPaperForUser(bot.exchange_id, uid(req)).getBalances()
+      : await client.getBalances();
+    const actual = (bals.find(b => b.asset === base.toUpperCase())?.free ?? 0)
+      + (bals.find(b => b.asset === base.toUpperCase())?.locked ?? 0);
+    const state = JSON.parse(bot.state || '{}');
+    const all: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
+    const recorded = all.reduce((x: number, e: any) => x + (Number(e.qty) || 0), 0);
+    if (recorded > 0 && Math.abs(actual - recorded) > Math.max(recorded * 0.05, 1e-12)) {
+      drift = { recorded, actual, pct: Math.abs(actual - recorded) / recorded * 100 };
+    }
+  } catch { /* saldo tak terbaca → tanpa info drift */ }
+  let sellDist: any = null;
+  try {
+    const { nearestSellTarget } = await import('../engine/targets.js');
+    const client = registry.getForUser(bot.exchange_id, uid(req));
+    const ticker = await client.getTicker(bot.pair);
+    const state = JSON.parse(bot.state || '{}');
+    sellDist = nearestSellTarget(bot.strategy, state, JSON.parse(bot.params || '{}'), bot.exchange_id, ticker.last);
+  } catch { /* abaikan */ }
+  res.json({ bot: { id: bot.id, name: bot.name, pair: bot.pair, strategy: bot.strategy, mode: bot.mode }, ...s, drift, sellDist });
 }));
 
 api.get('/bots/:id/trend', asyncH(async (req: any, res: any) => {

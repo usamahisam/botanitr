@@ -34,7 +34,8 @@
     "test:rank": "tsx scripts/test-market-rank.ts",
     "test:optimize": "tsx scripts/test-optimize.ts",
     "test:corr": "tsx scripts/test-correlation.ts",
-    "test:ml": "tsx scripts/test-ml.ts"
+    "test:ml": "tsx scripts/test-ml.ts",
+    "test:targets": "tsx scripts/test-targets.ts"
   },
   "dependencies": {
     "axios": "^1.7.9",
