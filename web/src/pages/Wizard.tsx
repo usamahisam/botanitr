@@ -229,6 +229,9 @@ export default function Wizard() {
                         <span className="num text-[13px] font-semibold txt-up shrink-0">{p.skor.toFixed(1)}</span>
                       </div>
                       <p className="text-xs txt-2 mt-1.5 leading-relaxed">{p.deskripsi}</p>
+                      {p.backtest.note && (
+                        <p className="text-[11px] txt-3 mt-1 num">{p.backtest.note}</p>
+                      )}
                       <div className="flex items-center gap-4 mt-2.5 text-xs txt-3">
                         <span>TP/SL <b className="txt-2 font-medium">{p.tp_sl_label}</b></span>
                         <span>TF <b className="txt-2 font-medium">{p.timeframe}</b></span>

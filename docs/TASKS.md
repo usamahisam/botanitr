@@ -151,6 +151,13 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] Verifikasi live: scalper XRPIDR 193 candle jalan; grid gagal jujur + panduan akumulasi; selector v1/auto/invalid OK
 - [x] Suite tetap 88/88 ✅
 
+## Revisi lanjutan: analisis adaptif penuh (ditambahkan)
+- [x] `fetchKlinesChain` + `tryInterval` tak-pernah-throw-timeout; rantai harian→12h→4h→1h di `recommend()`
+- [x] Fallback terakhir ke data 1m bila semua rantai gagal → analisis selalu jalan dengan note jujur
+- [x] Note sumber data (`Sumber: exchange/lokal · interval · N candle`) di tiap preset + backtest panel
+- [x] Perbaikan bug data basi `getLocalKlines` (DESC + sort kronologis)
+- [x] Verifikasi live: instansi minim-data (170 titik) tetap dapat analisis + note; suite 97/97 ✅
+
 ## Redesain UI Terminal (ditambahkan)
 - [x] Tema gelap profesional: index.css (token, .panel/.tbl/.btn/.tag/.input/.seg/.num), tanpa emoji
 - [x] Set ikon SVG inline `components/icons.tsx` (18 ikon, stroke)

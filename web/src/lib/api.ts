@@ -86,7 +86,7 @@ export interface TradeRow {
 export interface Preset {
   id: string; nama: string; strategi: string; gaya: string; deskripsi: string;
   params: Record<string, any>; leverage_label: string; tp_sl_label: string; timeframe: string;
-  skor: number; backtest: { winRate: number; profitPct: number; trades: number; maxDrawdownPct: number };
+  skor: number; backtest: { winRate: number; profitPct: number; trades: number; maxDrawdownPct: number; note?: string };
 }
 export interface PairRow {
   exchange_id: string; symbol: string; base: string; quote: string; label: string; kategori: string; min_lot: number;

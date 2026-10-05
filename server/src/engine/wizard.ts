@@ -100,6 +100,7 @@ export interface EquityPoint { t: number; v: number }
 export interface BacktestResult {
   winRate: number; profitPct: number; trades: number; maxDrawdownPct: number;
   equity: EquityPoint[];
+  note?: string;
 }
 
 /** Backtest replay sederhana di atas klines (simulasi murni, tanpa DB) */
@@ -191,6 +192,47 @@ export function backtest(preset: PresetDef, klines: Kline[], budgetQuote: number
   };
 }
 
+export interface KlinesSource {
+  klines: Kline[];
+  source: 'exchange' | 'local';
+  interval: string;
+}
+
+/**
+ * Satu percobaan interval: exchange dulu, fallback riwayat lokal.
+ * Tidak pernah throw saat timeout/jaringan — mengembalikan null agar
+ * rantai bisa lanjut ke interval berikutnya. Throw hanya untuk error
+ * pemrograman (bukan jaringan).
+ */
+async function tryInterval(
+  exchangeId: string, pair: string, interval: string, limit: number, ms = 20000
+): Promise<KlinesSource | null> {
+  const client = registry.get(exchangeId);
+  try {
+    const kl = await klinesWithTimeout(client, pair, interval, limit, ms);
+    if (kl.length >= 30) return { klines: kl, source: 'exchange', interval };
+  } catch { /* jaringan/timeout/data exchange kurang — lanjut ke lokal */ }
+  try {
+    const { getLocalKlines } = await import('./history.js');
+    const local = getLocalKlines(exchangeId, pair, interval, limit);
+    if (local.length >= 30) return { klines: local, source: 'local', interval };
+  } catch { /* abaikan */ }
+  return null;
+}
+
+/** Detail cakupan riwayat lokal untuk pesan error yang informatif */
+async function coverageDetail(exchangeId: string, pair: string): Promise<string> {
+  try {
+    const { localCoverage } = await import('./history.js');
+    const cov = localCoverage(exchangeId, pair);
+    return cov.points > 0
+      ? `Riwayat lokal baru ${cov.points} titik sejak ${cov.since} — biarkan server berjalan agar terkumpul.`
+      : `Riwayat lokal belum ada — biarkan server berjalan agar harga tercatat tiap menit.`;
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Ambil candle secara cerdas: exchange dulu, fallback ke riwayat lokal.
  * Mengembalikan sumber data agar UI bisa memberi catatan jujur.
@@ -198,29 +240,30 @@ export function backtest(preset: PresetDef, klines: Kline[], budgetQuote: number
 export async function fetchKlinesSmart(
   exchangeId: string, pair: string, interval: string, limit: number, ms = 30000
 ): Promise<{ klines: Kline[]; source: 'exchange' | 'local' | 'none' }> {
-  const client = registry.get(exchangeId);
-  try {
-    const kl = await klinesWithTimeout(client, pair, interval, limit, ms);
-    if (kl.length >= 30) return { klines: kl, source: 'exchange' };
-  } catch (e: any) {
-    if (e instanceof MarketDataError) throw e;
+  const r = await tryInterval(exchangeId, pair, interval, limit, ms);
+  if (r) return { klines: r.klines, source: r.source };
+  throw new MarketDataError(`Data candle kurang untuk rentang ini. ${await coverageDetail(exchangeId, pair)}`);
+}
+
+/**
+ * Rantai fallback adaptif: coba tiap spesifikasi interval berurutan,
+ * pakai yang pertama menghasilkan ≥30 candle. Contoh:
+ * harian → 12 jam → 4 jam → per jam.
+ */
+export async function fetchKlinesChain(
+  exchangeId: string, pair: string, specs: { interval: string; limit: number }[], ms = 20000
+): Promise<KlinesSource> {
+  for (const s of specs) {
+    const r = await tryInterval(exchangeId, pair, s.interval, s.limit, ms);
+    if (r) return r;
   }
-  // Fallback: riwayat lokal yang dikumpulkan perekam tiap menit
-  const { getLocalKlines, localCoverage } = await import('./history.js');
-  const local = getLocalKlines(exchangeId, pair, interval, limit);
-  if (local.length >= 30) {
-    const cov = localCoverage(exchangeId, pair);
-    if (cov.since) {
-      // Sisipkan info cakupan via tanggal candle pertama (UI membaca note terpisah)
-      (local as any).__since = cov.since;
-    }
-    return { klines: local, source: 'local' };
-  }
-  const cov = localCoverage(exchangeId, pair);
-  const detail = cov.points > 0
-    ? `Riwayat lokal baru ${cov.points} titik sejak ${cov.since} — biarkan server berjalan agar terkumpul.`
-    : `Riwayat lokal belum ada — biarkan server berjalan agar harga tercatat tiap menit.`;
-  throw new MarketDataError(`Data candle kurang untuk rentang ini. ${detail}`);
+  throw new MarketDataError(`Data candle kurang untuk rentang ini. ${await coverageDetail(exchangeId, pair)}`);
+}
+
+/** Label sumber data untuk catatan jujur di UI */
+export function sourceNote(source: 'exchange' | 'local', interval: string, candles: number): string {
+  if (source === 'exchange') return `Sumber: exchange · ${interval} · ${candles} candle`;
+  return `Sumber: riwayat lokal · ${interval} · ${candles} candle`;
 }
 
 /** Backtest kustom: strategi + parameter + rentang hari pilihan user */
@@ -230,31 +273,41 @@ export async function runCustomBacktest(
 ): Promise<BacktestResult & { candles: number; note?: string }> {
   // Rebalance butuh multi-aset: tampilkan buy-and-hold pembanding untuk pair ini
   if (strategy === 'rebalance') {
-    const { klines, source } = await fetchKlinesSmart(exchangeId, pair, '1d', Math.min(Math.max(days, 7), 365));
-    const closes = klines.map(k => k[4]);
+    const r = await fetchKlinesChain(exchangeId, pair, [
+      { interval: '1d', limit: Math.min(Math.max(days, 7), 365) },
+      { interval: '12h', limit: 200 },
+      { interval: '4h', limit: 300 },
+      { interval: '1h', limit: 400 }
+    ]);
+    const closes = r.klines.map(k => k[4]);
     if (closes.length < 2) return { winRate: 0, profitPct: 0, trades: 0, maxDrawdownPct: 0, equity: [], candles: closes.length, note: 'Data kurang' };
     const first = closes[0];
-    const equity = klines.map(k => ({ t: k[0], v: Math.round((budgetQuote * (k[4] / first)) * 100) / 100 }));
+    const equity = r.klines.map(k => ({ t: k[0], v: Math.round((budgetQuote * (k[4] / first)) * 100) / 100 }));
     const profitPct = ((closes[closes.length - 1] - first) / first) * 100;
     return {
       winRate: 0, profitPct: Math.round(profitPct * 100) / 100, trades: 0,
       maxDrawdownPct: 0, equity, candles: closes.length,
-      note: `Buy-and-hold pembanding (rebalance butuh data multi-aset) · sumber: ${source === 'local' ? 'riwayat lokal' : 'exchange'}`
+      note: `Buy-and-hold pembanding (rebalance butuh data multi-aset) · ${sourceNote(r.source, r.interval, closes.length)}`
     };
   }
-  const interval = strategy === 'scalper' ? '1m' : '1h';
-  const perDay = strategy === 'scalper' ? 500 : 24;
-  const limit = Math.min(Math.max(days, 1) * perDay, 1000);
-  const { klines, source } = await fetchKlinesSmart(exchangeId, pair, interval, limit);
+  const specs = strategy === 'scalper'
+    ? [{ interval: '1m', limit: Math.min(Math.max(days, 1) * 500, 1000) }]
+    : [
+        { interval: '1h', limit: Math.min(Math.max(days, 1) * 24, 1000) },
+        { interval: '15m', limit: 600 },
+        { interval: '5m', limit: 800 },
+        { interval: '1m', limit: 1000 }
+      ];
+  const r = await fetchKlinesChain(exchangeId, pair, specs);
   const pseudo: PresetDef = {
     id: 'custom', nama: 'Kustom', strategi: strategy, gaya: '', deskripsi: '',
-    params, leverage_label: '', tp_sl_label: '', timeframe: interval
+    params, leverage_label: '', tp_sl_label: '', timeframe: r.interval
   };
-  const out = backtest(pseudo, klines, budgetQuote);
+  const out = backtest(pseudo, r.klines, budgetQuote);
   return {
     ...out,
-    candles: klines.length,
-    note: source === 'local' ? `Sumber: riwayat lokal (exchange hanya menyimpan histori pendek)` : undefined
+    candles: r.klines.length,
+    note: sourceNote(r.source, r.interval, r.klines.length)
   };
 }
 
@@ -286,25 +339,53 @@ export async function recommend(exchangeId: string, pair: string, budgetQuote = 
   const c = recCache.get(key);
   if (c && Date.now() - c.ts < 15 * 60 * 1000) return c.data;
 
-  // Candle harian untuk metrik + backtest (butuh ≥30 candle) + 1m untuk scalper.
-  // Sumber: exchange dulu, fallback riwayat lokal.
+  // Candle untuk metrik + backtest (butuh ≥30 candle) + 1m untuk scalper.
+  // Adaptif: harian → 12 jam → 4 jam → per jam → 1 menit (tetap jujur via note).
   let daily: Kline[] = [];
+  let dailySource: 'exchange' | 'local' = 'exchange';
+  let dailyInterval = '1d';
   let micro: Kline[] = [];
-  try { daily = (await fetchKlinesSmart(exchangeId, pair, '1d', 120)).klines; } catch (e: any) {
-    if (e instanceof MarketDataError) throw e;
+  let dailyError: any = null;
+  try {
+    const r = await fetchKlinesChain(exchangeId, pair, [
+      { interval: '1d', limit: 120 },
+      { interval: '12h', limit: 180 },
+      { interval: '4h', limit: 250 },
+      { interval: '1h', limit: 400 }
+    ]);
+    daily = r.klines; dailySource = r.source; dailyInterval = r.interval;
+  } catch (e: any) {
+    dailyError = e;
   }
   try { micro = (await fetchKlinesSmart(exchangeId, pair, '1m', 500)).klines; } catch (e: any) {
     if (e instanceof MarketDataError && daily.length === 0) throw e;
   }
-  if (daily.length < 5 && micro.length >= 30) daily = micro;
-  if (micro.length < 30) micro = daily;
+  if (daily.length === 0 && micro.length >= 30) {
+    // Instansi baru (riwayat lokal minim): pakai data 1m agar analisis tetap jalan
+    daily = micro; dailySource = 'exchange'; dailyInterval = '1m';
+  } else if (micro.length < 30) {
+    micro = daily;
+  }
+  if (daily.length === 0) {
+    if (dailyError instanceof MarketDataError) throw dailyError;
+    throw new MarketDataError(`Data candle kurang untuk rentang ini. ${await coverageDetail(exchangeId, pair)}`);
+  }
 
   const metrics = computeMetrics(daily);
-  const out: PresetRecommendation[] = PRESETS.map(preset => ({
-    ...preset,
-    skor: scorePreset(preset, metrics),
-    backtest: backtest(preset, preset.strategi === 'scalper' ? micro : daily, budgetQuote)
-  })).sort((a, b) => b.skor - a.skor);
+  const out: PresetRecommendation[] = PRESETS.map(preset => {
+    const kl = preset.strategi === 'scalper' ? micro : daily;
+    const bt = backtest(preset, kl, budgetQuote);
+    return {
+      ...preset,
+      skor: scorePreset(preset, metrics),
+      backtest: {
+        ...bt,
+        note: preset.strategi === 'scalper' || dailyInterval === '1d'
+          ? undefined
+          : `Dihitung dari data ${dailyInterval} (${sourceNote(dailySource, dailyInterval, kl.length)})`
+      }
+    };
+  }).sort((a, b) => b.skor - a.skor);
 
   recCache.set(key, { data: out, ts: Date.now() });
   return out;

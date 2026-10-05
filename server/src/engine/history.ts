@@ -86,15 +86,19 @@ async function recordOnce() {
   } catch { /* abaikan */ }
 }
 
-/** Bentuk candle OHLC dari tick lokal. Kembalikan [] bila data < 2 bucket. */
+/**
+ * Bentuk candle OHLC dari tick lokal. Ambil baris TERBARU dulu agar tidak
+ * memakai data basi saat histori melebihi batas (20.000 tick ≈ 14 hari).
+ */
 export function getLocalKlines(exchangeId: string, pair: string, interval: string, limit: number): Kline[] {
   const step = intervalMs(interval);
   const rows = db.prepare(
-    `SELECT ts, price FROM price_history WHERE exchange_id=? AND pair=? ORDER BY ts ASC LIMIT 20000`
+    `SELECT ts, price FROM price_history WHERE exchange_id=? AND pair=? ORDER BY ts DESC LIMIT 20000`
   ).all(exchangeId, pair.toUpperCase()) as any[];
   if (rows.length < 2) return [];
   const buckets = new Map<number, { o: number; h: number; l: number; c: number; v: number; n: number }>();
-  for (const r of rows) {
+  // Iterasi kronologis agar open = harga pertama bucket
+  for (const r of [...rows].reverse()) {
     const b = Math.floor(r.ts / step) * step;
     const e = buckets.get(b);
     if (!e) buckets.set(b, { o: r.price, h: r.price, l: r.price, c: r.price, v: 0, n: 1 });
