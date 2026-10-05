@@ -69,6 +69,8 @@ async function processBot(bot: BotRow) {
   const strategy = getStrategy(bot.strategy);
   const params = JSON.parse(bot.params || '{}');
   let state = JSON.parse(bot.state || '{}');
+  // Ledger kas virtual per bot (eksak, bukan aproksimasi).
+  initCashLedger(state, bot.current_budget);
 
   const ticker = await getTickerCached(bot.exchange_id, bot.pair, bot.user_id);
   const client = registry.getForUser(bot.exchange_id, bot.user_id);
@@ -122,7 +124,27 @@ async function processBot(bot: BotRow) {
  * dimajukan di sini — SETELAH fill terkonfirmasi — agar order yang gagal
  * tetap dicoba lagi tick berikutnya, bukan hangus diam-diam.
  */
+/**
+ * Inisialisasi malas ledger kas (untuk bot lama): kas = modal acuan -
+ * modal yang sedang nyangkut di posisi terbuka. Setelah ini
+ * equity = kas + nilai posisi (eksak).
+ */
+export function initCashLedger(state: any, currentBudget: number): void {
+  if (Number.isFinite(state.cash)) return;
+  const open: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
+  const openCost = open.reduce((s: number, e: any) => s + (Number(e.cost) || 0), 0);
+  state.cash = currentBudget - openCost;
+}
+
 export function applyFillToState(strategyName: string, state: any, trade: any, action: any) {
+  // Ledger kas: beli menguras kas sebesar nilai+fee, jual menambah kas sebesar nilai-fee.
+  // Hanya bila ledger sudah diinisialisasi (angka tak valid = lewati, jangan racuni).
+  const tValue = Number(trade?.value);
+  const tFee = Number(trade?.fee) || 0;
+  if (Number.isFinite(state.cash) && Number.isFinite(tValue)) {
+    if (action.type === 'buy') state.cash -= tValue + tFee;
+    else if (action.type === 'sell') state.cash += tValue - tFee;
+  }
   if (action.type === 'buy') {
     const entry: any = { price: trade.price, qty: trade.qty, cost: trade.value };
     // Level grid (untuk partial-unwind per level); strategi lain abaikan.

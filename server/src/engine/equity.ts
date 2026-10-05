@@ -24,22 +24,29 @@ function todayWib(): string {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-/** Hitung equity bot saat ini (quote): current_budget + floating PnL posisi.
- *  Karena bot tidak punya sub-akun terpisah, aproksimasi ini yang terbaik
- *  tanpa ledger transfer per bot. */
-async function computeBotEquity(bot: BotRow): Promise<number> {
-  let floating = 0;
+/**
+ * Hitung equity bot saat ini (quote) secara EKSAK dari ledger kas virtual:
+ * equity = kas + qty_posisi × harga_sekarang.
+ * Setiap fill buy/sell memperbarui state.cash di scheduler, sehingga arus
+ * kas tercatat penuh termasuk fee — tak ada lagi aproksimasi.
+ * Fallback lama (current_budget + floating) hanya untuk state yang ledgernya
+ * belum terinisialisasi.
+ */
+export async function computeBotEquity(bot: BotRow): Promise<number> {
   try {
     const state = JSON.parse(bot.state || '{}');
     const entries: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
     const qty = entries.reduce((s: number, e: any) => s + (Number(e.qty) || 0), 0);
-    const cost = entries.reduce((s: number, e: any) => s + (Number(e.cost) || 0), 0);
+    let price = 0;
     if (qty > 0) {
       const ticker = await registry.getForUser(bot.exchange_id, bot.user_id).getTicker(bot.pair);
-      floating = qty * ticker.last - cost; // floating PnL posisi
+      price = ticker.last;
     }
-  } catch { /* abaikan, floating=0 */ }
-  return bot.current_budget + floating;
+    if (Number.isFinite(state.cash)) return state.cash + qty * price;
+    const cost = entries.reduce((s: number, e: any) => s + (Number(e.cost) || 0), 0);
+    return bot.current_budget + (qty * price - cost); // fallback legacy
+  } catch { /* abaikan */ }
+  return bot.current_budget;
 }
 
 /** Rekam satu titik equity bot pada slot jam tertentu (upsert). */

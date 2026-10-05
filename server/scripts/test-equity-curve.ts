@@ -58,6 +58,33 @@ async function main() {
   const hasNow = (db.prepare('SELECT COUNT(*) c FROM bot_equity WHERE bot_id=? AND date=?').get(botId, slotNow) as any).c;
   check('slot jam ini terekam', hasNow === 1, `slot ${slotNow}`);
 
+  console.log('\nD) Ledger kas eksak');
+  const { applyFillToState, initCashLedger } = await import('../src/engine/scheduler.js');
+  const { computeBotEquity } = await import('../src/engine/equity.js');
+  const st: any = { filledBuys: [], levelsHit: [] };
+  initCashLedger(st, 1000000);
+  check('kas awal = budget', st.cash === 1000000, `got ${st.cash}`);
+  applyFillToState('grid', st, { price: 1000, qty: 100, value: 100000, fee: 300 }, { type: 'buy', meta: { level: 0 } });
+  check('beli kurangi kas senilai+fee', st.cash === 899700, `got ${st.cash}`);
+  applyFillToState('grid', st, { price: 1100, qty: 50, value: 55000, fee: 165 }, { type: 'sell' });
+  check('jual tambah kas senilai-fee', st.cash === 899700 + 55000 - 165, `got ${st.cash}`);
+  // Bot lama: kas = budget - modal nyangkut
+  const legacy: any = { filledBuys: [{ price: 1000, qty: 100, cost: 100000 }] };
+  initCashLedger(legacy, 1000000);
+  check('legacy: kas = budget - openCost', legacy.cash === 900000, `got ${legacy.cash}`);
+  // Equity eksak = kas + qty*harga (stub ticker)
+  const { registry } = await import('../src/exchange/registry.js');
+  const cli: any = registry.getForUser('indodax', 0);
+  const origTicker = cli.getTicker?.bind(cli);
+  cli.getTicker = async () => ({ last: 1200 });
+  try {
+    const botRow: any = { id: botId, exchange_id: 'indodax', user_id: 0, pair: 'XRPIDR', current_budget: 1000000, state: JSON.stringify(st) };
+    const eq = await computeBotEquity(botRow);
+    // st: beli 100 @1000, jual 50 @1100 → sisa 50; tapi filledBuys state uji tak dikurangi sell (applyFill hanya catat buy)
+    const qtyLeft = st.filledBuys.reduce((s: number, e: any) => s + e.qty, 0);
+    check('equity = kas + qty*last', eq === st.cash + qtyLeft * 1200, `got ${eq}`);
+  } finally { if (origTicker) cli.getTicker = origTicker; }
+
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);
   process.exit(failed > 0 ? 1 : 0);
