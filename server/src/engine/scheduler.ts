@@ -96,13 +96,20 @@ async function processBot(bot: BotRow) {
   const actions = await strategy.onTick(ctx, state, params);
 
   // Eksekusi aksi; update state berdasarkan hasil fill
+  let filled = 0;
   for (const action of actions) {
     const trade = await executeAction(bot, action, usdtIdr);
     if (trade) {
       // Catat fill ke state strategi (untuk grid/dca/harvester entries)
       applyFillToState(bot.strategy, state, trade, action);
       await notifyTrade(trade, action, usdtIdr);
+      filled++;
     }
+  }
+  // Tiap ada fill → titik equity baru agar kurva hidup (bukan 2 titik statis)
+  if (filled > 0) {
+    const { recordBotEquity } = await import('./equity.js');
+    await recordBotEquity(bot.id);
   }
 
   queries.updateBotState.run(JSON.stringify(state), now(), bot.id);

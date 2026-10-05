@@ -138,10 +138,12 @@ CREATE TABLE IF NOT EXISTS ticker_cache (
   PRIMARY KEY (exchange_id, pair)
 );
 
--- Equity harian per bot (untuk grafik equity curve)
+-- Equity per bot untuk grafik (resolusi per jam WIB).
+-- Kolom date menampung slot 'YYYY-MM-DDTHH' (baris lama harian 'YYYY-MM-DD'
+-- tetap valid & terurut). Retensi 45 hari.
 CREATE TABLE IF NOT EXISTS bot_equity (
   bot_id INTEGER NOT NULL,
-  date TEXT NOT NULL,           -- YYYY-MM-DD (WIB)
+  date TEXT NOT NULL,           -- slot jam WIB 'YYYY-MM-DDTHH'
   equity_quote REAL NOT NULL,   -- nilai equity dalam quote (IDR/USDT)
   recorded_at TEXT NOT NULL,
   PRIMARY KEY (bot_id, date)
