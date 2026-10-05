@@ -25,16 +25,26 @@ async function getTickerCached(exchangeId: string, pair: string, userId = 0): Pr
   return data;
 }
 
-/** Stagger: bot diproses tiap ~8 detik + jitter per id */
-function shouldTick(bot: BotRow, nowMs: number): boolean {
-  const interval = 8000 + (bot.id % 4) * 1500;
-  const last = (bot as any).__last_tick || 0;
+/**
+ * Stagger: bot diproses tiap ~8 detik + jitter per id.
+ * WAJIB module-level Map: objek BotRow dari DB selalu baru tiap tick,
+ * sehingga state di badan objek (__last_tick dulu) tak pernah bertahan.
+ */
+const lastTick = new Map<number, number>();
+export function shouldTick(botId: number, nowMs: number): boolean {
+  const interval = 8000 + (botId % 4) * 1500;
+  const last = lastTick.get(botId) || 0;
   if (nowMs - last < interval) return false;
-  (bot as any).__last_tick = nowMs;
+  lastTick.set(botId, nowMs);
   return true;
 }
-
-const botCache = new Map<number, BotRow>();
+/** Buang entri bot yang sudah tak ada agar Map tak bocor memori. */
+export function pruneTickCache(activeIds: number[]) {
+  const keep = new Set(activeIds);
+  for (const id of lastTick.keys()) {
+    if (!keep.has(id)) lastTick.delete(id);
+  }
+}
 
 async function processBot(bot: BotRow) {
   // Guard: max daily loss — pause bot jika rugi realized hari ini melewati batas
@@ -115,8 +125,9 @@ export function startScheduler(broadcast: (event: string, payload: any) => void)
     try {
       const bots = queries.runningBots.all() as BotRow[];
       const nowMs = Date.now();
+      pruneTickCache(bots.map(b => b.id));
       for (const bot of bots) {
-        if (!shouldTick(bot, nowMs)) continue;
+        if (!shouldTick(bot.id, nowMs)) continue;
         try {
           await processBot(bot);
         } catch (e: any) {

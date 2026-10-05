@@ -184,11 +184,12 @@ function setupHandlers(inst: Telegraf) {
     '/price <PAIR> — harga (mis. /price XRPIDR)\n' +
     '/pnl — profit & win rate\n' +
     '/pause [id] /resume [id] — kontrol bot\n' +
+    '/stop [id] — hapus bot (konfirmasi)\n' +
     '/logs [n] — log terakhir\n' +
     '/panic — 🚨 kill switch (pause semua + batalkan order)\n' +
     '/help — bantuan'
   ));
-  inst.help(ctx => ctx.reply('Perintah: /status /balance /positions /price /pnl /pause /resume /logs /panic\nQuick trade dari dashboard web.'));
+  inst.help(ctx => ctx.reply('Perintah: /status /balance /positions /price /pnl /pause /resume /stop /logs /panic\nQuick trade dari dashboard web.'));
 
   inst.command('status', async ctx => ctx.reply(await buildStatus(ctx.state.userId)));
   inst.command('balance', async ctx => ctx.reply(await buildBalance(ctx.state.userId)));
@@ -235,6 +236,49 @@ function setupHandlers(inst: Telegraf) {
       db.prepare(`UPDATE bots SET status='running' WHERE status='paused' AND user_id=?`).run(userId);
       ctx.reply('▶️ Semua bot dilanjutkan.');
     }
+  });
+
+  inst.command('stop', async ctx => {
+    const userId = ctx.state.userId;
+    const id = parseInt(ctx.payload || '', 10);
+    if (!id) return ctx.reply('Format: /stop <id> — lihat ID di /positions.');
+    const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
+    if (!botRow) return ctx.reply('Bot tidak ditemukan.');
+    let warn = '';
+    try {
+      const st = JSON.parse(botRow.state || '{}');
+      const entries: any[] = st.entries || st.filledBuys || (st.position ? [st.position] : []);
+      const qty = entries.reduce((s: number, e: any) => s + (e.qty || 0), 0);
+      if (qty > 0) warn = `\n⚠️ Masih ada posisi ±${qty.toFixed(8)} — aset tetap di exchange, hanya berhenti dipantau.`;
+    } catch { /* abaikan */ }
+    await ctx.reply(
+      `Hapus bot #${id} "${botRow.name}" (${botRow.pair})?${warn}`,
+      { reply_markup: { inline_keyboard: [[{ text: '✅ Ya, hapus', callback_data: `stop_yes_${id}` }, { text: '❌ Batal', callback_data: 'stop_no' }]] } }
+    );
+  });
+
+  inst.action('stop_no', async ctx => {
+    await ctx.answerCbQuery('Dibatalkan');
+    await ctx.editMessageText('✅ Penghapusan dibatalkan.');
+  });
+  inst.action(/^stop_yes_(\d+)$/, async ctx => {
+    const userId = (ctx as any).state?.userId;
+    const m = (ctx as any).match as RegExpMatchArray | undefined;
+    const id = Number(m?.[1]);
+    if (!userId || !id) {
+      await ctx.answerCbQuery('Sesi kedaluwarsa, ulangi /stop.');
+      return;
+    }
+    const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
+    if (!botRow) {
+      await ctx.answerCbQuery('Bot tidak ditemukan.');
+      await ctx.editMessageText('Bot tidak ditemukan (mungkin sudah dihapus).');
+      return;
+    }
+    await ctx.answerCbQuery('Menghapus…');
+    queries.deleteBot.run(id);
+    log('info', 'TELEGRAM', `Bot #${id} "${botRow.name}" dihapus via Telegram oleh chat ${ctx.chat.id}`, { user_id: userId });
+    await ctx.editMessageText(`🗑 Bot #${id} "${botRow.name}" dihapus.`);
   });
 
   inst.command('panic', async ctx => {

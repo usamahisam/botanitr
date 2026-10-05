@@ -28,6 +28,15 @@ const grid: Strategy = {
 
     if (!state.anchor) state.anchor = price;
 
+    // Self-healing setelah jeda/restart lama: bila harga sudah keluar jauh dari
+    // grid DAN tak ada posisi terbuka (tak ada modal berisiko), ikut harga
+    // sekarang agar bot kembali aktif. Dengan posisi terbuka, tunggu unwind.
+    if (state.filledBuys.length === 0 &&
+        (price > state.anchor * (1 + upper) || price < state.anchor * (1 - lower))) {
+      state.anchor = price;
+      state.levelsHit = [];
+    }
+
     // Bangun level harga (merata dari bawah ke atas)
     const levelPrices: number[] = [];
     for (let i = 0; i <= levels; i++) {

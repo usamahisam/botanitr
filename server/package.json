@@ -21,7 +21,8 @@
     "test:bittime": "tsx scripts/test-bittime.ts",
     "test:budget": "tsx scripts/test-bot-budget.ts",
     "test:backtest": "tsx scripts/test-backtest-fallback.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:resume": "tsx scripts/test-resume.ts"
   },
   "dependencies": {
     "axios": "^1.7.9",
