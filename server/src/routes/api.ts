@@ -10,6 +10,7 @@ import { registry as stratRegistry } from '../strategies/types.js';
 import { config } from '../config.js';
 import { createHttp } from '../exchange/http.js';
 import { uid } from '../auth.js';
+import { log } from '../log.js';
 import '../strategies/grid.js';
 import '../strategies/dca.js';
 import '../strategies/scalper.js';
@@ -311,9 +312,63 @@ api.post('/bots/:id/resume', asyncH(async (req: any, res: any) => {
   queries.setBotStatus.run('running', now(), req.params.id);
   res.json({ ok: true });
 }));
+/**
+ * Stop bot: hentikan + opsional likuidasi (jual SEMUA posisi terbuka jadi
+ * saldo lewat pipa fill normal: fee tercatat, kas ledger bertambah, trade +
+ * notifikasi tercatat). Status -> stopped (arsip, hilang dari daftar aktif,
+ * riwayat utuh). Sisa debu di bawah lot minimum dilaporkan, bukan error.
+ */
+api.post('/bots/:id/stop', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
+  const bot = getUserBot(userId, req.params.id);
+  if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  const liquidate = (req.body || {}).liquidate !== false;
+  let sold = 0, realized = 0;
+  const skipped: string[] = [], errors: string[] = [];
+  if (liquidate) {
+    const { executeAction } = await import('../engine/trader.js');
+    const { applyFillToState, initCashLedger } = await import('../engine/scheduler.js');
+    const { getUsdtIdr } = await import('../engine/balances.js');
+    const client = registry.getForUser(bot.exchange_id, userId);
+    const usdtIdr = client.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
+    const minLot = (db.prepare('SELECT min_lot_idr FROM exchanges WHERE id=? AND user_id=?').get(bot.exchange_id, userId) as any)?.min_lot_idr ?? 10000;
+    const state = JSON.parse(bot.state || '{}');
+    initCashLedger(state, bot.current_budget);
+    const entries: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
+    for (const e of entries) {
+      const qty = Number(e.qty) || 0, cost = Number(e.cost) || 0;
+      if (qty <= 0) continue;
+      if (qty * (e.price || 0) < minLot) { skipped.push(`${qty.toFixed(8)} (debu, < lot min)`) ; continue; }
+      try {
+        const trade = await executeAction(bot,
+          { type: 'sell', qtyBase: qty, costBasis: cost, reason: `[STOP] Likuidasi stop bot "${bot.name}"`, tag: 'STOP_LIQUIDATE' },
+          usdtIdr, state.cash);
+        if (trade) {
+          applyFillToState(bot.strategy, state, trade, { type: 'sell' });
+          // Bersihkan fill dari state agar tak dijual ganda
+          for (const key of ['entries', 'filledBuys'] as const) {
+            if (Array.isArray(state[key])) state[key] = state[key].filter((x: any) => x !== e);
+          }
+          if (state.position === e) state.position = null;
+          sold++;
+          realized += (trade.value - trade.fee) - cost;
+        }
+      } catch (err: any) { errors.push(err.message); }
+    }
+    queries.updateBotState.run(JSON.stringify(state), now(), bot.id);
+  }
+  queries.setBotStatus.run('stopped', now(), bot.id);
+  log('info', 'ENGINE', `Bot "${bot.name}" di-stop${liquidate ? ` + likuidasi ${sold} posisi` : ''}`, { bot_id: bot.id, user_id: userId });
+  res.json({ ok: true, sold, realized, skipped_dust: skipped.length, skipped, errors });
+}));
+
 api.delete('/bots/:id', asyncH(async (req: any, res: any) => {
   const bot = getUserBot(uid(req), req.params.id);
   if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  // Kunci: bot yang masih berjalan tak bisa dihapus — hentikan dulu (Stop).
+  if (bot.status === 'running') {
+    return res.status(400).json({ error: `Bot "${bot.name}" masih berjalan. Hentikan dulu (Jeda / Stop & Jual), baru hapus.` });
+  }
   // Bot demo: ikut hapus riwayat + lognya agar tak ada transaksi menggantung.
   // Bot live: riwayat dipertahankan sebagai jejak audit.
   if (bot.mode === 'paper') {
@@ -323,6 +378,18 @@ api.delete('/bots/:id', asyncH(async (req: any, res: any) => {
   queries.deleteBot.run(req.params.id);
   res.json({ ok: true });
 }));
+// Ringkasan riwayat per bot (untuk halaman riwayat terfilter)
+api.get('/bots/:id/summary', asyncH(async (req: any, res: any) => {
+  const bot = getUserBot(uid(req), req.params.id);
+  if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  const s = db.prepare(`SELECT
+      SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) buys,
+      SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) sells,
+      COALESCE(SUM(realized_pnl),0) realized,
+      COUNT(*) trades FROM trades WHERE bot_id=?`).get(bot.id) as any;
+  res.json({ bot: { id: bot.id, name: bot.name, pair: bot.pair, strategy: bot.strategy, mode: bot.mode }, ...s });
+}));
+
 api.get('/bots/:id/trend', asyncH(async (req: any, res: any) => {
   if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   res.json(pnl.botTrend(Number(req.params.id), num(req.query.days, 7, 1, 90)));

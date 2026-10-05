@@ -153,8 +153,11 @@ async function main() {
   db.prepare(`INSERT INTO trades (user_id, bot_id, exchange_id, pair, side, price, qty, fee, value, realized_pnl, cost_basis, mode, created_at)
     VALUES (1, ?, 'indodax','XRPIDR','buy',100,1,0,100,0,100,'paper',datetime('now'))`).run(b2.data.id);
   r = await del(`/bots/${b2.data.id}`, T);
+  check('hapus saat running -> 400 terkunci', r.status === 400, `got ${r.status}`);
+  await post(`/bots/${b2.data.id}/pause`, {}, T);
+  r = await del(`/bots/${b2.data.id}`, T);
   const left = (db.prepare('SELECT COUNT(*) c FROM trades WHERE bot_id=?').get(b2.data.id) as any).c;
-  check('bot + trades ikut terhapus', r.status === 200 && left === 0, `got ${r.status} sisa=${left}`);
+  check('setelah pause: bot + trades ikut terhapus', r.status === 200 && left === 0, `got ${r.status} sisa=${left}`);
   r = await del(`/bots/${botId}`, T);
   check('bot e2e sudah bersih oleh purge → 404', r.status === 404, `got ${r.status}`);
 

@@ -9,7 +9,7 @@ import { Icon } from '../components/icons';
 const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester', rebalance: 'Rebalance', revert: 'Revert', bollinger: 'Bollinger', breakout: 'Breakout', dynamic: 'Dynamic' };
 const PER_PAGE = 8;
 
-const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'GRID_SELL', 'DCA_TP', 'DCA_TP1', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'REVERT_TP', 'REVERT_SL', 'REVERT_EXIT', 'BB_EXIT', 'BB_SL', 'BRK_TP', 'BRK_SL', 'BRK_EXIT', 'DYN_SELL', 'DYN_SL', 'INVENTORY_HARVEST_RECYCLE', 'REBALANCE', 'AUTO_COMPOUND'];
+const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'GRID_SELL', 'DCA_TP', 'DCA_TP1', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'REVERT_TP', 'REVERT_SL', 'REVERT_EXIT', 'BB_EXIT', 'BB_SL', 'BRK_TP', 'BRK_SL', 'BRK_EXIT', 'DYN_SELL', 'DYN_SL', 'STOP_LIQUIDATE', 'INVENTORY_HARVEST_RECYCLE', 'REBALANCE', 'AUTO_COMPOUND'];
 
 function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -86,7 +86,22 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
         <button onClick={() => act(running ? 'pause' : 'resume')} disabled={busy} className="btn btn-ghost btn-sm flex-1">
           {running ? <><Icon.pause size={13} /> Jeda</> : <><Icon.play size={13} /> Lanjut</>}
         </button>
-        <button onClick={() => act('delete')} disabled={busy} className="btn btn-ghost btn-sm btn-icon !text-[#ff7a8c]" title="Hapus bot">
+        <Link to={`/riwayat?bot_id=${bot.id}`} className="btn btn-ghost btn-sm flex-1 !no-underline">Riwayat</Link>
+        <button
+          onClick={async () => {
+            if (!confirm(`Stop "${bot.name}" dan JUAL SEMUA posisi jadi saldo? Bot diarsipkan (riwayat tetap ada).`)) return;
+            setBusy(true);
+            try {
+              const r: any = await api.post(`/bots/${bot.id}/stop`, { liquidate: true });
+              alert(`Bot dihentikan.\nTerjual: ${r.sold ?? 0} posisi (+${fmtMoney(r.realized ?? 0, quoteOfPair(bot.pair))})${r.skipped_dust ? `\nSisa debu tak terjual: ${r.skipped_dust}` : ''}${r.errors?.length ? `\nGagal: ${r.errors.join('; ')}` : ''}`);
+              onChanged();
+            } catch (e: any) { alert(e.message || 'Stop gagal'); }
+            finally { setBusy(false); }
+          }}
+          disabled={busy} className="btn btn-ghost btn-sm flex-1" title="Hentikan & jual semua posisi">
+          Stop & Jual
+        </button>
+        <button onClick={() => act('delete')} disabled={busy} className="btn btn-ghost btn-sm btn-icon !text-[#ff7a8c]" title="Hapus bot (harus berhenti dulu)">
           <Icon.trash size={14} />
         </button>
       </div>

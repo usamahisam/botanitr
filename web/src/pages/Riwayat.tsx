@@ -1,32 +1,58 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, download, TradeRow } from '../lib/api'
 import { EXCHANGES } from '../lib/exchanges';
 import { fmtQty, fmtDateTime, fmtMoney, fmtSignedMoney, quoteOfPair } from '../lib/format';
 
+interface BotSummary { bot: { id: number; name: string; pair: string; strategy: string; mode: string }; buys: number; sells: number; realized: number; trades: number }
+
 export default function Riwayat() {
+  const [params] = useSearchParams();
+  const botId = params.get('bot_id') || '';
   const [rows, setRows] = useState<TradeRow[]>([]);
   const [total, setTotal] = useState(0);
   const [exchange, setExchange] = useState('');
   const [mode, setMode] = useState('');
   const [page, setPage] = useState(1);
+  const [summary, setSummary] = useState<BotSummary | null>(null);
   const LIMIT = 25;
 
   const load = useCallback(() => {
     const q = new URLSearchParams({ limit: String(LIMIT), offset: String((page - 1) * LIMIT) });
     if (exchange) q.set('exchange', exchange);
     if (mode) q.set('mode', mode);
+    if (botId) q.set('bot_id', botId);
     api.get<{ total: number; rows: TradeRow[] }>(`/trades?${q}`).then(d => { setRows(d.rows); setTotal(d.total); });
-  }, [exchange, mode, page]);
+  }, [exchange, mode, page, botId]);
+
+  useEffect(() => {
+    if (botId) api.get<BotSummary>(`/bots/${botId}/summary`).then(setSummary).catch(() => setSummary(null));
+    else setSummary(null);
+  }, [botId]);
 
   useEffect(load, [load]);
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
   return (
     <section className="panel">
+      {summary && (
+        <div className="panel px-4 py-3 mb-3 flex items-center gap-4 flex-wrap">
+          <div className="min-w-0">
+            <div className="font-semibold text-[14px]">{summary.bot.name}</div>
+            <div className="text-xs txt-3 num mt-0.5">{summary.bot.pair} · {summary.bot.strategy} · {summary.bot.mode === 'live' ? 'Riil' : 'Demo'}</div>
+          </div>
+          <div className="flex items-center gap-4 text-xs ml-auto">
+            <span className="txt-2">Beli <b className="num txt-up">{summary.buys}</b></span>
+            <span className="txt-2">Jual <b className="num txt-down">{summary.sells}</b></span>
+            <span className="txt-2">PnL <b className={`num ${summary.realized >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedMoney(summary.realized, quoteOfPair(summary.bot.pair))}</b></span>
+            <Link to="/riwayat" className="btn btn-ghost btn-sm">Semua bot</Link>
+          </div>
+        </div>
+      )}
       <div className="panel-head !flex-wrap gap-y-2">
         <div>
           <span className="text-[14px] font-semibold">Riwayat transaksi</span>
-          <span className="num text-xs txt-3 ml-2">{total} baris</span>
+          <span className="num text-xs txt-3 ml-2">{total} baris{botId ? ' · bot ini' : ''}</span>
         </div>
         <div className="flex gap-2 flex-wrap">
           <select value={exchange} onChange={e => { setExchange(e.target.value); setPage(1); }} className="input !w-auto !py-1.5 text-xs">
@@ -40,7 +66,7 @@ export default function Riwayat() {
           </select>
           <button
             onClick={() => {
-              const q = new URLSearchParams({ ...(exchange ? { exchange } : {}), ...(mode ? { mode } : {}) }).toString();
+              const q = new URLSearchParams({ ...(exchange ? { exchange } : {}), ...(mode ? { mode } : {}), ...(botId ? { bot_id: botId } : {}) }).toString();
               download(`/trades/export${q ? `?${q}` : ''}`, `trades-${new Date().toISOString().slice(0, 10)}.csv`).catch(e => alert(e.message));
             }}
             className="btn btn-ghost btn-sm">
