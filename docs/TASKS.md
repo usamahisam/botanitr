@@ -132,6 +132,13 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] E2E `test:features` 12/12 ✅; total suite 55/55 ✅
 - [x] Dokumentasi `docs/13-features-roadmap-v1.md`
 
+## Revisi: Token Telegram per-user (ditambahkan)
+- [x] Root cause: `botToken()` hanya membaca env/admin/legacy → token user biasa tak pernah dipakai
+- [x] Instance Telegraf per pemilik token (dedupe token kembar, proxy per pemilik)
+- [x] Notifikasi dirutekan ke instance milik user; pesan sistem best-effort per chat
+- [x] Perbaikan impor tipe `UserRow` (tsc aman, tsx pun aman)
+- [x] E2E `test-telegram` 5/5 ✅; dokumentasi `docs/06-telegram-bot.md`
+
 ## v2.0 — Roadmap sampai 2.0 (ditambahkan)
 - [x] Ekspor CSV (`GET /trades/export` + tombol unduh bertoken)
 - [x] Backtest interaktif (`POST /api/backtest`, kurva equity, panel UI di Wizard)

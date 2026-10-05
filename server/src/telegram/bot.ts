@@ -1,5 +1,6 @@
 import { Telegraf } from 'telegraf';
-import { db, queries, settings, now, UserRow } from '../db/index.js';
+import { db, queries, settings, now } from '../db/index.js';
+import type { UserRow } from '../db/index.js';
 import { registry } from '../exchange/registry.js';
 import { log } from '../log.js';
 import { fmtIDR, fmtPct } from '../utils/format.js';
@@ -9,28 +10,36 @@ import { setTelegramSender, notifyDailySummary, userChats, allChats } from './no
 import { makeAgent } from '../exchange/http.js';
 import { config } from '../config.js';
 
-let bot: Telegraf | null = null;
+/** Instance bot per pemilik token: 'env' atau 'u<userId>'. Satu token = satu polling loop. */
+const bots = new Map<string, { inst: Telegraf; token: string }>();
 let summaryTimer: NodeJS.Timeout | null = null;
 
-/** Token bot: dari env, atau milik admin (user pertama) */
-function botToken(): string {
-  if (config.telegramToken) return config.telegramToken;
-  const admin = db.prepare(`SELECT id FROM users ORDER BY id ASC LIMIT 1`).get() as any;
-  if (admin) {
-    const t = settings.get('telegram_bot_token', '', admin.id);
-    if (t) return t;
-  }
-  return settings.get('telegram_bot_token', '', 0);
+/** Proxy Telegram milik user (atau default env bila kosong) */
+function userProxy(userId: number): string {
+  return settings.get('proxy_telegram', '', userId) || config.defaultProxy;
 }
 
-function botProxy(): string {
-  if (config.defaultProxy) return config.defaultProxy;
-  const admin = db.prepare(`SELECT id FROM users ORDER BY id ASC LIMIT 1`).get() as any;
-  if (admin) {
-    const p = settings.get('proxy_telegram', '', admin.id);
-    if (p) return p;
+/**
+ * Kumpulkan token yang harus dijalankan: token env + token milik tiap user.
+ * Token yang sama hanya dijalankan sekali (hindari konflik polling 409).
+ */
+export function collectBotTokens(): { key: string; token: string; proxy: string }[] {
+  const out: { key: string; token: string; proxy: string }[] = [];
+  const seen = new Set<string>();
+  if (config.telegramToken) {
+    seen.add(config.telegramToken);
+    out.push({ key: 'env', token: config.telegramToken, proxy: config.defaultProxy });
   }
-  return settings.get('proxy_telegram', '', 0);
+  const users = db.prepare('SELECT id FROM users').all() as any[];
+  const ids = users.length > 0 ? users.map(u => u.id) : [0];
+  for (const uid of ids) {
+    const t = settings.get('telegram_bot_token', '', uid);
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      out.push({ key: `u${uid}`, token: t, proxy: userProxy(uid) });
+    }
+  }
+  return out;
 }
 
 /** Resolve user dari chat id (telegram_chats, fallback pindai settings semua user) */
@@ -147,19 +156,27 @@ async function buildPnl(userId: number): Promise<string> {
   return lines.join('\n');
 }
 
-export function startTelegram(): boolean {
-  const token = botToken();
-  if (!token) {
-    log('warn', 'TELEGRAM', 'Token Telegram kosong — fitur Telegram dimatikan');
-    return false;
+function ensureInstance(key: string, token: string, proxy: string): Telegraf {
+  const existing = bots.get(key);
+  if (existing) {
+    if (existing.token === token) return existing.inst;
+    try { existing.inst.stop(); } catch { /* abaikan */ }
+    bots.delete(key);
   }
+  const agent = makeAgent(proxy);
+  const inst = new Telegraf(token, agent ? { telegram: { agent } as any } : {});
+  setupHandlers(inst);
+  bots.set(key, { inst, token });
+  inst.launch()
+    .then(() => log('info', 'TELEGRAM', `Bot Telegram aktif (${key})`))
+    .catch(e => log('error', 'TELEGRAM', `Gagal launch (${key}): ${e.message}`));
+  return inst;
+}
 
-  const agent = makeAgent(botProxy());
-  bot = new Telegraf(token, agent ? { telegram: { agent } as any } : {});
+function setupHandlers(inst: Telegraf) {
+  inst.use((ctx, next) => { if (maskChat(ctx) !== null) return next(); });
 
-  bot.use((ctx, next) => { if (maskChat(ctx) !== null) return next(); });
-
-  bot.start(ctx => ctx.reply(
+  inst.start(ctx => ctx.reply(
     '🌱 Trading Botani siap!\n\n' +
     '/status — ringkasan bot & portfolio\n' +
     '/balance — saldo per exchange\n' +
@@ -171,14 +188,14 @@ export function startTelegram(): boolean {
     '/panic — 🚨 kill switch (pause semua + batalkan order)\n' +
     '/help — bantuan'
   ));
-  bot.help(ctx => ctx.reply('Perintah: /status /balance /positions /price /pnl /pause /resume /logs /panic\nQuick trade dari dashboard web.'));
+  inst.help(ctx => ctx.reply('Perintah: /status /balance /positions /price /pnl /pause /resume /logs /panic\nQuick trade dari dashboard web.'));
 
-  bot.command('status', async ctx => ctx.reply(await buildStatus(ctx.state.userId)));
-  bot.command('balance', async ctx => ctx.reply(await buildBalance(ctx.state.userId)));
-  bot.command('positions', async ctx => ctx.reply(await buildPositions(ctx.state.userId)));
-  bot.command('pnl', async ctx => ctx.reply(await buildPnl(ctx.state.userId)));
+  inst.command('status', async ctx => ctx.reply(await buildStatus(ctx.state.userId)));
+  inst.command('balance', async ctx => ctx.reply(await buildBalance(ctx.state.userId)));
+  inst.command('positions', async ctx => ctx.reply(await buildPositions(ctx.state.userId)));
+  inst.command('pnl', async ctx => ctx.reply(await buildPnl(ctx.state.userId)));
 
-  bot.command('price', async ctx => {
+  inst.command('price', async ctx => {
     const pair = (ctx.payload || '').toUpperCase().trim();
     if (!pair) return ctx.reply('Format: /price XRPIDR');
     const exchangeId = pair.endsWith('USDT') ? 'tokocrypto' : 'indodax';
@@ -191,7 +208,7 @@ export function startTelegram(): boolean {
     }
   });
 
-  bot.command('pause', ctx => {
+  inst.command('pause', ctx => {
     const userId = ctx.state.userId;
     const id = parseInt(ctx.payload || '', 10);
     if (id) {
@@ -206,7 +223,7 @@ export function startTelegram(): boolean {
     log('info', 'TELEGRAM', `Pause via Telegram ${id ? '#' + id : '(semua)'} oleh chat ${ctx.chat.id}`, { user_id: userId });
   });
 
-  bot.command('resume', ctx => {
+  inst.command('resume', ctx => {
     const userId = ctx.state.userId;
     const id = parseInt(ctx.payload || '', 10);
     if (id) {
@@ -220,18 +237,18 @@ export function startTelegram(): boolean {
     }
   });
 
-  bot.command('panic', async ctx => {
+  inst.command('panic', async ctx => {
     await ctx.reply(
       '🚨 KILL SWITCH akan ME-PAUSE semua bot & MEMBATALKAN semua open order live.\nLanjutkan?',
       { reply_markup: { inline_keyboard: [[{ text: '✅ Ya, AKTIFKAN', callback_data: 'panic_confirm' }, { text: '❌ Batal', callback_data: 'panic_cancel' }]] } }
     );
   });
 
-  bot.action('panic_cancel', async ctx => {
+  inst.action('panic_cancel', async ctx => {
     await ctx.answerCbQuery('Dibatalkan');
     await ctx.editMessageText('✅ Kill switch dibatalkan. Bot tetap berjalan.');
   });
-  bot.action('panic_confirm', async ctx => {
+  inst.action('panic_confirm', async ctx => {
     await ctx.answerCbQuery('Mengaktifkan…');
     const { activateKillSwitch } = await import('../engine/killswitch.js');
     const r = await activateKillSwitch(`Telegram @${ctx.from?.username || ctx.from?.id}`, ctx.state.userId);
@@ -239,7 +256,7 @@ export function startTelegram(): boolean {
     await ctx.editMessageText(`🚨 KILL SWITCH AKTIF\n${r.bots_paused} bot di-pause\n${total} open order dibatalkan${r.errors.length ? `\n⚠️ ${r.errors.join('; ')}` : ''}\n\nGunakan /resume untuk menjalankan lagi.`);
   });
 
-  bot.command('logs', ctx => {
+  inst.command('logs', ctx => {
     const n = Math.min(parseInt(ctx.payload || '5', 10) || 5, 15);
     const rows = db.prepare('SELECT * FROM logs WHERE (user_id=? OR user_id=0) ORDER BY id DESC LIMIT ?').all(ctx.state.userId, n) as any[];
     if (rows.length === 0) return ctx.reply('📭 Belum ada log.');
@@ -250,18 +267,46 @@ export function startTelegram(): boolean {
     }).join('\n');
     ctx.reply(`📜 ${n} LOG TERAKHIR\n\n${text}`);
   });
+} // end setupHandlers
 
-  // Sender untuk notifikasi otomatis — terisolasi per user
+export function startTelegram(): boolean {
+  for (const t of collectBotTokens()) ensureInstance(t.key, t.token, t.proxy);
+  if (bots.size === 0) {
+    log('warn', 'TELEGRAM', 'Token Telegram kosong — fitur Telegram dimatikan');
+    return false;
+  }
+
+  // Sender untuk notifikasi otomatis — dirutekan ke instance milik user
   setTelegramSender(async (userId: number | null, text: string) => {
-    if (!bot) return;
-    const chats = userId === null ? allChats() : userChats(userId);
-    for (const chatId of chats) {
-      try { await bot.telegram.sendMessage(chatId, text); } catch { /* abaikan */ }
+    // Kumpulkan target per instance agar tiap chat dikirimi sekali
+    const targets = new Map<Telegraf, Set<string>>();
+    const addTarget = (inst: Telegraf | undefined, chats: string[]) => {
+      if (!inst || chats.length === 0) return;
+      let set = targets.get(inst);
+      if (!set) { set = new Set(); targets.set(inst, set); }
+      for (const c of chats) set.add(c);
+    };
+    if (userId !== null) {
+      const own = bots.get(`u${userId}`);
+      addTarget(own?.inst ?? bots.get('env')?.inst, userChats(userId));
+    } else {
+      const users = db.prepare('SELECT id FROM users').all() as any[];
+      const ids = users.length > 0 ? users.map(u => u.id) : [0];
+      for (const uid of ids) {
+        const own = bots.get(`u${uid}`);
+        addTarget(own?.inst ?? bots.get('env')?.inst, userChats(uid));
+      }
+    }
+    for (const [inst, chats] of targets) {
+      for (const chatId of chats) {
+        try { await inst.telegram.sendMessage(chatId, text); } catch { /* abaikan */ }
+      }
     }
   });
 
-  bot.launch().then(() => log('info', 'TELEGRAM', 'Bot Telegram aktif (polling)'))
-    .catch(e => log('error', 'TELEGRAM', `Gagal launch: ${e.message}`));
+  if (summaryTimer) clearInterval(summaryTimer);
+
+
 
   // Ringkasan harian per user yang punya chat terdaftar
   summaryTimer = setInterval(async () => {
@@ -284,8 +329,12 @@ export function startTelegram(): boolean {
 }
 
 export async function stopTelegram() {
-  if (summaryTimer) clearInterval(summaryTimer);
-  if (bot) { bot.stop(); bot = null; setTelegramSender(null); }
+  if (summaryTimer) { clearInterval(summaryTimer); summaryTimer = null; }
+  for (const [, b] of bots) {
+    try { b.inst.stop(); } catch { /* abaikan */ }
+  }
+  bots.clear();
+  setTelegramSender(null);
 }
 
 export async function restartTelegram(): Promise<boolean> {
@@ -293,17 +342,19 @@ export async function restartTelegram(): Promise<boolean> {
   return startTelegram();
 }
 
-/** Kirim pesan tes ke chat milik user */
+/** Kirim pesan tes memakai bot milik user (fallback token env bila user belum isi) */
 export async function sendTestMessage(userId = 0): Promise<{ ok: boolean; error?: string; sent_to?: number }> {
-  const token = botToken();
+  let token = settings.get('telegram_bot_token', '', userId);
+  let key = `u${userId}`;
+  if (!token && config.telegramToken) { token = config.telegramToken; key = 'env'; }
   if (!token) return { ok: false, error: 'Token belum diisi' };
-  if (!bot) startTelegram();
   const chats = userChats(userId);
   if (chats.length === 0) return { ok: false, error: 'Chat ID allowed kosong' };
+  const inst = ensureInstance(key, token, key === 'env' ? config.defaultProxy : userProxy(userId));
   try {
     let n = 0;
     for (const chatId of chats) {
-      await bot!.telegram.sendMessage(chatId, '✅ Tes koneksi Trading Botani berhasil!');
+      await inst.telegram.sendMessage(chatId, '✅ Tes koneksi Trading Botani berhasil!');
       n++;
     }
     return { ok: true, sent_to: n };
@@ -312,4 +363,4 @@ export async function sendTestMessage(userId = 0): Promise<{ ok: boolean; error?
   }
 }
 
-export { UserRow };
+export type { UserRow };

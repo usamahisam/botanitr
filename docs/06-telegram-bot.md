@@ -1,9 +1,15 @@
 # 06 — Telegram Bot
 
-Library: **Telegraf 4**. Proxy via agent (lihat 04). Aktif hanya jika `TELEGRAM_BOT_TOKEN` terisi (env atau settings DB). Polling (bukan webhook) agar tidak perlu domain.
+Library: **Telegraf 4**. Proxy via agent (lihat 04). Polling (bukan webhook) agar tidak perlu domain.
+
+## Instance per-user (multi-bot Telegram)
+Satu token Telegram = satu polling loop. Server menjalankan **satu instance Telegraf per pemilik token**: token env (`TELEGRAM_BOT_TOKEN`) + token milik tiap user (`telegram_bot_token` di settings masing-masing). Token yang sama hanya dijalankan sekali (hindari konflik polling 409). Proxy juga per pemilik token (`proxy_telegram` masing-masing user).
+- Notifikasi otomatis dirutekan ke instance milik user yang bersangkutan — chat user A tidak pernah dikirimi lewat bot user B.
+- Pesan sistem (`user_id` null) dikirim lewat instance yang relevan dengan tiap chat tujuan.
+- Tanpa token sama sekali → fitur Telegram mati (aman default).
 
 ## Whitelist
-`TELEGRAM_ALLOWED_CHAT_IDS` (env) atau `telegram_allowed_chat_ids` (settings). Middleware menolak chat_id lain dengan pesan "Akses ditolak". Jika kosong → bot menolak semua (aman default).
+`telegram_allowed_chat_ids` (settings per user; env `TELEGRAM_ALLOWED_CHAT_IDS` sebagai fallback). Tabel `telegram_chats` memetakan chat_id → user untuk routing perintah & notifikasi. Middleware menolak chat_id tak dikenal dengan pesan "Akses ditolak". Jika kosong → bot menolak semua (aman default).
 
 ## Commands
 | Command | Deskripsi |
