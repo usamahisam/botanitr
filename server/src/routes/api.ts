@@ -221,6 +221,10 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
   if (finalMode === 'live') {
     if (exRow.mode !== 'live') return res.status(400).json({ error: 'Exchange masih mode Demo. Ubah di Pengaturan.' });
     if (!confirmed_live) return res.status(400).json({ error: 'Konfirmasi live trading diperlukan (confirmed_live)' });
+    // Validasi budget vs kas riil agar gagal cepat dengan pesan jelas (bukan diam saat engine jalan)
+    const { validateLiveBudget } = await import('../engine/budget.js');
+    const check = await validateLiveBudget(userId, exchange_id, Number(budget_idr));
+    if (!check.ok) return res.status(400).json({ error: check.message, free_quote: check.freeQuote, quote: check.quote });
   }
 
   const mergedParams = { ...strat.defaultParams, ...(params || {}) };
@@ -266,6 +270,16 @@ api.get('/bots/:id/equity', asyncH(async (req: any, res: any) => {
   if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   const { getEquityCurve } = await import('../engine/equity.js');
   res.json(await getEquityCurve(Number(req.params.id), Number(req.query.days || 30)));
+}));
+
+// Kas maksimal yang bisa dipakai sebagai budget bot (per exchange milik user)
+api.get('/exchanges/:id/max-spendable', asyncH(async (req: any, res: any) => {
+  const { maxSpendable } = await import('../engine/budget.js');
+  try {
+    res.json(await maxSpendable(uid(req), req.params.id));
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
 }));
 
 // ===== Quick Trade =====

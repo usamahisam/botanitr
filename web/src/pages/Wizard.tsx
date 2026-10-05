@@ -9,6 +9,35 @@ interface BtResult {
   equity: { t: number; v: number }[]; candles: number; note?: string;
 }
 
+function MaxBudgetBox({ exchange, budget, onMax }: {
+  exchange: string; budget: number; onMax: (v: number) => void;
+}) {
+  const [info, setInfo] = useState<{ quote: string; free: number; mode: string } | null>(null);
+  useEffect(() => {
+    setInfo(null);
+    api.get<{ quote: string; free: number; mode: string }>(`/exchanges/${exchange}/max-spendable`)
+      .then(setInfo).catch(() => {});
+  }, [exchange]);
+  if (!info) return null;
+  const over = budget > info.free;
+  return (
+    <div className={`mt-2 rounded-md border px-3 py-2 text-[12px] ${over ? 'border-[rgba(246,70,93,0.35)] bg-[rgba(246,70,93,0.07)]' : 'border-white/10 bg-white/[0.03]'}`}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="txt-2">
+          Kas tersedia ({info.mode === 'live' ? 'Riil' : 'Demo'}): <b className="num txt-2">{info.free.toLocaleString('id-ID')} {info.quote}</b>
+        </span>
+        <button onClick={() => onMax(Math.floor(info.free))} disabled={info.free <= 0}
+          className="btn btn-ghost btn-sm shrink-0" title="Isi budget dengan seluruh kas tersedia">
+          Pakai maksimal
+        </button>
+      </div>
+      {over && (
+        <div className="txt-down mt-1">Budget melebihi kas — bot {info.mode === 'live' ? 'akan ditolak saat aktivasi' : 'bisa kehabisan kas saat jalan'}.</div>
+      )}
+    </div>
+  );
+}
+
 function BacktestPanel({ exchange, pair, strategy, params, budget }: {
   exchange: string; pair: string; strategy: string; params: Record<string, any>; budget: number;
 }) {
@@ -288,6 +317,7 @@ export default function Wizard() {
             <div>
               <div className="lbl mb-1.5">Budget</div>
               <input type="number" value={budget} onChange={e => setBudget(Number(e.target.value))} className="input num" />
+              <MaxBudgetBox exchange={exchange} budget={budget} onMax={setBudget} />
             </div>
             <div>
               <div className="lbl mb-1.5">Batas rugi harian (%)</div>

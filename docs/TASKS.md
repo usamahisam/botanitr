@@ -140,6 +140,13 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] Audit: seed negatif ditolak, live tanpa kredensial ditandai error, tidak ada bypass auth
 - [x] E2E `test-balance-guard` 16/16 ✅; total suite 121/121 ✅
 
+## Revisi: Budget maksimal saat buat bot (ditambahkan)
+- [x] Diagnosis VPS: bot live grid sehat (anchor terbentuk, ticking, 0 error); 0 trade karena harga belum sentuh level — bukan bug
+- [x] Validasi budget vs kas live saat pembuatan bot (`validateLiveBudget`, 400 + angka jelas, fail-open)
+- [x] Endpoint `GET /exchanges/:id/max-spendable` + tombol "Pakai maksimal" + warning di Wizard
+- [x] Audit: read-only, scope per-user, tanpa bypass confirmed_live, tanpa operasi destruktif
+- [x] E2E `test-bot-budget` 7/7 ✅; total suite 128/128 ✅
+
 ## Revisi: Token Telegram per-user (ditambahkan)
 - [x] Root cause: `botToken()` hanya membaca env/admin/legacy → token user biasa tak pernah dipakai
 - [x] Instance Telegraf per pemilik token (dedupe token kembar, proxy per pemilik)
