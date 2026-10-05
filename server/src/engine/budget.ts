@@ -29,13 +29,19 @@ export async function validateBudget(userId: number, exchangeId: string, budgetQ
     return { ok: true, skipped: true, freeQuote: 0, quote, message: `Saldo tak terbaca (${e.message}) — validasi dilewati` };
   }
   const freeQuote = balances.find(b => b.asset === quote)?.free ?? 0;
-  if (budgetQuote > freeQuote) {
+  // Satu akun dipakai ramai-ramai: kurangi modal yang sudah diklaim bot running
+  // lain (mode sama) agar dua bot tak mengklaim kas yang sama (double-spend).
+  const committed = (db.prepare(`SELECT COALESCE(SUM(current_budget),0) s FROM bots
+    WHERE user_id=? AND exchange_id=? AND mode=? AND status='running'`).get(userId, exchangeId, mode) as any).s || 0;
+  const available = freeQuote - committed;
+  if (budgetQuote > available) {
     const hint = mode === 'paper'
-      ? `Turunkan budget ke maksimal ${fmtMoney(Math.floor(freeQuote), quote)} atau reset saldo demo di Pengaturan.`
-      : `Turunkan budget atau tambah dana (maksimal ${fmtMoney(Math.floor(freeQuote), quote)}).`;
+      ? `Turunkan budget ke maksimal ${fmtMoney(Math.max(0, Math.floor(available)), quote)} atau reset saldo demo di Pengaturan.`
+      : `Turunkan budget atau tambah dana (maksimal ${fmtMoney(Math.max(0, Math.floor(available)), quote)}).`;
+    const claimed = committed > 0 ? ` (sudah diklaim bot berjalan: ${fmtMoney(committed, quote)})` : '';
     return {
       ok: false, skipped: false, freeQuote, quote,
-      message: `Budget ${fmtMoney(budgetQuote, quote)} melebihi kas ${quote} tersedia ${fmtMoney(freeQuote, quote)}. ${hint}`
+      message: `Budget ${fmtMoney(budgetQuote, quote)} melebihi kas ${quote} tersedia ${fmtMoney(freeQuote, quote)}${claimed}. ${hint}`
     };
   }
   return { ok: true, skipped: false, freeQuote, quote, message: 'OK' };

@@ -117,6 +117,8 @@ export interface BalanceNeed {
 export interface BalanceHealth {
   exchange_id: string; quote: string; free_quote: number; error: string | null;
   bots: BalanceNeed[]; short: number;
+  /** Total modal diklaim bot running + flag bila melebihi kas (double-spend) */
+  committed_quote: number; overallocated: boolean;
 }
 
 /**
@@ -143,7 +145,18 @@ export async function checkBalancesHealth(userId: number): Promise<BalanceHealth
     const needs: BalanceNeed[] = bots
       .filter(b => b.exchange_id === id)
       .map(b => ({ bot_id: b.id, name: b.name, lot: b.lot, mode: b.mode, ok: error ? false : freeQuote >= b.lot }));
-    out.push({ exchange_id: id, quote, free_quote: freeQuote, error, bots: needs, short: needs.filter(n => !n.ok).length });
+    // Monitor alokasi ganda: total klaim bot running vs kas akun (per mode).
+    // Quick-trade manual / bot lama bisa membuat klaim melebihi kas nyata.
+    const committedByMode = new Map<string, number>();
+    for (const b of bots.filter(x => x.exchange_id === id && x.status === 'running')) {
+      committedByMode.set(b.mode, (committedByMode.get(b.mode) || 0) + (Number(b.current_budget) || 0));
+    }
+    const committed = [...committedByMode.values()].reduce((s, v) => s + v, 0);
+    const overallocated = !error && committed > freeQuote;
+    if (overallocated) {
+      log('warn', 'ENGINE', `Alokasi berlebih di ${id}: klaim bot ${Math.round(committed)} > kas ${Math.round(freeQuote)} ${quote}`, { user_id: userId });
+    }
+    out.push({ exchange_id: id, quote, free_quote: freeQuote, error, bots: needs, short: needs.filter(n => !n.ok).length, committed_quote: committed, overallocated });
   }
   return out;
 }

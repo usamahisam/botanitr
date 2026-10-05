@@ -299,7 +299,15 @@ api.post('/bots/:id/pause', asyncH(async (req: any, res: any) => {
   res.json({ ok: true });
 }));
 api.post('/bots/:id/resume', asyncH(async (req: any, res: any) => {
-  if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  const userId = uid(req);
+  const bot = getUserBot(userId, req.params.id);
+  if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  // Resume = klaim kas lagi: tolak bila kas sudah diklaim bot lain (anti double-spend).
+  if (bot.status !== 'running') {
+    const { validateBudget } = await import('../engine/budget.js');
+    const check = await validateBudget(userId, bot.exchange_id, bot.current_budget, bot.mode as 'paper' | 'live');
+    if (!check.ok) return res.status(400).json({ error: check.message, free_quote: check.freeQuote, quote: check.quote });
+  }
   queries.setBotStatus.run('running', now(), req.params.id);
   res.json({ ok: true });
 }));

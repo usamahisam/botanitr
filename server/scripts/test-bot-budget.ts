@@ -63,6 +63,29 @@ async function main() {
   const paperOk = await validateBudget(0, 'indodax', 100000, 'paper');
   check('budget 100rb diloloskan', paperOk.ok === true && paperOk.skipped === false);
 
+  // ===== F) Klaim modal: bot running lain mengurangi jatah (anti double-spend) =====
+  console.log('\nF) Klaim modal running');
+  const { queries, now } = await import('../src/db/index.js');
+  queries.insertBot.run({
+    user_id: 0, name: 'Klaim-A', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid',
+    params: '{}', budget_idr: 6000000, current_budget: 6000000, lot: 1000000, mode: 'paper',
+    auto_compound_pct: 100, status: 'running', state: '{}', max_daily_loss_pct: 0,
+    market_preset_id: null, created_at: now(), updated_at: now(),
+  });
+  const claimOver = await validateBudget(0, 'indodax', 5000000, 'paper');
+  check('6jt diklaim + 5jt baru > 10jt -> tolak', claimOver.ok === false, claimOver.message.slice(0, 140));
+  check('pesan sebut klaim berjalan', /klaim/i.test(claimOver.message), claimOver.message.slice(0, 140));
+  const claimOk = await validateBudget(0, 'indodax', 3000000, 'paper');
+  check('6jt diklaim + 3jt baru <= 10jt -> lolos', claimOk.ok === true, claimOk.message.slice(0, 120));
+
+  // ===== G) Guard ledger kas bot =====
+  console.log('\nG) checkLedgerCash');
+  const { checkLedgerCash } = await import('../src/engine/trader.js');
+  check('kas cukup -> null', checkLedgerCash(100000, 50000) === null);
+  check('kas belum init -> null (fail-open)', checkLedgerCash(undefined, 999999) === null);
+  check('kas kurang jauh -> pesan', typeof checkLedgerCash(10000, 90000) === 'string');
+  check('selisih fee 0,3% ditoleransi', checkLedgerCash(99700, 100000) === null, 'fee-drag tidak boleh blokir buy terakhir');
+
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);
   process.exit(failed > 0 ? 1 : 0);

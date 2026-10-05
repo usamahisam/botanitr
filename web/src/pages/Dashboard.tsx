@@ -33,7 +33,7 @@ function Tape() {
   );
 }
 
-interface BalanceIssue { exchange_id: string; quote: string; free_quote: number; bot_id: number; name: string; lot: number; mode: string }
+interface BalanceIssue { exchange_id: string; quote: string; free_quote: number; bot_id: number | null; name: string; lot: number; mode: string; overalloc?: boolean; committed?: number }
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -44,10 +44,17 @@ export default function Dashboard() {
   const load = useCallback(() => {
     api.get<DashboardData>('/dashboard').then(d => { setData(d); setErr(''); }).catch(e => setErr(e.message));
     api.get<any[]>('/balances/check').then(rows => {
-      setIssues(rows.flatMap(r => (r.bots || []).filter((b: any) => !b.ok).map((b: any) => ({
-        exchange_id: r.exchange_id, quote: r.quote, free_quote: r.free_quote,
-        bot_id: b.bot_id, name: b.name, lot: b.lot, mode: b.mode
-      }))));
+      setIssues(rows.flatMap(r => [
+        ...((r.bots || []).filter((b: any) => !b.ok).map((b: any) => ({
+          exchange_id: r.exchange_id, quote: r.quote, free_quote: r.free_quote,
+          bot_id: b.bot_id, name: b.name, lot: b.lot, mode: b.mode
+        }))),
+        ...(r.overallocated ? [{
+          exchange_id: r.exchange_id, quote: r.quote, free_quote: r.free_quote,
+          bot_id: null, name: 'Alokasi berlebih (klaim bot > kas akun)', lot: 0, mode: '',
+          overalloc: true, committed: r.committed_quote
+        }] : [])
+      ]));
     }).catch(() => {});
   }, []);
 
@@ -84,11 +91,16 @@ export default function Dashboard() {
       {issues.length > 0 && (
         <div className="panel p-4 border-l-2 !border-l-[#f0b90b]">
           <div className="text-[13px] font-semibold text-[#f0b90b] mb-1">Kas tidak cukup untuk {issues.length} bot</div>
-          {issues.map(i => (
-            <div key={i.bot_id} className="text-xs txt-2 py-0.5">
-              #{i.bot_id} {i.name} ({i.exchange_id}/{i.mode === 'live' ? 'Riil' : 'Demo'}) butuh <span className="num">{fmtNum(i.lot, 0)} {i.quote}</span>,
-              kas <span className="num">{fmtNum(i.free_quote, 0)} {i.quote}</span>
-              {i.mode === 'paper' ? ' — reset saldo demo di Pengaturan' : ' — tambah dana / kecilkan budget'}
+          {issues.map((i, idx) => (
+            <div key={i.bot_id ?? `oa-${idx}`} className="text-xs txt-2 py-0.5">
+              {i.overalloc ? (
+                <>{i.name} di {i.exchange_id}: klaim <span className="num">{fmtNum(i.committed || 0, 0)} {i.quote}</span>,
+                kas <span className="num">{fmtNum(i.free_quote, 0)} {i.quote}</span> — pause salah satu bot atau tambah dana</>
+              ) : (
+                <>#{i.bot_id} {i.name} ({i.exchange_id}/{i.mode === 'live' ? 'Riil' : 'Demo'}) butuh <span className="num">{fmtNum(i.lot, 0)} {i.quote}</span>,
+                kas <span className="num">{fmtNum(i.free_quote, 0)} {i.quote}</span>
+                {i.mode === 'paper' ? ' — reset saldo demo di Pengaturan' : ' — tambah dana / kecilkan budget'}</>
+              )}
             </div>
           ))}
         </div>

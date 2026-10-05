@@ -65,10 +65,28 @@ export async function checkBalance(bot: BotRow, action: Action, paper: boolean, 
 }
 
 /**
+ * Guard ledger kas bot: satu akun dipakai ramai-ramai, jadi saldo akun SAJA
+ * tidak cukup — tiap bot hanya boleh belanja dari kas ledgernya sendiri
+ * (state.cash yang dirawat scheduler). Mencegah double-spend antar bot.
+ * Toleransi 0,5%: fee tiap fill menggerus kas sedikit di bawah lot terencana
+ * (yang dihitung dari budget) — tanpa toleransi, buy terakhir level grid
+ * bisa terblokir selamanya oleh selisih receh fee. Double-spend sungguhan
+ * selalu berskala besar, jadi toleransi ini aman.
+ * Mengembalikan null bila aman / tak diketahui, atau pesan penolakan.
+ */
+export function checkLedgerCash(cash: number | undefined | null, amountQuote: number, tolerancePct = 0.5): string | null {
+  if (!Number.isFinite(cash)) return null; // ledger belum init → lewati (fail-open)
+  if (amountQuote > (cash as number) * (1 + tolerancePct / 100)) {
+    return `Kas ledger bot tidak cukup: butuh ${amountQuote}, kas bot ${cash} (kas akun dipakai bersama bot lain)`;
+  }
+  return null;
+}
+
+/**
  * Eksekusi Action dari strategi → order (paper/live) → catat trade → compound.
  * Idempoten via client_order_id.
  */
-export async function executeAction(bot: BotRow, action: Action, usdtIdr: number): Promise<TradeRow | null> {
+export async function executeAction(bot: BotRow, action: Action, usdtIdr: number, botCash?: number): Promise<TradeRow | null> {
   const cycle = `${Date.now()}-${tradeCounter++}`;
   // client_order_id: maks 36 char, alfanumerik _- (aturan Indodax)
   const clientOrderId = `bot${bot.id}-${action.type}${cycle}`.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 36);
@@ -96,6 +114,14 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
       const logged = logSkipOnce(bot.id, 'balance', 'warn', 'TRADE', `${balErr} — order dilewati`, { bot_id: bot.id, user_id: bot.user_id });
       if (logged && !paper) await notify(`⚠️ Order ${bot.name} dilewati:\n${balErr}`, bot.user_id).catch(() => {});
       return null;
+    }
+    // Guard ledger: jangan belanja melebihi kas milik bot ini (anti double-spend)
+    if (action.type === 'buy') {
+      const ledgerErr = checkLedgerCash(botCash, action.amountQuote ?? 0);
+      if (ledgerErr) {
+        logSkipOnce(bot.id, 'ledger', 'warn', 'TRADE', `${ledgerErr} — order dilewati`, { bot_id: bot.id, user_id: bot.user_id });
+        return null;
+      }
     }
 
     if (action.type === 'buy') {
