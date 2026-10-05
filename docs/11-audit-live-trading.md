@@ -30,6 +30,13 @@ Jalur live trading **aman digunakan dengan catatan**: selalu uji kecil dulu (nom
 - Indodax tidak punya endpoint OHLC resmi → klines diagregasi dari `/trades` (cukup untuk scalper jangka pendek).
 - Market buy Indodax hanya mendukung nominal `idr` (bukan qty) — sudah sesuai desain.
 
+## Insiden nyata: error -1102 berulang di bot live (dipicu 2026-10-05, diperbaiki hari yang sama)
+- **Gejala**: bot live Grid DOGE melempar `Indodax v2: ... Mandatory parameters symbol, side, type were not sent` (kode -1102) setiap tick. Dana AMAN — gagal tertutup, tak ada order terkirim.
+- **Root cause**: `signed()` mengirim parameter POST di **query string**. Backend Java Indodax hanya membaca parameter POST dari **body** (`@FormParam`), persis seperti contoh Python resmi (body + header `Sign`), bukan contoh curl-nya. Contoh curl di dokumentasi vendor ternyata tidak mencerminkan perilaku server.
+- **Perbaikan**: POST → body urlencoded + signature di header `Sign`. GET/DELETE tidak berubah (terbukti jalan live: probe, saldo, sinkron OK).
+- **Celah mock yang ditutup**: mock lama menerima POST query-string sehingga bug lolos. Mock kini meniru server ketat (tolak POST tanpa body → 412/-1102). Terbukti: tanpa fix, tes FATAL dengan error -1102 persis produksi; dengan fix, 12/12 lolos.
+- **Pelajaran audit**: mock E2E harus meniru *validasi* server nyata, bukan sekadar format respons. Berlaku juga untuk Bittime (dokumentasinya membolehkan query-string POST — dibiarkan mengikuti dok sampai ada kunci live untuk verifikasi; bila kena dinding yang sama, perbaikannya satu baris yang sama).
+
 ## Verifikasi E2E (mock exchange, tanpa uang sungguhan)
 
 ### `test:live-mock` — validasi protokol Indodax (13/13 ✅)

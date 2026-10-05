@@ -38,13 +38,26 @@ export class IndodaxV2Client {
     }).toString();
     const signature = this.sign(query);
     try {
+      // POST: parameter HARUS di body (urlencoded) + signature di header Sign,
+      // mengikuti contoh resmi Python. Backend Java Indodax tidak membaca
+      // parameter POST dari query string (error -1102 bila dikirim di URL).
+      if (method === 'POST') {
+        const { data } = await this.http.post<T>(path, query, {
+          headers: {
+            'X-APIKEY': this.apiKey,
+            'Sign': signature,
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        });
+        return data;
+      }
       const { data } = await this.http.request<T>({
         method,
         url: `${path}?${query}&signature=${signature}`,
         headers: {
           'X-APIKEY': this.apiKey,
-          'Accept': 'application/json',
-          ...(method === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {})
+          'Accept': 'application/json'
         }
       });
       return data;

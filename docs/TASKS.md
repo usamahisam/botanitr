@@ -180,6 +180,13 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] Perbaikan bug data basi `getLocalKlines` (DESC + sort kronologis)
 - [x] Verifikasi live: instansi minim-data (170 titik) tetap dapat analisis + note; suite 97/97 ✅
 
+## Hotfix: POST TAPIv2 Indodax wajib di body (insiden live -1102)
+- [x] Respons insiden: bot live error-loop tiap tick → pause bot (failing closed, dana aman)
+- [x] Root cause: backend Java hanya baca parameter POST dari body; contoh curl dok menyesatkan
+- [x] Perbaikan: POST → body urlencoded + header `Sign` (ikuti contoh Python resmi); GET/DELETE tak berubah
+- [x] Mock diperketat meniru server ketat; terbukti reproduksi -1102 tanpa fix, lolos dengan fix
+- [x] Suite 137/137 ✅; dokumentasi insiden di `docs/11-audit-live-trading.md`
+
 ## Revisi: Wizard mode-awal + Bittime (+Triv ditolak) (ditambahkan)
 - [x] Riset: Bittime feasible (dok resmi + endpoint live verified); Triv tanpa API publik → skip berdokumen
 - [x] `BittimeClient` (array-ticker, agregasi trades, quantity-hitung, minVal, rekonsiliasi order-query, fee dinamis) + registrasi + seed 10 pair

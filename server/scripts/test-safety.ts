@@ -27,41 +27,55 @@ let lastV2Headers: any = null;
 const v2verify = (qs: string, sig: string) => crypto.createHmac('sha256', V2_SECRET).update(qs).digest('hex') === sig;
 
 const server = http.createServer((req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  const url = req.url || '';
-  const u = new URL(url, 'http://x');
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', () => {
+    res.setHeader('Content-Type', 'application/json');
+    const url = req.url || '';
+    const u = new URL(url, 'http://x');
 
-  // TAPI v2 (HMAC-SHA256)
-  if (u.pathname.startsWith('/api/v2/')) {
-    lastV2Headers = req.headers;
-    const qs = u.searchParams.toString().replace(/&signature=[^&]*/, '');
-    const sig = u.searchParams.get('signature') || '';
-    if (req.headers['x-apikey'] !== V2_KEY || !v2verify(qs, sig)) {
-      res.statusCode = 401; res.end(JSON.stringify({ code: -1002, msg: 'Invalid credentials.' })); return;
+    // TAPI v2 (HMAC-SHA256) — meniru backend Java Indodax yang KETAT:
+    // parameter POST hanya dibaca dari body (query string diabaikan).
+    if (u.pathname.startsWith('/api/v2/')) {
+      lastV2Headers = req.headers;
+      const bodyParams = new URLSearchParams(body);
+      // totalParams = query (tanpa signature) + body, masing-masing yang tak kosong saja
+      const qsNoSig = u.searchParams.toString().replace(/&?signature=[^&]*/, '');
+      const sig = u.searchParams.get('signature') || String(req.headers['sign'] || '');
+      const totalParams = [qsNoSig, body].filter(s => s.length > 0).join('&');
+      if (req.headers['x-apikey'] !== V2_KEY || !v2verify(totalParams, sig)) {
+        res.statusCode = 401; res.end(JSON.stringify({ code: -1002, msg: 'Invalid credentials.' })); return;
+      }
+      if (u.pathname === '/api/v2/account') {
+        v2AccountCalled++;
+        res.end(JSON.stringify({ canTrade: true, canWithdraw: false, balances: [{ asset: 'IDR', free: '5000000', locked: '0' }, { asset: 'XRP', free: '7.5', locked: '0' }] }));
+        return;
+      }
+      if (u.pathname === '/api/v2/myTrades') {
+        res.end(JSON.stringify([{ symbol: 'XRPIDR', orderId: '5', qty: '3.75', price: '26600', commission: '299', time: Date.now() }]));
+        return;
+      }
+      if (u.pathname === '/api/v2/order' && req.method === 'POST') {
+        const sym = bodyParams.get('symbol'), side = bodyParams.get('side'), type = bodyParams.get('type');
+        if (!sym || !side || !type) {
+          res.statusCode = 412;
+          res.end(JSON.stringify({ code: -1102, msg: 'A mandatory parameter was not sent, was empty/null, or malformed. Mandatory parameters symbol, side, type were not sent' }));
+          return;
+        }
+        res.end(JSON.stringify({ symbol: sym, orderId: 5, side, type, executedQty: '3.75' }));
+        return;
+      }
+      if (u.pathname === '/api/v2/openOrders') { res.end('[]'); return; }
+      res.end('{}'); return;
     }
-    if (u.pathname === '/api/v2/account') {
-      v2AccountCalled++;
-      res.end(JSON.stringify({ canTrade: true, canWithdraw: false, balances: [{ asset: 'IDR', free: '5000000', locked: '0' }, { asset: 'XRP', free: '7.5', locked: '0' }] }));
-      return;
-    }
-    if (u.pathname === '/api/v2/myTrades') {
-      res.end(JSON.stringify([{ symbol: 'XRPIDR', orderId: '5', qty: '3.75', price: '26600', commission: '299', time: Date.now() }]));
-      return;
-    }
-    if (u.pathname === '/api/v2/order' && req.method === 'POST') {
-      res.end(JSON.stringify({ symbol: 'XRPIDR', orderId: 5, side: 'BUY', type: 'MARKET', executedQty: '3.75' }));
-      return;
-    }
-    if (u.pathname === '/api/v2/openOrders') { res.end('[]'); return; }
-    res.end('{}'); return;
-  }
 
-  // Publik v1 ticker
-  if (u.pathname.startsWith('/api/') && u.pathname.endsWith('/ticker')) {
-    res.end(JSON.stringify({ ticker: { buy: '26600', sell: '26635', last: '26600', high: '1', low: '1', server_time: 1, vol_idr: '1' } }));
-    return;
-  }
-  res.statusCode = 404; res.end('{}');
+    // Publik v1 ticker
+    if (u.pathname.startsWith('/api/') && u.pathname.endsWith('/ticker')) {
+      res.end(JSON.stringify({ ticker: { buy: '26600', sell: '26635', last: '26600', high: '1', low: '1', server_time: 1, vol_idr: '1' } }));
+      return;
+    }
+    res.statusCode = 404; res.end('{}');
+  });
 });
 
 let passed = 0, failed = 0;
