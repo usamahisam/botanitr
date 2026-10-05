@@ -132,6 +132,14 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] E2E `test:features` 12/12 ✅; total suite 55/55 ✅
 - [x] Dokumentasi `docs/13-features-roadmap-v1.md`
 
+## Revisi: Guard saldo + faucet demo + health check (ditambahkan)
+- [x] Diagnosis VPS: bot live grid sehat, 0 trade karena harga belum sentuh level (bukan bug)
+- [x] Pre-flight balance guard di trader (cek kas/aset sebelum order, skip bersih + angka jelas, notif Telegram utk live, fail-open bila saldo tak terbaca)
+- [x] Paper faucet: seed konfigurabel (`paper_seed_idr/usdt`), endpoint reset per exchange, tombol + setting di UI
+- [x] Health endpoint `GET /balances/check` + banner peringatan di Dashboard
+- [x] Audit: seed negatif ditolak, live tanpa kredensial ditandai error, tidak ada bypass auth
+- [x] E2E `test-balance-guard` 16/16 ✅; total suite 121/121 ✅
+
 ## Revisi: Token Telegram per-user (ditambahkan)
 - [x] Root cause: `botToken()` hanya membaca env/admin/legacy → token user biasa tak pernah dipakai
 - [x] Instance Telegraf per pemilik token (dedupe token kembar, proxy per pemilik)

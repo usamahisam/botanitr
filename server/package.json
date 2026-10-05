@@ -17,6 +17,7 @@
     "test:v2": "tsx scripts/test-v2.ts",
     "test:auth": "tsx scripts/test-auth-http.ts",
     "test:telegram": "tsx scripts/test-telegram.ts",
+    "test:balance": "tsx scripts/test-balance-guard.ts",
     "test:backtest": "tsx scripts/test-backtest-fallback.ts",
     "typecheck": "tsc --noEmit"
   },

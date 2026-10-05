@@ -137,6 +137,19 @@ api.post('/exchanges/:id/sync', asyncH(async (req: any, res: any) => {
   res.json(await fetchExchangeBalance(req.params.id, uid(req)));
 }));
 
+// Faucet: reset saldo demo exchange ke seed awal
+api.post('/exchanges/:id/paper-reset', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
+  const result = registry.getPaperForUser(req.params.id, userId).resetToSeed();
+  res.json({ ok: true, ...result });
+}));
+
+// Health check saldo: kecukupan kas per exchange + per bot yang running
+api.get('/balances/check', asyncH(async (req: any, res: any) => {
+  const { checkBalancesHealth } = await import('../engine/balances.js');
+  res.json(await checkBalancesHealth(uid(req)));
+}));
+
 // ===== Pairs (global) =====
 api.get('/pairs', asyncH(async (req: any, res: any) => {
   const ex = String(req.query.exchange || '');
@@ -427,7 +440,7 @@ api.put('/settings', asyncH(async (req: any, res: any) => {
       !['auto', 'v1', 'v2'].includes(String(body.indodax_api_version))) {
     return res.status(400).json({ error: 'indodax_api_version harus auto, v1, atau v2' });
   }
-  const allowed = ['telegram_bot_token', 'telegram_allowed_chat_ids', 'proxy_telegram', 'default_paper_mode', 'daily_summary_time', 'indodax_api_version'];
+  const allowed = ['telegram_bot_token', 'telegram_allowed_chat_ids', 'proxy_telegram', 'default_paper_mode', 'daily_summary_time', 'indodax_api_version', 'paper_seed_idr', 'paper_seed_usdt'];
   for (const k of allowed) {
     if (body[k] !== undefined && body[k] !== '') settings.set(k, String(body[k]), userId);
   }

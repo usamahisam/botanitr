@@ -1,5 +1,15 @@
-import { db, queries } from '../db/index.js';
+import { db, queries, settings } from '../db/index.js';
 import { ExchangeClient, Balance, OrderResult, ExchangeError, parsePair } from './base.js';
+
+/** Seed saldo demo dari settings user (default 10jt IDR / 1000 USDT). Selalu ≥ 0. */
+export function paperSeed(quoteAsset: string, userId: number): number {
+  const raw = quoteAsset === 'IDR'
+    ? settings.get('paper_seed_idr', '10000000', userId)
+    : settings.get('paper_seed_usdt', '1000', userId);
+  const n = Number(raw);
+  const fallback = quoteAsset === 'IDR' ? 10000000 : 1000;
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 /**
  * Simulator paper trading. Saldo virtual disimpan di tabel paper_balances.
@@ -12,9 +22,17 @@ export class PaperTrader {
     const row = db.prepare('SELECT free FROM paper_balances WHERE exchange_id=? AND asset=? AND user_id=?')
       .get(exchangeId, quoteAsset, this.userId) as any;
     if (!row) {
-      const seed = quoteAsset === 'IDR' ? 10_000_000 : 1000;
-      queries.upsertPaperBalance.run(exchangeId, quoteAsset, seed, 0, this.userId);
+      queries.upsertPaperBalance.run(exchangeId, quoteAsset, paperSeed(quoteAsset, this.userId), 0, this.userId);
     }
+  }
+
+  /** Faucet: reset seluruh saldo demo exchange ini ke seed awal. */
+  resetToSeed(): { quote: string; seed: number } {
+    const quote = this.liveClient.quoteAsset;
+    const seed = paperSeed(quote, this.userId);
+    db.prepare('DELETE FROM paper_balances WHERE exchange_id=? AND user_id=?').run(this.liveClient.id, this.userId);
+    queries.upsertPaperBalance.run(this.liveClient.id, quote, seed, 0, this.userId);
+    return { quote, seed };
   }
 
   getBalances(): Balance[] {

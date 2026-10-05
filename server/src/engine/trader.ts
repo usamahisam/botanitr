@@ -1,11 +1,47 @@
 import { db, queries, now, BotRow, TradeRow } from '../db/index.js';
 import { registry } from '../exchange/registry.js';
+import { parsePair } from '../exchange/base.js';
 import { log } from '../log.js';
+import { notify } from '../telegram/notify.js';
 import { Action } from '../strategies/types.js';
-import { fmtIDR } from '../utils/format.js';
+import { fmtIDR, fmtQty } from '../utils/format.js';
 import { compound } from './compound.js';
 
 let tradeCounter = 0;
+
+/**
+ * Pre-flight balance guard: pastikan saldo cukup SEBELUM order dikirim.
+ * Mengembalikan null bila aman, atau pesan error yang jelas bila tidak.
+ * Fail-open: bila saldo gagal dibaca, biarkan order jalan (exchange yang menolak bila kurang).
+ */
+async function checkBalance(bot: BotRow, action: Action, paper: boolean, usdtIdr: number): Promise<string | null> {
+  const client = registry.getForUser(bot.exchange_id, bot.user_id);
+  const quote = client.quoteAsset;
+  const { base } = parsePair(bot.pair, quote);
+  let balances;
+  try {
+    balances = paper
+      ? registry.getPaperForUser(bot.exchange_id, bot.user_id).getBalances()
+      : await client.getBalances();
+  } catch {
+    return null; // tidak bisa baca saldo → biarkan exchange yang memutuskan
+  }
+  const free = (asset: string) => balances.find(b => b.asset === asset.toUpperCase())?.free ?? 0;
+  if (action.type === 'buy') {
+    const amount = action.amountQuote ?? 0;
+    const freeQuote = free(quote);
+    if (amount > freeQuote) {
+      return `Kas ${quote} tidak cukup untuk buy ${bot.pair}: butuh ${fmtIDR(amount * usdtIdr)}, tersedia ${fmtIDR(freeQuote * usdtIdr)}`;
+    }
+  } else {
+    const qty = action.qtyBase ?? 0;
+    const freeBase = free(base);
+    if (qty > freeBase + 1e-12) {
+      return `Saldo ${base} tidak cukup untuk sell ${bot.pair}: butuh ${fmtQty(qty)}, tersedia ${fmtQty(freeBase)}`;
+    }
+  }
+  return null;
+}
 
 /**
  * Eksekusi Action dari strategi → order (paper/live) → catat trade → compound.
@@ -29,12 +65,20 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
     let result: { order_id: string; price: number; qty: number; fee: number; side: 'buy' | 'sell' };
     let value = 0;
 
+    // Pre-flight: lot minimum + kecukupan saldo (skip bersih tanpa error_count)
+    if (action.type === 'buy' && (action.amountQuote ?? 0) < minLot) {
+      log('warn', 'TRADE', `Order buy ${fmtIDR((action.amountQuote ?? 0) * usdtIdr)} < lot minimum ${fmtIDR(minLot * usdtIdr)}, dilewati`, { bot_id: bot.id, user_id: bot.user_id });
+      return null;
+    }
+    const balErr = await checkBalance(bot, action, paper, usdtIdr);
+    if (balErr) {
+      log('warn', 'TRADE', `${balErr} — order dilewati`, { bot_id: bot.id, user_id: bot.user_id });
+      if (!paper) await notify(`⚠️ Order ${bot.name} dilewati:\n${balErr}`, bot.user_id).catch(() => {});
+      return null;
+    }
+
     if (action.type === 'buy') {
       const amount = action.amountQuote ?? 0;
-      if (amount < minLot) {
-        log('warn', 'TRADE', `Order buy ${fmtIDR(amount * usdtIdr)} < lot minimum ${fmtIDR(minLot * usdtIdr)}, dilewati`, { bot_id: bot.id });
-        return null;
-      }
       result = await trader.buyMarket(bot.pair, amount, clientOrderId);
       value = result.qty * result.price;
     } else {

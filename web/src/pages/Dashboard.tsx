@@ -33,13 +33,22 @@ function Tape() {
   );
 }
 
+interface BalanceIssue { exchange_id: string; quote: string; free_quote: number; bot_id: number; name: string; lot: number; mode: string }
+
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [showQuick, setShowQuick] = useState(false);
   const [err, setErr] = useState('');
+  const [issues, setIssues] = useState<BalanceIssue[]>([]);
 
   const load = useCallback(() => {
     api.get<DashboardData>('/dashboard').then(d => { setData(d); setErr(''); }).catch(e => setErr(e.message));
+    api.get<any[]>('/balances/check').then(rows => {
+      setIssues(rows.flatMap(r => (r.bots || []).filter((b: any) => !b.ok).map((b: any) => ({
+        exchange_id: r.exchange_id, quote: r.quote, free_quote: r.free_quote,
+        bot_id: b.bot_id, name: b.name, lot: b.lot, mode: b.mode
+      }))));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -71,6 +80,19 @@ export default function Dashboard() {
   return (
     <div className="space-y-4">
       <Tape />
+
+      {issues.length > 0 && (
+        <div className="panel p-4 border-l-2 !border-l-[#f0b90b]">
+          <div className="text-[13px] font-semibold text-[#f0b90b] mb-1">Kas tidak cukup untuk {issues.length} bot</div>
+          {issues.map(i => (
+            <div key={i.bot_id} className="text-xs txt-2 py-0.5">
+              #{i.bot_id} {i.name} ({i.exchange_id}/{i.mode === 'live' ? 'Riil' : 'Demo'}) butuh <span className="num">{fmtNum(i.lot, 0)} {i.quote}</span>,
+              kas <span className="num">{fmtNum(i.free_quote, 0)} {i.quote}</span>
+              {i.mode === 'paper' ? ' — reset saldo demo di Pengaturan' : ' — tambah dana / kecilkan budget'}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Hero portofolio */}
       <section className="panel px-4 sm:px-5 py-4 flex items-center gap-4 sm:gap-6 flex-wrap">

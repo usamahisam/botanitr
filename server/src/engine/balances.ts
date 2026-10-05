@@ -108,6 +108,43 @@ export function snapshotBalances(views: ExchangeBalanceView[], userId = 0) {
   }
 }
 
+export interface BalanceNeed {
+  bot_id: number; name: string; lot: number; mode: string; ok: boolean;
+}
+export interface BalanceHealth {
+  exchange_id: string; quote: string; free_quote: number; error: string | null;
+  bots: BalanceNeed[]; short: number;
+}
+
+/**
+ * Health check saldo: kas tersedia per exchange + kecukupan lot tiap bot running.
+ * Dipakai Dashboard untuk peringatan dini sebelum order gagal.
+ */
+export async function checkBalancesHealth(userId: number): Promise<BalanceHealth[]> {
+  const rows = db.prepare('SELECT id FROM exchanges WHERE user_id=?').all(userId) as any[];
+  const ids = rows.length > 0 ? rows.map(r => r.id) : ['indodax', 'tokocrypto', 'binance'];
+  const bots = db.prepare(`SELECT * FROM bots WHERE user_id=? AND status='running'`).all(userId) as any[];
+  const out: BalanceHealth[] = [];
+  for (const id of ids) {
+    const client = registry.getForUser(id, userId);
+    const quote = client.quoteAsset;
+    let freeQuote = 0;
+    let error: string | null = null;
+    try {
+      const row = db.prepare('SELECT * FROM exchanges WHERE id=? AND user_id=?').get(id, userId) as any;
+      const balances = row?.mode === 'paper'
+        ? registry.getPaperForUser(id, userId).getBalances()
+        : await client.getBalances();
+      freeQuote = balances.find(b => b.asset === quote)?.free ?? 0;
+    } catch (e: any) { error = e.message; }
+    const needs: BalanceNeed[] = bots
+      .filter(b => b.exchange_id === id)
+      .map(b => ({ bot_id: b.id, name: b.name, lot: b.lot, mode: b.mode, ok: error ? false : freeQuote >= b.lot }));
+    out.push({ exchange_id: id, quote, free_quote: freeQuote, error, bots: needs, short: needs.filter(n => !n.ok).length });
+  }
+  return out;
+}
+
 let syncTimer: NodeJS.Timeout | null = null;
 /** Sinkron berkala tiap 60 detik — untuk semua user yang punya bot/data */
 export function startBalanceSync(broadcast: (views: ExchangeBalanceView[], userId: number) => void) {

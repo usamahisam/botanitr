@@ -170,6 +170,18 @@ function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: 
           <button onClick={test} className="btn btn-ghost btn-sm flex-1"><Icon.refresh size={13} /> Uji koneksi</button>
           <button onClick={save} disabled={saving} className="btn btn-primary btn-sm flex-1">{saving ? 'Menyimpan…' : 'Simpan'}</button>
         </div>
+        <button
+          onClick={async () => {
+            if (!confirm(`Reset saldo DEMO ${ex.name} ke nilai awal? Posisi demo berjalan ikut terhapus dari simulasi.`)) return;
+            try {
+              const r: any = await api.post(`/exchanges/${ex.id}/paper-reset`);
+              setResult({ ok: true, text: `Saldo demo di-reset: ${r.seed.toLocaleString('id-ID')} ${r.quote}` });
+              onSaved();
+            } catch (e: any) { setResult({ ok: false, text: e.message }); }
+          }}
+          className="w-full mt-2 py-1.5 rounded-md bg-white/[0.03] hover:bg-white/[0.06] text-[11px] txt-3 hover:text-white transition-colors">
+          Reset saldo demo ke awal
+        </button>
       </div>
     </section>
   );
@@ -216,6 +228,9 @@ export default function Pengaturan({ me }: { me: AuthUser }) {
   const [tgProxy, setTgProxy] = useState('');
   const [tgResult, setTgResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [defaultPaper, setDefaultPaper] = useState('true');
+  const [seedIdr, setSeedIdr] = useState('10000000');
+  const [seedUsdt, setSeedUsdt] = useState('1000');
+  const [seedMsg, setSeedMsg] = useState('');
 
   const load = () => {
     api.get<ExchangeSettings[]>('/exchanges').then(setExchanges);
@@ -224,9 +239,19 @@ export default function Pengaturan({ me }: { me: AuthUser }) {
       setTgChats(s.telegram_allowed_chat_ids || '');
       setTgProxy(s.proxy_telegram || '');
       setDefaultPaper(s.default_paper_mode || 'true');
+      if (s.paper_seed_idr) setSeedIdr(s.paper_seed_idr);
+      if (s.paper_seed_usdt) setSeedUsdt(s.paper_seed_usdt);
     });
   };
   useEffect(load, []);
+
+  const saveSeeds = async () => {
+    setSeedMsg('');
+    try {
+      await api.put('/settings', { paper_seed_idr: seedIdr, paper_seed_usdt: seedUsdt });
+      setSeedMsg('Modal awal demo tersimpan. Berlaku untuk reset berikutnya.');
+    } catch (e: any) { setSeedMsg(e.message); }
+  };
 
   const saveTelegram = async () => {
     setTgResult({ ok: true, text: 'Menyimpan…' });
@@ -291,6 +316,18 @@ export default function Pengaturan({ me }: { me: AuthUser }) {
           <input type="checkbox" checked={defaultPaper === 'true'} onChange={e => setDefaultPaper(String(e.target.checked))} className="accent-[#4f7cff] w-4 h-4" />
           Bot baru default memakai mode Demo
         </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <div>
+            <div className="lbl mb-1.5">Modal awal demo (IDR)</div>
+            <input type="number" value={seedIdr} onChange={e => setSeedIdr(e.target.value)} className="input num" />
+          </div>
+          <div>
+            <div className="lbl mb-1.5">Modal awal demo (USDT)</div>
+            <input type="number" value={seedUsdt} onChange={e => setSeedUsdt(e.target.value)} className="input num" />
+          </div>
+        </div>
+        <button onClick={saveSeeds} className="btn btn-ghost btn-sm mt-3">Simpan modal demo</button>
+        {seedMsg && <div className="text-[13px] txt-up mt-2">{seedMsg}</div>}
         <div className="mt-3 text-xs txt-3 flex items-center gap-2">
           <Icon.shield size={14} />
           Kunci enkripsi server: {settings.secret_key_ok === 'true' ? <span className="txt-up">terkonfigurasi</span> : <span className="txt-down">lemah — isi SECRET_KEY di .env</span>}
