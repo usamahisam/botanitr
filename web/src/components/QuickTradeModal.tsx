@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, PairRow } from '../lib/api';
 import { fmtIDR } from '../lib/format';
 import { Icon } from './icons';
+import { EXCHANGES, QUOTE } from '../lib/exchanges';
 
 export default function QuickTradeModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [exchange, setExchange] = useState('indodax');
@@ -43,9 +44,7 @@ export default function QuickTradeModal({ onClose, onDone }: { onClose: () => vo
             <div>
               <div className="lbl mb-1.5">Exchange</div>
               <select value={exchange} onChange={e => setExchange(e.target.value)} className="input">
-                <option value="indodax">Indodax (IDR)</option>
-          <option value="binance">Binance (USDT)</option>
-                <option value="tokocrypto">Tokocrypto (USDT)</option>
+                {EXCHANGES.map(x => <option key={x.id} value={x.id}>{x.label} ({x.quote})</option>)}
               </select>
             </div>
             <div>
@@ -66,7 +65,7 @@ export default function QuickTradeModal({ onClose, onDone }: { onClose: () => vo
 
           <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
             <div>
-              <div className="lbl mb-1.5">{side === 'buy' ? `Nominal (${exchange === 'indodax' ? 'IDR' : 'USDT'})` : 'Qty aset'}</div>
+              <div className="lbl mb-1.5">{side === 'buy' ? `Nominal (${QUOTE[exchange] || 'IDR'})` : 'Qty aset'}</div>
               <input value={amount} onChange={e => setAmount(e.target.value)} type="number" className="input num" />
             </div>
             <div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, download, TradeRow } from '../lib/api';
+import { api, download, TradeRow } from '../lib/api'
+import { EXCHANGES } from '../lib/exchanges';
 import { fmtIDR, fmtQty, fmtDateTime, fmtSignedIDR } from '../lib/format';
 
 export default function Riwayat() {
@@ -30,9 +31,7 @@ export default function Riwayat() {
         <div className="flex gap-2 flex-wrap">
           <select value={exchange} onChange={e => { setExchange(e.target.value); setPage(1); }} className="input !w-auto !py-1.5 text-xs">
             <option value="">Semua exchange</option>
-            <option value="indodax">Indodax</option>
-            <option value="tokocrypto">Tokocrypto</option>
-            <option value="binance">Binance</option>
+            {EXCHANGES.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
           </select>
           <select value={mode} onChange={e => { setMode(e.target.value); setPage(1); }} className="input !w-auto !py-1.5 text-xs">
             <option value="">Semua mode</option>

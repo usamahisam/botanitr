@@ -37,12 +37,14 @@ export async function validateLiveBudget(userId: number, exchangeId: string, bud
   return { ok: true, skipped: false, freeQuote, quote, message: 'OK' };
 }
 
-/** Kas maksimal yang bisa dipakai sebagai budget (paper = seed faucet, live = saldo riil). */
-export async function maxSpendable(userId: number, exchangeId: string): Promise<{ quote: string; free: number; mode: string }> {
+/** Kas maksimal yang bisa dipakai sebagai budget (paper = seed faucet, live = saldo riil).
+ * modeOverride ('paper'|'live') memaksa memakai kas mode tertentu — dipakai
+ * Wizard langkah 1 yang modenya dipilih user, bukan dari setting exchange. */
+export async function maxSpendable(userId: number, exchangeId: string, modeOverride?: string): Promise<{ quote: string; free: number; mode: string }> {
   const row = db.prepare('SELECT * FROM exchanges WHERE id=? AND user_id=?').get(exchangeId, userId) as any;
   const client = registry.getForUser(exchangeId, userId);
   const quote = client.quoteAsset;
-  const isPaper = !row || row.mode !== 'live';
+  const isPaper = modeOverride ? modeOverride !== 'live' : (!row || row.mode !== 'live');
   try {
     const balances = isPaper
       ? registry.getPaperForUser(exchangeId, userId).getBalances()

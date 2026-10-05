@@ -48,8 +48,8 @@ async function main() {
   ensureUserExchanges(user2);
   const ex1 = (db.prepare('SELECT COUNT(*) c FROM exchanges WHERE user_id=?').get(adminId) as any).c;
   const ex2 = (db.prepare('SELECT COUNT(*) c FROM exchanges WHERE user_id=?').get(user2) as any).c;
-  check('admin punya 3 baris exchange', ex1 === 3, `got ${ex1}`);
-  check('user2 punya 3 baris exchange', ex2 === 3, `got ${ex2}`);
+  check('admin punya 4 baris exchange', ex1 === 4, `got ${ex1}`);
+  check('user2 punya 4 baris exchange', ex2 === 4, `got ${ex2}`);
   // Kredensial terisolasi: set untuk admin saja
   db.prepare(`UPDATE exchanges SET api_key_enc='x' WHERE id='indodax' AND user_id=?`).run(adminId);
   const other = db.prepare(`SELECT api_key_enc FROM exchanges WHERE id='indodax' AND user_id=?`).get(user2) as any;

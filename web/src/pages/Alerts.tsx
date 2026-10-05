@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, PairRow } from '../lib/api';
+import { api, PairRow } from '../lib/api'
+import { EXCHANGES } from '../lib/exchanges';
 import { fmtIDR, fmtDateTime } from '../lib/format';
 import { Icon } from '../components/icons';
 
@@ -56,9 +57,7 @@ export default function Alerts() {
           <div>
             <div className="lbl mb-1.5">Exchange</div>
             <select value={exchange} onChange={e => setExchange(e.target.value)} className="input">
-              <option value="indodax">Indodax</option>
-              <option value="tokocrypto">Tokocrypto</option>
-              <option value="binance">Binance</option>
+              {EXCHANGES.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
             </select>
           </div>
           <div>

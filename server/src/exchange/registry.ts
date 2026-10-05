@@ -4,6 +4,7 @@ import { ExchangeClient } from './base.js';
 import { IndodaxClient } from './indodax.js';
 import { TokocryptoClient } from './tokocrypto.js';
 import { BinanceClient } from './binance.js';
+import { BittimeClient } from './bittime.js';
 import { PaperTrader } from './paper.js';
 
 /**
@@ -15,10 +16,11 @@ function createClient(id: string): ExchangeClient {
   if (id === 'indodax') return new IndodaxClient();
   if (id === 'tokocrypto') return new TokocryptoClient();
   if (id === 'binance') return new BinanceClient();
+  if (id === 'bittime') return new BittimeClient();
   throw new Error(`Exchange tidak dikenal: ${id}`);
 }
 
-const KNOWN = ['indodax', 'tokocrypto', 'binance'];
+const KNOWN = ['indodax', 'tokocrypto', 'binance', 'bittime'];
 
 class ExchangeRegistry {
   private clients = new Map<string, ExchangeClient>();

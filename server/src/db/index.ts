@@ -62,7 +62,8 @@ const now = () => new Date().toISOString();
 const DEFAULT_EXCHANGES: [string, string, number][] = [
   ['indodax', 'Indodax', 10000],
   ['tokocrypto', 'Tokocrypto', 2],
-  ['binance', 'Binance', 5]
+  ['binance', 'Binance', 5],
+  ['bittime', 'Bittime', 10000]
 ];
 
 /** Pastikan baris exchange ada untuk user (dipakai saat user baru dibuat) */
@@ -122,6 +123,31 @@ export function seedIfEmpty() {
   const hasBinance = (db.prepare(`SELECT COUNT(*) c FROM exchanges WHERE id='binance'`).get() as any).c;
   if (!hasBinance) {
     db.prepare(`INSERT OR IGNORE INTO exchanges (id, name, mode, min_lot_idr, user_id) VALUES ('binance', 'Binance', 'paper', 5, 0)`).run();
+  }
+  // Pair Bittime (IDR, terkonfirmasi live) bila belum ada
+  const bittimeCount = (db.prepare(`SELECT COUNT(*) c FROM default_pairs WHERE exchange_id='bittime'`).get() as any).c;
+  if (bittimeCount === 0) {
+    const ins = db.prepare(`INSERT INTO default_pairs (exchange_id, symbol, base, quote, label, kategori, min_lot, sort) VALUES (?,?,?,?,?,?,?,?)`);
+    const bittimePairs: [string, string, string, string, number, number][] = [
+      ['BTCIDR', 'BTC', 'Bitcoin', 'Blue-chip', 50000, 1],
+      ['ETHIDR', 'ETH', 'Ethereum', 'Blue-chip', 25000, 2],
+      ['XRPIDR', 'XRP', 'XRP', 'Mid-cap likuid', 10000, 3],
+      ['TRXIDR', 'TRX', 'Tron', 'Mid-cap', 10000, 4],
+      ['BNBIDR', 'BNB', 'BNB', 'Blue-chip', 20000, 5],
+      ['LTCIDR', 'LTC', 'Litecoin', 'Blue-chip', 25000, 6],
+      ['NEARIDR', 'NEAR', 'NEAR Protocol', 'Mid-cap', 10000, 7],
+      ['DOTIDR', 'DOT', 'Polkadot', 'Mid-cap', 10000, 8],
+      ['UNIIDR', 'UNI', 'Uniswap', 'DeFi', 10000, 9],
+      ['SUIIDR', 'SUI', 'Sui', 'Layer-1', 10000, 10]
+    ];
+    for (const [symbol, base, label, kategori, minLot, sort] of bittimePairs) {
+      ins.run('bittime', symbol, base, 'IDR', label, kategori, minLot, sort);
+    }
+  }
+  // Bittime exchange row bila belum ada
+  const hasBittime = (db.prepare(`SELECT COUNT(*) c FROM exchanges WHERE id='bittime'`).get() as any).c;
+  if (!hasBittime) {
+    db.prepare(`INSERT OR IGNORE INTO exchanges (id, name, mode, min_lot_idr, user_id) VALUES ('bittime', 'Bittime', 'paper', 10000, 0)`).run();
   }
   seedMarketplace();
 }

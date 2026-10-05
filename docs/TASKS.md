@@ -180,6 +180,14 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] Perbaikan bug data basi `getLocalKlines` (DESC + sort kronologis)
 - [x] Verifikasi live: instansi minim-data (170 titik) tetap dapat analisis + note; suite 97/97 ✅
 
+## Revisi: Wizard mode-awal + Bittime (+Triv ditolak) (ditambahkan)
+- [x] Riset: Bittime feasible (dok resmi + endpoint live verified); Triv tanpa API publik → skip berdokumen
+- [x] `BittimeClient` (array-ticker, agregasi trades, quantity-hitung, minVal, rekonsiliasi order-query, fee dinamis) + registrasi + seed 10 pair
+- [x] Wizard: mode Demo/Riil di langkah 1 (kartu bahasa awam), budget+kas di langkah 1, gate kesiapan live (kunci kesiapan), strategi di langkah 2 (auto-analisis + penjelasan polos), aktivasi ringkas tanpa toggle mode
+- [x] `max-spendable?mode=` + modul `lib/exchanges.ts` + Bittime di semua dropdown
+- [x] Audit: tanpa real-money di tes (mock), idempotensi, guard minVal, fee konservatif
+- [x] E2E `test-bittime` 16/16 ✅; total suite 144/144 ✅
+
 ## Redesain UI Terminal (ditambahkan)
 - [x] Tema gelap profesional: index.css (token, .panel/.tbl/.btn/.tag/.input/.seg/.num), tanpa emoji
 - [x] Set ikon SVG inline `components/icons.tsx` (18 ikon, stroke)

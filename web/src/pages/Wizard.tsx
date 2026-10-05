@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, PairRow, Preset } from '../lib/api';
 import { Icon } from '../components/icons';
+import { EXCHANGES, QUOTE } from '../lib/exchanges';
 import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 
 interface BtResult {
@@ -9,15 +10,15 @@ interface BtResult {
   equity: { t: number; v: number }[]; candles: number; note?: string;
 }
 
-function MaxBudgetBox({ exchange, budget, onMax }: {
-  exchange: string; budget: number; onMax: (v: number) => void;
+function MaxBudgetBox({ exchange, budget, mode, onMax }: {
+  exchange: string; budget: number; mode: 'paper' | 'live'; onMax: (v: number) => void;
 }) {
   const [info, setInfo] = useState<{ quote: string; free: number; mode: string } | null>(null);
   useEffect(() => {
     setInfo(null);
-    api.get<{ quote: string; free: number; mode: string }>(`/exchanges/${exchange}/max-spendable`)
+    api.get<{ quote: string; free: number; mode: string }>(`/exchanges/${exchange}/max-spendable?mode=${mode}`)
       .then(setInfo).catch(() => {});
-  }, [exchange]);
+  }, [exchange, mode]);
   if (!info) return null;
   const over = budget > info.free;
   return (
@@ -134,12 +135,52 @@ const PARAM_FIELDS: Record<string, { key: string; label: string; hint?: string }
   ]
 };
 
-const STEPS = ['Rekomendasi', 'Parameter', 'Aktivasi'];
+const STEPS = ['Mulai', 'Strategi', 'Aktivasi'];
+
+/** Exchange siap untuk bot Riil? (API key terpasang + setting exchange mode Riil) */
+function liveReady(exList: ExchangeInfo[], exchange: string): boolean {
+  const row = exList.find(e => e.id === exchange);
+  return !!row && row.has_credentials && row.mode === 'live';
+}
+
+function LiveReadiness({ exchange, exList }: { exchange: string; exList: ExchangeInfo[] }) {
+  const row = exList.find(e => e.id === exchange);
+  if (!row) return null;
+  const items: [boolean, string][] = [
+    [row.has_credentials, row.has_credentials ? 'API key terpasang' : 'Belum ada API key — isi di Pengaturan → Exchange'],
+    [row.mode === 'live', row.mode === 'live' ? `Exchange mode Riil` : 'Exchange masih mode Demo — ubah ke Riil di Pengaturan']
+  ];
+  const ok = items.every(([v]) => v);
+  return (
+    <div className={`mt-2 rounded-md border px-3 py-2 text-[12px] ${ok ? 'border-[rgba(46,189,133,0.3)] bg-[rgba(46,189,133,0.06)]' : 'border-[rgba(240,185,11,0.35)] bg-[rgba(240,185,11,0.06)]'}`}>
+      <div className="font-semibold mb-1">Syarat bot Riil di {row.name}:</div>
+      {items.map(([v, t], i) => (
+        <div key={i} className={`flex items-center gap-2 ${v ? 'txt-up' : 'text-[#f0b90b]'}`}>
+          <span className="num">{v ? '✓' : '!'}</span><span>{t}</span>
+        </div>
+      ))}
+      {!ok && <div className="txt-2 mt-1">Lengkapi dulu — tombol lanjut terkunci sampai syarat terpenuhi.</div>}
+    </div>
+  );
+}
+
+/** Penjelasan polos tiap strategi untuk orang awam */
+const STRAT_EXPLAIN: Record<string, string> = {
+  grid: 'Cocok saat harga naik-turun di tempat. Bot membeli ketika harga turun, menjual ketika naik kembali.',
+  dca: 'Cocok untuk koin bagus yang sedang turun. Bot mencicil beli sedikit-sedikit, jual sekaligus saat target tercapai.',
+  scalper: 'Cocok saat pasar aktif. Bot masuk-keluar cepat mengejar untung kecil berkali-kali dalam sehari.',
+  harvester: 'Paling aman untuk pemula. Bot menabung saat harga murah, menjual secukupnya saat sudah untung.',
+  rebalance: 'Untuk banyak koin sekaligus. Bot menjaga komposisi portofolio sesuai target persen Anda.'
+};
+
+interface ExchangeInfo { id: string; name: string; mode: string; has_credentials: boolean }
 
 export default function Wizard() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
+  const [mode, setMode] = useState<'paper' | 'live'>('paper');
   const [exchange, setExchange] = useState('indodax');
+  const [exList, setExList] = useState<ExchangeInfo[]>([]);
   const [pairs, setPairs] = useState<PairRow[]>([]);
   const [pair, setPair] = useState('XRPIDR');
   const [budget, setBudget] = useState(100000);
@@ -148,7 +189,6 @@ export default function Wizard() {
   const [selected, setSelected] = useState<Preset | null>(null);
   const [params, setParams] = useState<Record<string, any>>({});
   const [botName, setBotName] = useState('');
-  const [mode, setMode] = useState<'paper' | 'live'>('paper');
   const [compound, setCompound] = useState(100);
   const [maxDailyLoss, setMaxDailyLoss] = useState(0);
   const [confirmedLive, setConfirmedLive] = useState(false);
@@ -156,11 +196,25 @@ export default function Wizard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    api.get<ExchangeInfo[]>('/exchanges').then(setExList).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     api.get<PairRow[]>(`/pairs?exchange=${exchange}`).then(p => {
       setPairs(p);
       if (p.length) setPair(p[0].symbol);
     });
   }, [exchange]);
+
+  // Ganti pair/exchange -> rekomendasi lama tidak berlaku lagi
+  const changePair = (v: string) => { setPair(v); setPresets([]); setSelected(null); };
+  const changeExchange = (v: string) => { setExchange(v); setPresets([]); setSelected(null); };
+
+  // Analisis otomatis saat masuk langkah 2 (hemat 1 klik)
+  useEffect(() => {
+    if (step === 2 && presets.length === 0 && !loadingPresets && pair) analyze();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   const analyze = async () => {
     setLoadingPresets(true); setError(''); setPresets([]); setSelected(null);
@@ -195,8 +249,8 @@ export default function Wizard() {
   return (
     <div className="max-w-[760px] mx-auto">
       <div className="mb-4">
-        <h2 className="text-[17px] font-bold tracking-tight">Pembuat Bot</h2>
-        <p className="text-xs txt-3 mt-0.5">Analisis kondisi pasar, pilih strategi, atur parameter, aktifkan.</p>
+        <h2 className="text-[17px] font-bold tracking-tight">Buat Bot Baru</h2>
+        <p className="text-xs txt-3 mt-0.5">Tiga langkah: pilih mode & pasar, pilih strategi, aktifkan. Bisa dijeda/dihapus kapan saja.</p>
       </div>
 
       <div className="flex items-center gap-0 mb-5 border border-white/[0.07] rounded-lg overflow-hidden">
@@ -216,39 +270,64 @@ export default function Wizard() {
 
       {step === 1 && (
         <section className="panel p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="lbl mb-1.5">1 · Uang apa yang dipakai? <span className="normal-case font-normal">(tidak bisa diganti setelah bot dibuat)</span></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+            <button onClick={() => setMode('paper')}
+              className={`text-left rounded-md border p-3 transition-colors ${mode === 'paper' ? 'border-[#2ebd85]/70 bg-[#2ebd85]/[0.06]' : 'border-white/[0.08] hover:border-white/20'}`}>
+              <div className="font-semibold text-[14px] txt-up">Demo — uang mainan</div>
+              <p className="text-xs txt-2 mt-1 leading-relaxed">Saldo virtual Rp 10 juta. Aman untuk belajar & uji strategi. Bisa di-reset kapan saja.</p>
+            </button>
+            <button onClick={() => setMode('live')}
+              className={`text-left rounded-md border p-3 transition-colors ${mode === 'live' ? 'border-[#f6465d]/70 bg-[#f6465d]/[0.06]' : 'border-white/[0.08] hover:border-white/20'}`}>
+              <div className="font-semibold text-[14px] txt-down">Riil — uang sungguhan</div>
+              <p className="text-xs txt-2 mt-1 leading-relaxed">Memakai saldo asli exchange. Untung & rugi nyata. Butuh API key + saldo cukup.</p>
+            </button>
+          </div>
+
+          <div className="lbl mb-1.5">2 · Pasar mana?</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div>
-              <div className="lbl mb-1.5">Exchange</div>
-              <select value={exchange} onChange={e => setExchange(e.target.value)} className="input">
-                <option value="indodax">Indodax (IDR)</option>
-                <option value="binance">Binance (USDT)</option>
-                <option value="tokocrypto">Tokocrypto (USDT)</option>
+              <select value={exchange} onChange={e => changeExchange(e.target.value)} className="input" aria-label="Exchange">
+                {EXCHANGES.map(x => <option key={x.id} value={x.id}>{x.label} ({x.quote})</option>)}
               </select>
             </div>
             <div>
-              <div className="lbl mb-1.5">Pair</div>
-              <select value={pair} onChange={e => setPair(e.target.value)} className="input num">
+              <select value={pair} onChange={e => changePair(e.target.value)} className="input num" aria-label="Pair">
                 {pairs.map(p => <option key={p.symbol} value={p.symbol}>{p.label} ({p.symbol})</option>)}
               </select>
             </div>
-            <div>
-              <div className="lbl mb-1.5">Budget ({exchange === 'indodax' ? 'IDR' : 'USDT'})</div>
-              <input type="number" value={budget} onChange={e => setBudget(Number(e.target.value))} className="input num" />
-            </div>
           </div>
-          <button onClick={analyze} disabled={loadingPresets} className="btn btn-primary w-full mt-3">
-            {loadingPresets ? 'Menganalisis…' : 'Analisis pasar'}
-          </button>
 
-          {presets.length > 0 && (
-            <div className="mt-4">
-              <div className="lbl mb-2">{presets.length} strategi teratas untuk {pair}</div>
+          <div className="lbl mb-1.5">3 · Berapa modalnya? ({QUOTE[exchange] || 'IDR'})</div>
+          <input type="number" value={budget} onChange={e => setBudget(Number(e.target.value))} className="input num" aria-label="Budget" />
+          <MaxBudgetBox exchange={exchange} budget={budget} mode={mode} onMax={setBudget} />
+          {mode === 'live' && <LiveReadiness exchange={exchange} exList={exList} />}
+
+          <div className="flex justify-end mt-4">
+            <button onClick={() => setStep(2)} disabled={mode === 'live' && !liveReady(exList, exchange)} className="btn btn-primary" title={mode === 'live' && !liveReady(exList, exchange) ? 'Lengkapi API key & mode Riil exchange di Pengaturan dulu' : ''}>
+              Lanjut pilih strategi <Icon.arrowRight size={14} />
+            </button>
+          </div>
+        </section>
+      )}
+
+      {step === 2 && (
+        <section className="panel p-4">
+          <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+            <span className={`tag ${mode === 'live' ? 'tag-down' : 'tag-up'}`}>{mode === 'live' ? 'RIIL' : 'DEMO'} · <span className="num">{pair} · {budget.toLocaleString('id-ID')}</span></span>
+            <button onClick={() => setStep(1)} className="text-xs txt-3 hover:text-white">Ubah mode/pasar →</button>
+          </div>
+
+          {loadingPresets && <div className="text-sm txt-3 py-6 text-center">Menganalisis kondisi pasar…</div>}
+
+          {presets.length > 0 && !selected && (
+            <div>
+              <div className="lbl mb-2">Pilih satu strategi untuk {pair}</div>
               <div className="space-y-2">
                 {presets.map((p, i) => {
-                  const active = selected?.id === p.id;
                   return (
                     <button key={p.id} onClick={() => pickPreset(p)}
-                      className={`w-full text-left rounded-md border p-3.5 transition-colors ${active ? 'border-[#4f7cff]/70 bg-[#4f7cff]/[0.06]' : 'border-white/[0.08] hover:border-white/20 bg-transparent'}`}>
+                      className="w-full text-left rounded-md border p-3.5 transition-colors border-white/[0.08] hover:border-white/20 bg-transparent">
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className="num text-xs txt-3 w-6">0{i + 1}</span>
@@ -276,17 +355,12 @@ export default function Wizard() {
             </div>
           )}
 
-          <div className="flex justify-end mt-4">
-            <button onClick={() => setStep(2)} disabled={!selected} className="btn btn-primary">
-              Lanjut <Icon.arrowRight size={14} />
-            </button>
-          </div>
-        </section>
-      )}
-
-      {step === 2 && selected && (
-        <section className="panel p-4">
-          <div className="text-[13px] txt-2 mb-3">Parameter · <b className="text-white">{selected.nama}</b> · <span className="num">{pair} · {exchange}</span></div>
+          {selected && (<>
+          <div className="text-[13px] txt-2 mb-1">Strategi: <b className="text-white">{selected.nama}</b> <button onClick={() => setSelected(null)} className="text-xs txt-3 hover:text-white ml-1">ganti</button></div>
+          {STRAT_EXPLAIN[selected.strategi] && (
+            <p className="text-xs txt-2 mb-3 leading-relaxed border-l-2 border-[#4f7cff]/50 pl-2.5">{STRAT_EXPLAIN[selected.strategi]}</p>
+          )}
+          <div className="text-[13px] txt-2 mb-3 sr-only">Parameter · <b className="text-white">{selected.nama}</b> · <span className="num">{pair} · {exchange}</span></div>
           <div className="mb-3">
             <div className="lbl mb-1.5">Nama bot</div>
             <input value={botName} onChange={e => setBotName(e.target.value)} className="input" />
@@ -315,11 +389,6 @@ export default function Wizard() {
               <input type="number" value={compound} onChange={e => setCompound(Number(e.target.value))} className="input num" />
             </div>
             <div>
-              <div className="lbl mb-1.5">Budget</div>
-              <input type="number" value={budget} onChange={e => setBudget(Number(e.target.value))} className="input num" />
-              <MaxBudgetBox exchange={exchange} budget={budget} onMax={setBudget} />
-            </div>
-            <div>
               <div className="lbl mb-1.5">Batas rugi harian (%)</div>
               <input type="number" step="any" value={maxDailyLoss} onChange={e => setMaxDailyLoss(Number(e.target.value))} className="input num" />
             </div>
@@ -330,29 +399,28 @@ export default function Wizard() {
             <button onClick={() => setStep(1)} className="btn btn-ghost">Kembali</button>
             <button onClick={() => setStep(3)} className="btn btn-primary">Lanjut <Icon.arrowRight size={14} /></button>
           </div>
+          </>)}
         </section>
       )}
 
       {step === 3 && selected && (
         <section className="panel p-4">
-          <div className="lbl mb-2">Ringkasan</div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="lbl">Ringkasan — periksa sekali lagi</span>
+            <span className={`tag ${mode === 'live' ? 'tag-down' : 'tag-up'}`}>{mode === 'live' ? 'UANG SUNGGUHAN' : 'UANG MAINAN'}</span>
+          </div>
           <table className="tbl mb-4">
             <tbody>
               {[
                 ['Nama', botName], ['Exchange / Pair', `${exchange} · ${pair}`], ['Strategi', selected.nama],
-                ['Budget', `${budget.toLocaleString('id-ID')} ${exchange === 'indodax' ? 'IDR' : 'USDT'}`],
+                ['Budget', `${budget.toLocaleString('id-ID')} ${QUOTE[exchange] || 'IDR'}`],
                 ['Auto-compound', `${compound}%`], ['Batas rugi harian', maxDailyLoss > 0 ? `${maxDailyLoss}%` : 'Nonaktif']
               ].map(([k, v]) => (
                 <tr key={k}><td className="txt-3 !py-2">{k}</td><td className="!text-right font-medium num !py-2">{v}</td></tr>
               ))}
             </tbody>
           </table>
-
-          <div className="lbl mb-1.5">Mode</div>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setMode('paper')} className={`btn ${mode === 'paper' ? 'btn-buy' : 'btn-ghost'}`}>Demo</button>
-            <button onClick={() => setMode('live')} className={`btn ${mode === 'live' ? 'btn-sell' : 'btn-ghost'}`}>Riil</button>
-          </div>
+          <button onClick={() => setStep(1)} className="text-xs txt-3 hover:text-white mb-3">← Ubah mode, pasar, atau budget</button>
 
           {mode === 'live' && (
             <label className="flex items-start gap-2.5 text-[13px] txt-2 border border-[rgba(240,185,11,0.3)] bg-[rgba(240,185,11,0.06)] rounded-md p-3 mt-3">

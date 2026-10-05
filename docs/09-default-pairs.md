@@ -31,3 +31,17 @@ Hasil riset `GET https://indodax.com/api/summaries` (463 pasangan IDR; diambil s
 | AVAXUSDT | AVAX | Avalanche | Mid-cap | 2 |
 
 Catatan implementasi: `min_lot` adalah estimasi aman; nilai riil divalidasi ulang dari response error exchange bila order ditolak (disimpan ke settings `minlot_<exchange>_<pair>`).
+
+## Bittime (quote IDR — terkonfirmasi live dari ticker publik)
+| symbol | base | label | kategori | min_lot (IDR) |
+|---|---|---|---|---|
+| BTCIDR | BTC | Bitcoin | Blue-chip | 50000 |
+| ETHIDR | ETH | Ethereum | Blue-chip | 25000 |
+| XRPIDR | XRP | XRP | Mid-cap likuid | 10000 |
+| TRXIDR | TRX | Tron | Mid-cap | 10000 |
+| BNBIDR | BNB | BNB | Blue-chip | 20000 |
+| LTCIDR | LTC | Litecoin | Blue-chip | 25000 |
+| NEARIDR | NEAR | NEAR Protocol | Mid-cap | 10000 |
+| DOTIDR | DOT | Polkadot | Mid-cap | 10000 |
+| UNIIDR | UNI | Uniswap | DeFi | 10000 |
+| SUIIDR | SUI | Sui | Layer-1 | 10000 |

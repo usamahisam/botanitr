@@ -34,6 +34,16 @@ interface ExchangeClient {
 - Private (HMAC-SHA256): query `...&timestamp=<ms>&signature=<hex>` header `X-MBX-APIKEY: <key>`: `GET /api/v3/account`, `GET /api/v3/openOrders`, `POST /api/v3/order` (`side=BUY&type=MARKET&quoteOrderQty=` untuk beli nominal; `quantity=` untuk jual), `GET /api/v3/myTrades`.
 - Fee: 0.1%.
 
+## Bittime (`exchange/bittime.ts`)
+- Base: `https://openapi.bittime.com` (env `BITTIME_BASE_URL`), terjangkau langsung tanpa proxy.
+- Dok resmi: `bittime-docs.github.io` (Binance-style `/api/v1/*`, `X-MBX-APIKEY`, HMAC-SHA256).
+- Perbedaan dari Binance v3 yang ditangani: `ticker/24hr` SELALU array, TIDAK ADA endpoint klines (agregasi `/api/v1/trades` maks 1000 seperti Indodax), MARKET order wajib `quantity` (nominal dihitung dari ticker ask), LOT_SIZE memakai `minVal` (min notional), rekonsiliasi fill via `GET /api/v1/order` (`executedQty`), `openOrders` wajib symbol (tanpa pair → iterasi default_pairs), fee default 0.001 + diadopsi dinamis dari `takerCommission` akun.
+- Quote IDR → cocok untuk strategi & guard yang sama dengan Indodax.
+
+## Triv — TIDAK diintegrasikan (hasil riset)
+- Tidak ada API trading publik / dokumentasi developer / manajemen API key yang dapat ditemukan (hanya platform broker instant buy-sell + futures web).
+- Integrasi berarti reverse-engineering API privat web: rapuh, berisiko ToS, dan tak bisa diaudit → ditolak. Ditinjau ulang bila Triv merilis API publik resmi.
+
 ## Proxy (`exchange/http.ts`)
 ```ts
 function makeAgent(proxyUrl?: string) {

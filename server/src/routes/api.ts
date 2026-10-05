@@ -272,11 +272,13 @@ api.get('/bots/:id/equity', asyncH(async (req: any, res: any) => {
   res.json(await getEquityCurve(Number(req.params.id), Number(req.query.days || 30)));
 }));
 
-// Kas maksimal yang bisa dipakai sebagai budget bot (per exchange milik user)
+// Kas maksimal yang bisa dipakai sebagai budget bot (per exchange milik user).
+// Query ?mode=paper|live memaksa kas mode tertentu (untuk Wizard langkah 1).
 api.get('/exchanges/:id/max-spendable', asyncH(async (req: any, res: any) => {
   const { maxSpendable } = await import('../engine/budget.js');
   try {
-    res.json(await maxSpendable(uid(req), req.params.id));
+    const mode = String(req.query.mode || '');
+    res.json(await maxSpendable(uid(req), req.params.id, mode === 'paper' || mode === 'live' ? mode : undefined));
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }

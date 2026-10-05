@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, MarketPreset, PairRow } from '../lib/api';
+import { api, MarketPreset, PairRow } from '../lib/api'
+import { EXCHANGES } from '../lib/exchanges';
 import { Icon } from '../components/icons';
 
 const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester', rebalance: 'Rebalance' };
@@ -63,9 +64,7 @@ export default function Market() {
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari preset…" className="input !w-full sm:!w-48" />
           <select value={exchange} onChange={e => setExchange(e.target.value)} className="input !w-auto">
-            <option value="indodax">Indodax</option>
-            <option value="tokocrypto">Tokocrypto</option>
-            <option value="binance">Binance</option>
+            {EXCHANGES.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
           </select>
           <select value={pair} onChange={e => setPair(e.target.value)} className="input !w-auto num">
             {pairs.map(p => <option key={p.symbol} value={p.symbol}>{p.symbol}</option>)}
