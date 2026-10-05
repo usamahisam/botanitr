@@ -254,10 +254,6 @@ export default function Pengaturan({ me }: { me: AuthUser }) {
       <UserManager me={me} />
       <PasswordChanger />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {exchanges.map(ex => <ExchangeSettingsCard key={ex.id} ex={ex} onSaved={load} />)}
-      </div>
-
       <section className="panel p-4">
         <div className="text-[14px] font-semibold mb-1">Telegram</div>
         <p className="text-xs txt-3 mb-3">Perintah dan notifikasi hanya dilayani untuk chat ID yang terdaftar.</p>
@@ -284,6 +280,10 @@ export default function Pengaturan({ me }: { me: AuthUser }) {
         <button onClick={saveTelegram} className="btn btn-primary btn-sm mt-3">Simpan dan uji kirim</button>
         <p className="text-[11px] txt-3 mt-2">Cara mendapatkan Chat ID: kirim pesan ke bot, lalu buka <span className="num">api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</span></p>
       </section>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {exchanges.map(ex => <ExchangeSettingsCard key={ex.id} ex={ex} onSaved={load} />)}
+      </div>
 
       <section className="panel p-4">
         <div className="text-[14px] font-semibold mb-3">Umum</div>
