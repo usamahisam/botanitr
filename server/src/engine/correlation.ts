@@ -36,10 +36,15 @@ export interface CorrelationReport {
   note: string;
 }
 
-/** Korelasi antar pair yang dipakai bot running milik user. */
+/**
+ * Korelasi antar pair yang dipakai bot running UANG RIIL milik user.
+ * Bot demo (paper) disengaja dikecualikan: uang mainan tidak menumpuk risiko,
+ * dan pola umum (uji strategi di demo sambil jalan live di pair sama)
+ * tidak boleh memicu alarm palsu.
+ */
 export function correlationReport(userId: number): CorrelationReport {
   const rows = db.prepare(`SELECT DISTINCT exchange_id, pair FROM bots
-    WHERE user_id=? AND status='running'`).all(userId) as any[];
+    WHERE user_id=? AND status='running' AND mode='live'`).all(userId) as any[];
   const keys = rows.map(r => `${r.exchange_id}:${String(r.pair).toUpperCase()}`);
   const series = new Map<string, number[]>();
   for (const r of rows) {
@@ -56,7 +61,7 @@ export function correlationReport(userId: number): CorrelationReport {
   return {
     pairs: keys, high,
     note: high.length > 0
-      ? `${high.length} pasangan bot bergerak nyaris sama (≥0.85) — risiko menumpuk, pertimbangkan jeda salah satunya`
-      : 'Tidak ada korelasi berbahaya antar bot berjalan',
+      ? `${high.length} pasangan bot riil bergerak nyaris sama (≥0.85) — risiko menumpuk, pertimbangkan jeda salah satunya`
+      : 'Tidak ada korelasi berbahaya antar bot riil berjalan',
   };
 }

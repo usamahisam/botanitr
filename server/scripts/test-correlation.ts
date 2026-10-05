@@ -29,6 +29,24 @@ async function main() {
   check('tanpa bot -> aman', r.high.length === 0 && /tidak ada korelasi/i.test(r.note), r.note);
   check('shape benar', Array.isArray(r.pairs));
 
+  console.log('\nC) bot demo dikecualikan');
+  const { db, queries, now } = await import('../src/db/index.js');
+  queries.insertBot.run({
+    user_id: 0, name: 'PaperA', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid',
+    params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000, mode: 'paper',
+    auto_compound_pct: 100, status: 'running', state: '{}', max_daily_loss_pct: 0,
+    market_preset_id: null, created_at: now(), updated_at: now(),
+  });
+  queries.insertBot.run({
+    user_id: 0, name: 'PaperB', exchange_id: 'bittime', pair: 'XRPIDR', strategy: 'grid',
+    params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000, mode: 'paper',
+    auto_compound_pct: 100, status: 'running', state: '{}', max_daily_loss_pct: 0,
+    market_preset_id: null, created_at: now(), updated_at: now(),
+  });
+  const r2 = correlationReport(0);
+  check('2 bot demo pair sama -> tetap aman', r2.high.length === 0 && r2.pairs.length === 0, JSON.stringify(r2.pairs));
+  void db;
+
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);
   process.exit(failed > 0 ? 1 : 0);
