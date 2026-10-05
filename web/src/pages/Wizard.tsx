@@ -13,21 +13,29 @@ interface BtResult {
 function MaxBudgetBox({ exchange, budget, mode, onMax }: {
   exchange: string; budget: number; mode: 'paper' | 'live'; onMax: (v: number) => void;
 }) {
-  const [info, setInfo] = useState<{ quote: string; free: number; mode: string } | null>(null);
+  const [info, setInfo] = useState<{ quote: string; free: number; committed: number; available: number; mode: string } | null>(null);
   useEffect(() => {
     setInfo(null);
-    api.get<{ quote: string; free: number; mode: string }>(`/exchanges/${exchange}/max-spendable?mode=${mode}`)
-      .then(setInfo).catch(() => {});
+    let alive = true;
+    const fetch = () => {
+      api.get<{ quote: string; free: number; committed: number; available: number; mode: string }>(`/exchanges/${exchange}/max-spendable?mode=${mode}`)
+        .then(d => { if (alive) setInfo(d); }).catch(() => {});
+    };
+    fetch();
+    // Saldo bergerak saat bot lain trade — segarkan tiap 15 dtk selama tampil
+    const t = setInterval(fetch, 15000);
+    return () => { alive = false; clearInterval(t); };
   }, [exchange, mode]);
   if (!info) return null;
-  const over = budget > info.free;
+  const over = budget > info.available;
   return (
     <div className={`mt-2 rounded-md border px-3 py-2 text-[12px] ${over ? 'border-[rgba(246,70,93,0.35)] bg-[rgba(246,70,93,0.07)]' : 'border-white/10 bg-white/[0.03]'}`}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="txt-2">
-          Kas tersedia ({info.mode === 'live' ? 'Riil' : 'Demo'}): <b className="num txt-2">{info.free.toLocaleString('id-ID')} {info.quote}</b>
+          Kas tersedia ({info.mode === 'live' ? 'Riil' : 'Demo'}): <b className="num txt-2">{info.available.toLocaleString('id-ID')} {info.quote}</b>
+          {info.committed > 0 && <span className="txt-3"> (kas {info.free.toLocaleString('id-ID')} − diklaim bot {info.committed.toLocaleString('id-ID')})</span>}
         </span>
-        <button onClick={() => onMax(Math.floor(info.free))} disabled={info.free <= 0}
+        <button onClick={() => onMax(Math.floor(info.available))} disabled={info.available <= 0}
           className="btn btn-ghost btn-sm shrink-0" title="Isi budget dengan seluruh kas tersedia">
           Pakai maksimal
         </button>

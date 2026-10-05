@@ -75,19 +75,24 @@ export async function validateLiveBudget(userId: number, exchangeId: string, bud
 
 /** Kas maksimal yang bisa dipakai sebagai budget (paper = seed faucet, live = saldo riil).
  * modeOverride ('paper'|'live') memaksa memakai kas mode tertentu — dipakai
- * Wizard langkah 1 yang modenya dipilih user, bukan dari setting exchange. */
-export async function maxSpendable(userId: number, exchangeId: string, modeOverride?: string): Promise<{ quote: string; free: number; mode: string }> {
+ * Wizard langkah 1 yang modenya dipilih user, bukan dari setting exchange.
+ * available = free - sisa klaim bot running (sama dengan aturan validateBudget),
+ * agar angka di Wizard selalu sama dengan yang diloloskan saat aktivasi. */
+export async function maxSpendable(userId: number, exchangeId: string, modeOverride?: string): Promise<{ quote: string; free: number; committed: number; available: number; mode: string }> {
   const row = db.prepare('SELECT * FROM exchanges WHERE id=? AND user_id=?').get(exchangeId, userId) as any;
   const client = registry.getForUser(exchangeId, userId);
   const quote = client.quoteAsset;
   const isPaper = modeOverride ? modeOverride !== 'live' : (!row || row.mode !== 'live');
+  const m = isPaper ? 'paper' : 'live';
   try {
     const balances = isPaper
       ? registry.getPaperForUser(exchangeId, userId).getBalances()
       : await client.getBalances();
     const free = balances.find(b => b.asset === quote)?.free ?? 0;
-    return { quote, free: Math.max(0, Math.floor(free)), mode: isPaper ? 'paper' : 'live' };
+    const running = db.prepare(`SELECT * FROM bots WHERE user_id=? AND exchange_id=? AND mode=? AND status='running'`).all(userId, exchangeId, m) as any[];
+    const committed = running.reduce((s: number, b: any) => s + unspentClaim(b), 0);
+    return { quote, free: Math.max(0, Math.floor(free)), committed: Math.max(0, Math.floor(committed)), available: Math.max(0, Math.floor(free - committed)), mode: m };
   } catch {
-    return { quote, free: 0, mode: isPaper ? 'paper' : 'live' };
+    return { quote, free: 0, committed: 0, available: 0, mode: m };
   }
 }
