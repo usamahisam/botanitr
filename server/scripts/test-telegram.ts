@@ -47,6 +47,16 @@ async function main() {
   list = collectBotTokens();
   check('tanpa token → tidak ada instance', list.length === 0, `got ${list.length}`);
 
+  // Pesan error Telegram diterjemahkan menjadi panduan (tanpa network)
+  const { friendlyTelegramError } = await import('../src/telegram/bot.js');
+  check('chat ID milik bot → panduan userinfobot',
+    /milik BOT/i.test(friendlyTelegramError('403: Forbidden: the bot can\'t send messages to the bot')) &&
+    /userinfobot/i.test(friendlyTelegramError('403: Forbidden: the bot can\'t send messages to the bot')));
+  check('chat not found → panduan /start',
+    /\/start/i.test(friendlyTelegramError('400: Bad Request: chat not found')));
+  check('error tak dikenal diteruskan apa adanya',
+    friendlyTelegramError('timeout of 15000ms exceeded') === 'timeout of 15000ms exceeded');
+
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);
   process.exit(failed > 0 ? 1 : 0);

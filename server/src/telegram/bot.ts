@@ -342,6 +342,27 @@ export async function restartTelegram(): Promise<boolean> {
   return startTelegram();
 }
 
+/** Terjemahkan error Telegram menjadi panduan Bahasa Indonesia */
+export function friendlyTelegramError(message: string): string {
+  const m = message || '';
+  if (/bot can't send messages to the bot/i.test(m)) {
+    return 'Chat ID yang diisi adalah milik BOT (bot tidak bisa mengirimi bot lain). ' +
+      'Gunakan Chat ID akun Anda sendiri: chat ke @userinfobot, salin angka "Id", ' +
+      'lalu kirim /start ke bot trading ini dan isi angka tersebut di Pengaturan.';
+  }
+  if (/chat not found/i.test(m)) {
+    return 'Chat tidak ditemukan: kirim /start (atau pesan apa saja) ke bot trading ini dulu, ' +
+      'lalu ulangi tes kirim.';
+  }
+  if (/blocked by the user|user is deactivated/i.test(m)) {
+    return 'Bot diblokir atau akun nonaktif: buka blokir bot / kirim /start ke bot, lalu ulangi.';
+  }
+  if (/unauthorized|invalid token/i.test(m)) {
+    return 'Token tidak valid (401). Periksa kembali token dari @BotFather.';
+  }
+  return m;
+}
+
 /** Kirim pesan tes memakai bot milik user (fallback token env bila user belum isi) */
 export async function sendTestMessage(userId = 0): Promise<{ ok: boolean; error?: string; sent_to?: number }> {
   let token = settings.get('telegram_bot_token', '', userId);
@@ -359,7 +380,7 @@ export async function sendTestMessage(userId = 0): Promise<{ ok: boolean; error?
     }
     return { ok: true, sent_to: n };
   } catch (e: any) {
-    return { ok: false, error: e.message };
+    return { ok: false, error: friendlyTelegramError(e.message) };
   }
 }
 
