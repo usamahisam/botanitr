@@ -254,9 +254,12 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
   if (finalMode === 'live') {
     if (exRow.mode !== 'live') return res.status(400).json({ error: 'Exchange masih mode Demo. Ubah di Pengaturan.' });
     if (!confirmed_live) return res.status(400).json({ error: 'Konfirmasi live trading diperlukan (confirmed_live)' });
-    // Validasi budget vs kas riil agar gagal cepat dengan pesan jelas (bukan diam saat engine jalan)
-    const { validateLiveBudget } = await import('../engine/budget.js');
-    const check = await validateLiveBudget(userId, exchange_id, budgetNum);
+  }
+  // Validasi budget vs kas (demo maupun riil) agar gagal cepat dengan pesan
+  // jelas — bukan bot jalan tapi tak pernah bisa trade (kasus budget 1M vs kas 99rb).
+  {
+    const { validateBudget } = await import('../engine/budget.js');
+    const check = await validateBudget(userId, exchange_id, budgetNum, finalMode);
     if (!check.ok) return res.status(400).json({ error: check.message, free_quote: check.freeQuote, quote: check.quote });
   }
 
@@ -631,6 +634,12 @@ api.post('/marketplace/:id/install', asyncH(async (req: any, res: any) => {
   const presetParams = safeJson<Record<string, any>>(preset.params, {});
   const budgetRaw = Number(budget_quote ?? preset.budget_quote ?? 100000);
   const budget = Number.isFinite(budgetRaw) && budgetRaw > 0 ? budgetRaw : 100000;
+  // Install marketplace selalu paper — tolak sejak awal bila budget > kas demo.
+  {
+    const { validateBudget } = await import('../engine/budget.js');
+    const check = await validateBudget(userId, exchange_id, budget, 'paper');
+    if (!check.ok) return res.status(400).json({ error: check.message, free_quote: check.freeQuote, quote: check.quote });
+  }
   const divisor = preset.strategy === 'grid' ? 6 : 5;
   const info = queries.insertBot.run({
     user_id: userId, name: `${preset.name} (market)`.slice(0, 80), exchange_id, pair: String(pair || 'XRPIDR').toUpperCase().slice(0, 20),

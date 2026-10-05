@@ -4,6 +4,7 @@
  *  B) validateLiveBudget lolos bila cukup
  *  C) validateLiveBudget fail-open bila saldo tak terbaca
  *  D) maxSpendable paper (seed) & live (mock)
+ *  E) validateBudget paper: tolak budget > kas demo + pesan reset
  *
  * Jalankan: npx tsx server/scripts/test-bot-budget.ts
  */
@@ -19,7 +20,7 @@ const check = (n: string, c: boolean, d = '') => { if (c) { console.log(`  ✅ $
 async function main() {
   await import('../src/db/index.js');
   const { registry } = await import('../src/exchange/registry.js');
-  const { validateLiveBudget, maxSpendable } = await import('../src/engine/budget.js');
+  const { validateLiveBudget, validateBudget, maxSpendable } = await import('../src/engine/budget.js');
 
   // Stub saldo live: kas IDR 198.600
   const client = registry.getForUser('indodax', 0);
@@ -53,6 +54,14 @@ async function main() {
   db.prepare(`UPDATE exchanges SET mode='live' WHERE id='indodax' AND user_id=0`).run();
   const live = await maxSpendable(0, 'indodax');
   check('live mode + kas 198600', live.mode === 'live' && live.free === 198600, JSON.stringify(live));
+
+  // ===== E) Paper: budget > kas demo ditolak sejak pembuatan =====
+  console.log('\nE) validateBudget paper');
+  const paperOver = await validateBudget(0, 'indodax', 1000000000, 'paper');
+  check('budget 1M > seed 10jt -> ok=false', paperOver.ok === false, JSON.stringify({ ok: paperOver.ok, free: paperOver.freeQuote }));
+  check('pesan sarankan reset demo', /reset saldo demo/i.test(paperOver.message), paperOver.message.slice(0, 140));
+  const paperOk = await validateBudget(0, 'indodax', 100000, 'paper');
+  check('budget 100rb diloloskan', paperOk.ok === true && paperOk.skipped === false);
 
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);

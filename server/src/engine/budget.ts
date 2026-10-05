@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { registry } from '../exchange/registry.js';
-import { fmtIDR } from '../utils/format.js';
+import { fmtMoney } from '../utils/format.js';
 
 export interface BudgetCheck {
   ok: boolean;
@@ -12,29 +12,38 @@ export interface BudgetCheck {
 }
 
 /**
- * Validasi budget bot live terhadap kas riil exchange.
+ * Validasi budget bot terhadap kas exchange (demo = saldo virtual, live = riil).
  * Dipakai saat pembuatan bot agar user langsung tahu bila budget melebihi kas
- * (bukan gagal diam-diam saat engine jalan).
+ * (bukan gagal diam-diam saat engine jalan — kasus bot paper 1M vs kas 99rb).
  * Fail-open: bila saldo tak terbaca, bot tetap boleh dibuat (engine guard yang menilai per order).
  */
-export async function validateLiveBudget(userId: number, exchangeId: string, budgetIdr: number): Promise<BudgetCheck> {
+export async function validateBudget(userId: number, exchangeId: string, budgetQuote: number, mode: 'paper' | 'live'): Promise<BudgetCheck> {
   const client = registry.getForUser(exchangeId, userId);
   const quote = client.quoteAsset;
   let balances;
   try {
-    balances = await client.getBalances();
+    balances = mode === 'live'
+      ? await client.getBalances()
+      : registry.getPaperForUser(exchangeId, userId).getBalances();
   } catch (e: any) {
     return { ok: true, skipped: true, freeQuote: 0, quote, message: `Saldo tak terbaca (${e.message}) — validasi dilewati` };
   }
   const freeQuote = balances.find(b => b.asset === quote)?.free ?? 0;
-  if (budgetIdr > freeQuote) {
+  if (budgetQuote > freeQuote) {
+    const hint = mode === 'paper'
+      ? `Turunkan budget ke maksimal ${fmtMoney(Math.floor(freeQuote), quote)} atau reset saldo demo di Pengaturan.`
+      : `Turunkan budget atau tambah dana (maksimal ${fmtMoney(Math.floor(freeQuote), quote)}).`;
     return {
       ok: false, skipped: false, freeQuote, quote,
-      message: `Budget ${fmtIDR(budgetIdr)} melebihi kas ${quote} tersedia ${fmtIDR(freeQuote)}. ` +
-        `Turunkan budget atau pakai maksimal ${fmtIDR(Math.floor(freeQuote))}.`
+      message: `Budget ${fmtMoney(budgetQuote, quote)} melebihi kas ${quote} tersedia ${fmtMoney(freeQuote, quote)}. ${hint}`
     };
   }
   return { ok: true, skipped: false, freeQuote, quote, message: 'OK' };
+}
+
+/** Kompat lama: validasi live (dipakai tes + kode lama). */
+export async function validateLiveBudget(userId: number, exchangeId: string, budgetIdr: number): Promise<BudgetCheck> {
+  return validateBudget(userId, exchangeId, budgetIdr, 'live');
 }
 
 /** Kas maksimal yang bisa dipakai sebagai budget (paper = seed faucet, live = saldo riil).
