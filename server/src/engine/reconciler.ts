@@ -52,9 +52,21 @@ export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift
   }
 
   if (drifts.length > 0 && opts.notifyOnDrift !== false) {
-    // Kelompokkan per user agar notifikasi tidak bocor antar akun
-    const byUser = new Map<number, DriftReport[]>();
+    // Kelompokkan per user agar notifikasi tidak bocor antar akun.
+    // Notifikasi per bot di-throttle 6 jam; log DB tetap ditulis tiap siklus.
+    const nowMs = Date.now();
+    const fresh = drifts.filter(d => {
+      const last = lastDriftNotify.get(d.bot_id) || 0;
+      if (nowMs - last < DRIFT_NOTIFY_MS) return false;
+      lastDriftNotify.set(d.bot_id, nowMs);
+      return true;
+    });
     for (const d of drifts) {
+      const bot = bots.find(b => b.id === d.bot_id);
+      log('info', 'ENGINE', `Drift ${d.name} (${d.pair}): tercatat ${d.recorded_qty.toFixed(6)}, aktual ${d.actual_qty.toFixed(6)} (drift ${d.drift_pct.toFixed(1)}%)`, { bot_id: d.bot_id, user_id: bot?.user_id ?? 0 });
+    }
+    const byUser = new Map<number, DriftReport[]>();
+    for (const d of fresh) {
       const bot = bots.find(b => b.id === d.bot_id);
       const arr = byUser.get(bot?.user_id ?? 0) || [];
       arr.push(d);
@@ -74,6 +86,10 @@ export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift
 
   return drifts;
 }
+
+/** Cooldown notifikasi drift per bot (6 jam) — log tetap tiap siklus, Telegram tidak spam */
+const lastDriftNotify = new Map<number, number>();
+const DRIFT_NOTIFY_MS = 6 * 3600 * 1000;
 
 let timer: NodeJS.Timeout | null = null;
 export function startReconciler(intervalMs = 10 * 60 * 1000) {

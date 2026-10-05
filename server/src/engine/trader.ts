@@ -65,6 +65,33 @@ export async function checkBalance(bot: BotRow, action: Action, paper: boolean, 
 }
 
 /**
+ * Pangkas qty jual ke saldo aktual bila selisihnya receh (toleransi 0,5%):
+ * kasus klasik fee/partial-fill membuat catatan 4,4328 vs aktual 4,4237 —
+ * tanpa ini order dilewati selamanya padahal barangnya ada. Selisih besar
+ * tetap ditolak (kemungkinan drift serius).
+ * Mengembalikan qty final (0 = tolak).
+ */
+export async function trimSellQty(bot: BotRow, qty: number, paper: boolean, tolerancePct = 0.5): Promise<number> {
+  if (!(qty > 0)) return 0;
+  const client = registry.getForUser(bot.exchange_id, bot.user_id);
+  const quote = client.quoteAsset;
+  const { base } = parsePair(bot.pair, quote);
+  let balances;
+  try {
+    balances = paper
+      ? registry.getPaperForUser(bot.exchange_id, bot.user_id).getBalances()
+      : await client.getBalances();
+  } catch {
+    return qty; // tak terbaca → biarkan guard normal yang menilai
+  }
+  const free = balances.find(b => b.asset === base.toUpperCase())?.free ?? 0;
+  if (qty <= free + 1e-12) return qty;
+  const short = qty - free;
+  if (free > 0 && short / qty <= tolerancePct / 100 + 1e-9) return free;
+  return 0;
+}
+
+/**
  * Guard ledger kas bot: satu akun dipakai ramai-ramai, jadi saldo akun SAJA
  * tidak cukup — tiap bot hanya boleh belanja dari kas ledgernya sendiri
  * (state.cash yang dirawat scheduler). Mencegah double-spend antar bot.
@@ -108,6 +135,17 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
     if (action.type === 'buy' && (action.amountQuote ?? 0) < minLot) {
       logSkipOnce(bot.id, 'minlot', 'warn', 'TRADE', `Order buy ${fmtIDR((action.amountQuote ?? 0) * usdtIdr)} < lot minimum ${fmtIDR(minLot * usdtIdr)}, dilewati`, { bot_id: bot.id, user_id: bot.user_id });
       return null;
+    }
+    // Jual: selisih receh vs saldo (fee/partial-fill) dipangkas otomatis
+    if (action.type === 'sell' && (action.qtyBase ?? 0) > 0) {
+      const trimmed = await trimSellQty(bot, action.qtyBase ?? 0, paper);
+      if (trimmed <= 0) {
+        // Biarkan checkBalance yang melaporkan detailnya
+      } else if (trimmed < (action.qtyBase ?? 0)) {
+        logSkipOnce(bot.id, 'trim', 'info', 'TRADE', `Qty jual dipangkas ${(action.qtyBase ?? 0).toFixed(8)} → ${trimmed.toFixed(8)} (selisih receh saldo)`, { bot_id: bot.id, user_id: bot.user_id });
+        const ratio = trimmed / (action.qtyBase ?? trimmed);
+        action = { ...action, qtyBase: trimmed, costBasis: (action.costBasis ?? 0) * ratio };
+      }
     }
     const balErr = await checkBalance(bot, action, paper, usdtIdr);
     if (balErr) {

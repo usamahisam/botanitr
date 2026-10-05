@@ -87,6 +87,16 @@ async function processBot(bot: BotRow) {
     balanceCache.set(balKey, balEntry);
   }
 
+  // Pulihkan posisi yang hilang dari state padahal koin masih ada
+  // (sinyal jual gagal tereksekusi di versi lama). Berlaku paper+live.
+  try {
+    const { base } = parsePair(bot.pair, client.quoteAsset);
+    await recoverPosition(bot, state, async () => {
+      const bal = balEntry.data.find((b: any) => String(b.asset).toUpperCase() === base.toUpperCase());
+      return bal ? (Number(bal.free) || 0) + (Number(bal.locked) || 0) : null;
+    });
+  } catch { /* gagal baca → lewati, strategi jalan normal */ }
+
   // Auto-heal drift (live saja): catatan melebihi saldo exchange (partial fill
   // / jual manual) → selaraskan ke bawah + catat. Tak pernah menaikkan; baris
   // aset tak ada di respons = lewati (bukan dianggap nol).
@@ -174,15 +184,23 @@ export function healDriftQty(state: any, actualOf: (pair: string) => number | nu
   }
 }
 
-export function applyFillToState(strategyName: string, state: any, trade: any, action: any) {
-  // Ledger kas: beli menguras kas sebesar nilai+fee, jual menambah kas sebesar nilai-fee.
-  // Hanya bila ledger sudah diinisialisasi (angka tak valid = lewati, jangan racuni).
+/**
+ * Hanya perbarui ledger kas dari fill (tanpa menyentuh posisi/entries).
+ * Dipakai alur khusus yang mengelola entries sendiri (mis. stop-likuidasi).
+ */
+export function applyCashFill(state: any, trade: any, action: any): void {
   const tValue = Number(trade?.value);
   const tFee = Number(trade?.fee) || 0;
   if (Number.isFinite(state.cash) && Number.isFinite(tValue)) {
     if (action.type === 'buy') state.cash -= tValue + tFee;
     else if (action.type === 'sell') state.cash += tValue - tFee;
   }
+}
+
+export function applyFillToState(strategyName: string, state: any, trade: any, action: any) {
+  // Ledger kas: beli menguras kas sebesar nilai+fee, jual menambah kas sebesar nilai-fee.
+  // Hanya bila ledger sudah diinisialisasi (angka tak valid = lewati, jangan racuni).
+  applyCashFill(state, trade, action);
   if (action.type === 'buy') {
     const entry: any = { price: trade.price, qty: trade.qty, cost: trade.value };
     // Level grid (untuk partial-unwind per level); strategi lain abaikan.
@@ -198,8 +216,106 @@ export function applyFillToState(strategyName: string, state: any, trade: any, a
     if ((strategyName === 'grid' || strategyName === 'dynamic') && Number.isInteger(lvl) && Array.isArray(state.levelsHit) && !state.levelsHit.includes(lvl)) {
       state.levelsHit.push(lvl);
     }
+    return;
   }
-  // Sell: state sudah di-reset oleh strategi itu sendiri saat menghasilkan aksi
+  if (action.type !== 'sell') return;
+  // SELL: state diubah HANYA di sini (fill terkonfirmasi). Strategi tidak
+  // boleh menghapus posisi saat emit — bila eksekusi gagal (saldo kurang,
+  // debu), sinyal diulang tick berikutnya, bukan hilang selamanya.
+  const meta = action?.meta || {};
+  if (strategyName === 'grid' || strategyName === 'dynamic') {
+    if (Array.isArray(state.filledBuys) && state.filledBuys.length > 0) {
+      let idx = -1;
+      if (Number.isInteger(meta.level)) {
+        idx = state.filledBuys.findIndex((e: any) => e.level === meta.level);
+      }
+      if (idx < 0) {
+        // Fallback state lama tanpa level: fill dengan qty paling mirip
+        let best = -1, bestDiff = Infinity;
+        state.filledBuys.forEach((e: any, i: number) => {
+          const d = Math.abs((Number(e.qty) || 0) - trade.qty);
+          if (d < bestDiff) { bestDiff = d; best = i; }
+        });
+        if (best >= 0 && bestDiff <= Math.max(trade.qty * 0.05, 1e-9)) idx = best;
+      }
+      if (idx >= 0) {
+        const fill = state.filledBuys[idx];
+        const fillQty = Number(fill?.qty) || 0;
+        if (fillQty > 0 && trade.qty < fillQty * 0.995) {
+          // Jual parsial (trim selisih receh): kurangi fill proporsional,
+          // level tetap terisi agar sisa debu tidak hilang dari radar.
+          const keep = 1 - trade.qty / fillQty;
+          fill.qty = fillQty - trade.qty;
+          fill.cost = (Number(fill.cost) || 0) * keep;
+        } else {
+          const [gone] = state.filledBuys.splice(idx, 1);
+          if (Number.isInteger(gone?.level) && Array.isArray(state.levelsHit)) {
+            state.levelsHit = state.levelsHit.filter((l: any) => l !== gone.level);
+          }
+          // Siklus selesai → anchor mengikuti harga fill (re-center)
+          if (state.filledBuys.length === 0 && Number(trade.price) > 0) {
+            state.anchor = trade.price;
+          }
+        }
+      }
+    }
+    return;
+  }
+  if (strategyName === 'dca' || strategyName === 'harvester') {
+    if (Array.isArray(state.entries)) {
+      if (meta.all === true) {
+        state.entries = [];
+        if (typeof state.lastEntryPrice === 'number') state.lastEntryPrice = 0;
+        if (typeof state.lastBuyPrice === 'number') state.lastBuyPrice = 0;
+        state.tier1Done = false;
+      } else {
+        // Parsial: porsi dihitung dari fill AKTUAL (tahan terhadap trim),
+        // bukan dari rencana saat emit.
+        const totalQty = state.entries.reduce((s: number, e: any) => s + (Number(e.qty) || 0), 0);
+        const soldRatio = totalQty > 0 ? trade.qty / totalQty : 0;
+        if (soldRatio > 0 && soldRatio < 0.995) {
+          const keep = 1 - soldRatio;
+          state.entries = state.entries.map((e: any) => ({ ...e, qty: e.qty * keep, cost: e.cost * keep }));
+          if (meta.tier1) state.tier1Done = true;
+        } else if (soldRatio >= 0.995) {
+          state.entries = [];
+          if (typeof state.lastEntryPrice === 'number') state.lastEntryPrice = 0;
+          if (typeof state.lastBuyPrice === 'number') state.lastBuyPrice = 0;
+          state.tier1Done = false;
+        }
+      }
+    }
+    return;
+  }
+  // Strategi posisi tunggal (scalper/revert/bollinger/breakout):
+  // bersihkan HANYA saat fill terkonfirmasi.
+  if ('position' in state) state.position = null;
+}
+
+/**
+ * Pulihkan posisi yang hilang dari state padahal koinnya masih ada
+ * (kasus: sinyal jual di-emit versi lama → eksekusi gagal → posisi hangus
+ * dari state). Rekonstruksi dari buy terakhir di riwayat, dibatasi saldo
+ * aktual. Mengembalikan true bila ada yang dipulihkan.
+ */
+export async function recoverPosition(bot: BotRow, state: any, getBaseFree: () => Promise<number | null>): Promise<boolean> {
+  if (!('position' in state) || state.position != null) return false;
+  try {
+    const free = await getBaseFree();
+    if (!(free !== null && free > 0)) return false;
+    const row = db.prepare(`SELECT price, qty, value FROM trades WHERE bot_id=? AND side='buy' ORDER BY id DESC LIMIT 1`).get(bot.id) as any;
+    if (!row || !(row.price > 0) || !(row.qty > 0)) return false;
+    const qty = Math.min(Number(row.qty), free);
+    if (!(qty > 0)) return false;
+    state.position = {
+      entryPrice: row.price, qty,
+      cost: (Number(row.value) || 0) * (qty / Number(row.qty)),
+    };
+    log('warn', 'ENGINE', `Posisi bot "${bot.name}" dipulihkan dari riwayat: ${qty} @ ${row.price} (koin masih ada, state kehilangan posisi)`, { bot_id: bot.id, user_id: bot.user_id });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 let timer: NodeJS.Timeout | null = null;

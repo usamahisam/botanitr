@@ -37,18 +37,17 @@ const dca: Strategy = {
     const avgCost = totalQty > 0 ? totalCost / totalQty : 0;
 
     if (totalQty > 0 && avgCost > 0) {
-      // STOP-RUGI: tebak arah meleset → potong, jangan kunci modal berminggu-minggu
+      // STOP-RUGI: tebak arah meleset → potong, jangan kunci modal berminggu-minggu.
+      // State dibersihkan scheduler saat fill terkonfirmasi (meta all:true).
       const sl = numParam(params, 'sl_pct', 4, 0.5, 50) / 100;
       if (price <= avgCost * (1 - sl) && totalQty * price >= minLot) {
         actions.push({
           type: 'sell', qtyBase: totalQty, costBasis: totalCost,
           reason: `[DCA_SL] Stop-rugi -${((1 - price / avgCost) * 100).toFixed(2)}% @ ${Math.round(price)} (avg ${Math.round(avgCost)})`,
           tag: 'DCA_SL',
-          impactRp: (price * totalQty - totalCost) * ctx.usdtIdr
+          impactRp: (price * totalQty - totalCost) * ctx.usdtIdr,
+          meta: { all: true }
         });
-        state.entries = [];
-        state.lastEntryPrice = 0;
-        state.tier1Done = false;
         return actions;
       }
       // TINGKAT-2: target penuh → jual SEMUA (kunci profit besar)
@@ -57,11 +56,9 @@ const dca: Strategy = {
           type: 'sell', qtyBase: totalQty, costBasis: totalCost,
           reason: `[DCA_TP] Target profit +${params.take_profit_pct}% tercapai. Jual ${totalQty.toFixed(8)} @ ${Math.round(price)} (avg ${Math.round(avgCost)})`,
           tag: 'DCA_TP',
-          impactRp: (price * totalQty - totalCost) * ctx.usdtIdr
+          impactRp: (price * totalQty - totalCost) * ctx.usdtIdr,
+          meta: { all: true }
         });
-        state.entries = [];
-        state.lastEntryPrice = 0;
-        state.tier1Done = false;
         return actions;
       }
       // TINGKAT-1: cepat & parsial — floor fee agar selalu cuan bersih
@@ -74,11 +71,9 @@ const dca: Strategy = {
             type: 'sell', qtyBase: qtySell, costBasis: costPart,
             reason: `[DCA_TP1] Panen parsial +${(tier1Gross * 100).toFixed(2)}% (${Math.round(partial * 100)}% posisi) @ ${Math.round(price)}`,
             tag: 'DCA_TP1',
-            impactRp: (price * qtySell - costPart) * ctx.usdtIdr
+            impactRp: (price * qtySell - costPart) * ctx.usdtIdr,
+            meta: { tier1: true, ratio: partial }
           });
-          const ratio = 1 - partial;
-          state.entries = state.entries.map(e => ({ ...e, qty: e.qty * ratio, cost: e.cost * ratio }));
-          state.tier1Done = true;
           return actions;
         }
       }

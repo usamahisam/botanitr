@@ -48,7 +48,10 @@ async function main() {
   actions = await scalper.onTick(ctx, state, params);
   const trailExit = actions.find(a => a.reason.includes('Trailing'));
   check('trailing exit terpicu di 26500 (< trail 26595)', !!trailExit, JSON.stringify(actions.map(a=>a.reason)));
-  check('posisi ditutup setelah trailing', state.position === null);
+  check('posisi bertahan saat emit (tunggu fill)', state.position !== null);
+  const { applyFillToState: applyFillV11 } = await import('../src/engine/scheduler.js');
+  applyFillV11('scalper', state, { price: 26500, qty: state.position.qty, value: state.position.qty * 26500, fee: 0 }, trailExit);
+  check('posisi ditutup setelah fill terkonfirmasi', state.position === null);
 
   // ===== B) Equity Curve =====
   console.log('\nB) Equity Curve');

@@ -4,6 +4,7 @@
  * Dipakai untuk validasi strategi baru/upgrade tanpa mempertaruhkan uang.
  */
 import { getStrategy } from '../strategies/types.js';
+import { applyFillToState } from './scheduler.js';
 
 export type KlineTuple = [number, number, number, number, number, number];
 
@@ -27,26 +28,11 @@ export interface ReplayResult {
   lastPrice: number;
 }
 
-/** Cermin logika fill scheduler.applyFillToState (cabang buy). */
-function applyFill(strategyName: string, state: any, action: any, price: number, fee: number) {
-  const amount = Number(action.amountQuote ?? 0);
-  if (!(amount > 0) || !(price > 0)) return { qty: 0 };
-  const qty = (amount * (1 - fee)) / price;
-  const entry: any = { price, qty, cost: amount };
-  if (Number.isInteger(action?.meta?.level)) entry.level = action.meta.level;
-  if (Array.isArray(state.filledBuys)) state.filledBuys.push(entry);
-  else if (Array.isArray(state.entries)) state.entries.push(entry);
-  else if ('position' in state && state.position == null) {
-    state.position = { entryPrice: price, qty, cost: amount };
-  }
-  if (typeof state.lastEntryPrice === 'number') state.lastEntryPrice = price;
-  if (typeof state.lastBuyPrice === 'number') state.lastBuyPrice = price;
-  const lvl = action?.meta?.level;
-  if ((strategyName === 'grid' || strategyName === 'dynamic') && Number.isInteger(lvl) && Array.isArray(state.levelsHit) && !state.levelsHit.includes(lvl)) {
-    state.levelsHit.push(lvl);
-  }
-  return { qty };
-}
+/**
+ * Fill simulasi memakai scheduler.applyFillToState yang SAMA dengan live —
+ * baik buy maupun sell (termasuk penghapusan posisi saat fill terkonfirmasi).
+ * Ledger kas replay (cash/invQty) tetap dikelola lokal di bawah.
+ */
 
 export async function replay(
   strategyName: string, params: any, klines: KlineTuple[], opts: ReplayOpts = {}
@@ -96,8 +82,10 @@ export async function replay(
         const amount = Number(a.amountQuote ?? 0);
         if (!(amount > 0) || cash < amount) continue;
         // Selip: beli dieksekusi sedikit lebih mahal dari sinyal
-        const { qty } = applyFill(strategyName, state, a, price * (1 + slip), fee);
-        if (qty <= 0) continue;
+        const execBuy = price * (1 + slip);
+        const qty = (amount * (1 - fee)) / execBuy;
+        if (!(qty > 0)) continue;
+        applyFillToState(strategyName, state, { price: execBuy, qty, value: amount, fee: amount * fee }, a);
         cash -= amount;
         invQty += qty;
         buys++;
@@ -108,7 +96,9 @@ export async function replay(
         if (qty <= 0) continue;
         const ratio = qty / Number(a.qtyBase);
         // Selip: jual dieksekusi sedikit lebih murah dari sinyal
-        const proceeds = qty * price * (1 - slip) * (1 - fee);
+        const execSell = price * (1 - slip);
+        const proceeds = qty * execSell * (1 - fee);
+        applyFillToState(strategyName, state, { price: execSell, qty, value: qty * execSell, fee: qty * execSell * fee }, a);
         const costPart = Number(a.costBasis ?? qty * price) * ratio;
         cash += proceeds;
         invQty -= qty;

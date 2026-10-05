@@ -62,7 +62,7 @@ const bollingerStrat: Strategy = {
           reason: `[BB_EXIT] %b ${bb.percentB.toFixed(2)} (target atas) @ ${Math.round(price)}`,
           tag: 'BB_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
         });
-        state.position = null;
+        // (posisi dibersihkan scheduler saat fill terkonfirmasi)
         return actions;
       }
       const slPct = numParam(params, 'sl_pct', 3.0, 0.5, 50);
@@ -72,7 +72,7 @@ const bollingerStrat: Strategy = {
           reason: `[BB_SL] Stop darurat -${slPct}% @ ${Math.round(price)}`,
           tag: 'BB_SL', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
         });
-        state.position = null;
+        // (posisi dibersihkan scheduler saat fill terkonfirmasi)
         return actions;
       }
       return actions;

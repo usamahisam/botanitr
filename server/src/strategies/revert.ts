@@ -45,7 +45,7 @@ const revert: Strategy = {
           reason: `[REVERT_TP] Pantulan +${tpPct.toFixed(2)}% dari dasar @ ${Math.round(price)}`,
           tag: 'REVERT_TP', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
         });
-        state.position = null;
+        // (posisi dibersihkan scheduler saat fill terkonfirmasi)
         return actions;
       }
       if (tradable && price <= p.entryPrice * (1 - numParam(params, 'sl_pct', 3.0, 0.5, 50) / 100)) {
@@ -54,7 +54,7 @@ const revert: Strategy = {
           reason: `[REVERT_SL] Stop darurat -${params.sl_pct}% @ ${Math.round(price)}`,
           tag: 'REVERT_SL', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
         });
-        state.position = null;
+        // (posisi dibersihkan scheduler saat fill terkonfirmasi)
         return actions;
       }
     }
@@ -79,7 +79,7 @@ const revert: Strategy = {
         reason: `[REVERT_EXIT] RSI(${rsiLen}) panas — kunci pantulan @ ${Math.round(price)}`,
         tag: 'REVERT_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
       });
-      state.position = null;
+      // (posisi dibersihkan scheduler saat fill terkonfirmasi)
       return actions;
     }
 

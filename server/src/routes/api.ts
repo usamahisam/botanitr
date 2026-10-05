@@ -376,7 +376,7 @@ api.post('/bots/:id/stop', asyncH(async (req: any, res: any) => {
   const skipped: string[] = [], errors: string[] = [];
   if (liquidate) {
     const { executeAction } = await import('../engine/trader.js');
-    const { applyFillToState, initCashLedger } = await import('../engine/scheduler.js');
+    const { applyCashFill, initCashLedger } = await import('../engine/scheduler.js');
     const { getUsdtIdr } = await import('../engine/balances.js');
     const client = registry.getForUser(bot.exchange_id, userId);
     const usdtIdr = client.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
@@ -414,7 +414,7 @@ api.post('/bots/:id/stop', asyncH(async (req: any, res: any) => {
           errors.push(`${sellQty.toFixed(8)} ${base}: order dilewati guard (lihat log TRADE terakhir).`);
           continue;
         }
-        applyFillToState(bot.strategy, state, trade, { type: 'sell' });
+        applyCashFill(state, trade, { type: 'sell' });
         // Bersihkan/kurangi fill dari state agar tak dijual ganda.
         // Jual parsial (drift) → sisa entry dipertahankan proporsional.
         if (sellQty < qty) {

@@ -58,7 +58,7 @@ const breakout: Strategy = {
             reason: `[BRK_TRAIL] Momentum habis (turun ${trailMult}×ATR dari puncak) @ ${Math.round(price)}`,
             tag: 'BRK_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
           });
-          state.position = null;
+          // (posisi dibersihkan scheduler saat fill terkonfirmasi)
           return actions;
         }
       }
@@ -69,7 +69,7 @@ const breakout: Strategy = {
           reason: `[BRK_TP] Breakout TP +${tpPct.toFixed(2)}% @ ${Math.round(price)}`,
           tag: 'BRK_TP', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
         });
-        state.position = null;
+        // (posisi dibersihkan scheduler saat fill terkonfirmasi)
         return actions;
       }
       if (tradable && price <= p.entryPrice * (1 - numParam(params, 'sl_pct', 1.2, 0.3, 50) / 100)) {
@@ -78,7 +78,7 @@ const breakout: Strategy = {
           reason: `[BRK_SL] Breakout gagal -${params.sl_pct}% @ ${Math.round(price)}`,
           tag: 'BRK_SL', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
         });
-        state.position = null;
+        // (posisi dibersihkan scheduler saat fill terkonfirmasi)
         return actions;
       }
       return actions;

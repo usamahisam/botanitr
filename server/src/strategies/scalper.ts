@@ -55,7 +55,7 @@ const scalper: Strategy = {
             reason: `[SCALPER_TRAIL] Trailing stop: turun ${trailingPct}% dari puncak ${Math.round(p.peakPrice)} → jual @ ${Math.round(price)}`,
             tag: 'SCALPER_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
           });
-          state.position = null;
+          // (posisi dibersihkan scheduler saat fill terkonfirmasi)
           return actions;
         }
       }
@@ -66,7 +66,7 @@ const scalper: Strategy = {
           reason: `[SCALPER_TP] Take profit +${tpPct.toFixed(2)}% @ ${Math.round(price)}`,
           tag: 'SCALPER_TP', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
         });
-        state.position = null;
+        // (posisi dibersihkan scheduler saat fill terkonfirmasi)
         return actions;
       }
       if (tradable && price <= slPrice) {
@@ -75,7 +75,7 @@ const scalper: Strategy = {
           reason: `[SCALPER_SL] Stop loss -${params.sl_pct}% @ ${Math.round(price)}`,
           tag: 'SCALPER_SL', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
         });
-        state.position = null;
+        // (posisi dibersihkan scheduler saat fill terkonfirmasi)
         return actions;
       }
     }
@@ -110,7 +110,7 @@ const scalper: Strategy = {
         reason: `[SCALPER_EXIT] EMA${params.ema_fast} cross-down EMA${params.ema_slow} @ ${Math.round(price)}`,
         tag: 'SCALPER_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
       });
-      state.position = null;
+      // (posisi dibersihkan scheduler saat fill terkonfirmasi)
       state.prevFastAbove = fastAbove;
       return actions;
     }

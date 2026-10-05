@@ -49,11 +49,10 @@ const harvester: Strategy = {
         costBasis: totalCost * (qtySell / totalQty),
         reason: `[INVENTORY HARVESTER] Likuidasi modal berhasil: Menjual ${qtySell.toFixed(8)} @ ${Math.round(price)}. Kas kembali cair ${Math.round(kasCair)} dengan profit bersih +${Math.round(profit)}`,
         tag: 'INVENTORY_HARVEST_RECYCLE',
-        impactRp: profit * ctx.usdtIdr
+        impactRp: profit * ctx.usdtIdr,
+        meta: { ratio: qtySell / totalQty }
       });
-      // Kurangi entries secara proporsional
-      const ratio = 1 - qtySell / totalQty;
-      state.entries = state.entries.map(e => ({ ...e, qty: e.qty * ratio, cost: e.cost * ratio }));
+      // Entries dikurangi scheduler saat fill terkonfirmasi (jangan saat emit).
       return actions;
     }
 

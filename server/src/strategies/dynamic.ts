@@ -102,8 +102,9 @@ const dynamic: Strategy = {
     const maxExposure = ctx.bot.current_budget * (numParam(params, 'max_exposure_pct', 100, 10, 200) / 100);
     const canBuy = (need: number) => lot > 0 && exposure + need <= maxExposure;
 
-    // === 1) JUAL: tiap fill yang sudah cuan bersih → lepas (ping), level bebas (pong lagi) ===
-    const hold: typeof state.filledBuys = [];
+    // === 1) JUAL: tiap fill yang sudah cuan bersih → lepas (ping).
+    // State TIDAK diubah saat emit — scheduler menghapus fill + membebaskan
+    // level + re-center anchor HANYA saat fill terkonfirmasi.
     for (const b of state.filledBuys) {
       const target = b.price * (1 + grossPct / 100);
       const stop = b.price * (1 - slPct);
@@ -111,26 +112,20 @@ const dynamic: Strategy = {
         actions.push({
           type: 'sell', qtyBase: b.qty, costBasis: b.cost,
           reason: `[DYN_SELL] Panen +${((price / b.price - 1) * 100).toFixed(2)}% @ ${Math.round(price)}`,
-          tag: 'DYN_SELL', impactRp: (price * b.qty - b.cost) * ctx.usdtIdr
+          tag: 'DYN_SELL', impactRp: (price * b.qty - b.cost) * ctx.usdtIdr,
+          meta: { level: b.level }
         });
-        if (b.level != null) state.levelsHit = state.levelsHit.filter(l => l !== b.level);
       } else if (price <= stop && b.qty * price >= minLot) {
         // Stop darurat per fill: potong rugi, jangan seret seluruh modal
         actions.push({
           type: 'sell', qtyBase: b.qty, costBasis: b.cost,
           reason: `[DYN_SL] Stop darurat -${(slPct * 100).toFixed(1)}% @ ${Math.round(price)}`,
-          tag: 'DYN_SL', impactRp: (price * b.qty - b.cost) * ctx.usdtIdr
+          tag: 'DYN_SL', impactRp: (price * b.qty - b.cost) * ctx.usdtIdr,
+          meta: { level: b.level }
         });
-        if (b.level != null) state.levelsHit = state.levelsHit.filter(l => l !== b.level);
-      } else {
-        hold.push(b);
       }
     }
-    state.filledBuys = hold;
-    if (state.filledBuys.length === 0 && actions.length > 0) {
-      state.anchor = price; // siklus bersih → re-center ke harga kini
-      return actions;
-    }
+    if (actions.length > 0) return actions;
 
     const longslide = params.rsi_filter !== false && rsi7 < 25; // longsor: tahan beli bawah
     const toppy = params.rsi_filter !== false && rsi7 > 78;     // pucuk: tahan beli atas

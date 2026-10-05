@@ -58,10 +58,13 @@ async function main() {
 
   // ===== C) Posisi terbuka: JANGAN reset prematur, partial-unwind tetap jalan =====
   console.log('\nC) Posisi terbuka dipertahankan');
+  const { applyFillToState: applyFill2 } = await import('../src/engine/scheduler.js');
   const withPos = { anchor: 1000, filledBuys: [{ price: 990, qty: 1, cost: 990 }], levelsHit: [2] as number[] };
   const actsC = await grid.onTick(mkCtx(1100), withPos, params);
   check('partial-unwind sell tetap teremisi', actsC.some(a => a.tag === 'GRID_SELL'), JSON.stringify(actsC.map(a => a.tag)));
-  check('anchor di-reset SETELAH semua level laku (siklus baru)', withPos.anchor === 1100, `got ${withPos.anchor}`);
+  check('state TAK diubah saat emit (tunggu fill)', withPos.filledBuys.length === 1 && withPos.anchor === 1000, `fills=${withPos.filledBuys.length} anchor=${withPos.anchor}`);
+  applyFill2('grid', withPos, { price: 1100, qty: 1, value: 1100, fee: 0 }, actsC.find(a => a.type === 'sell'));
+  check('fill hapus level + reset anchor (siklus baru)', withPos.filledBuys.length === 0 && withPos.anchor === 1100, `fills=${withPos.filledBuys.length} anchor=${withPos.anchor}`);
   const bagHold = { anchor: 1000, filledBuys: [{ price: 990, qty: 1, cost: 990 }], levelsHit: [0, 1, 2] as number[] };
   const actsHold = await grid.onTick(mkCtx(900), bagHold, params);
   check('tanpa unwind di bawah breakeven', actsHold.length === 0, `got ${actsHold.length}`);
@@ -115,7 +118,11 @@ async function main() {
   const hActs = await harv.onTick(hCtx, hState, { drop_pct: 2.5, harvest_pct: 2, max_buys: 8 });
   check('panen besar teremisi', hActs.length === 1 && hActs[0].tag === 'INVENTORY_HARVEST_RECYCLE', JSON.stringify(hActs.map(a => a.tag)));
   check('sisa dipertahankan (bukan dikosongkan)', hState.entries.length === 1, `got ${hState.entries.length}`);
-  // Panen kedua beruntun di harga sama -> hasil < minLot -> DITAHAN (entries utuh)
+  // Emit berulang sebelum fill = retry yang benar (bukan hangus): eksekusi fill
+  // pertama via applyFill, barulah panen kedua menyusut jadi debu + ditahan.
+  const { applyFillToState: applyFill3 } = await import('../src/engine/scheduler.js');
+  const hFill = { price: 200, qty: hActs[0].qtyBase, value: hActs[0].qtyBase * 200, fee: 0 };
+  applyFill3('harvester', hState, hFill, hActs[0]);
   const hActs2 = await harv.onTick(hCtx, hState, { drop_pct: 2.5, harvest_pct: 2, max_buys: 8 });
   check('panen kedua ditahan (debu)', hActs2.length === 0, `got ${JSON.stringify(hActs2.map(a => a.tag))}`);
   check('entries tetap utuh saat hold', hState.entries.length === 1, `got ${hState.entries.length}`);

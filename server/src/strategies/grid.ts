@@ -74,9 +74,10 @@ const grid: Strategy = {
     }
 
     // PARTIAL UNWIND: tiap fill yang sudah ≥ target bersih → jual sendiri.
-    // Level dibebaskan agar bisa dibeli lagi → siklus buy-sell berulang.
+    // PENTING: state TIDAK diubah di sini — penghapusan fill + pembebasan
+    // level + reset anchor terjadi di scheduler HANYA saat fill TERKONFIRMASI.
+    // (Menghapus saat emit = posisi hilang bila eksekusi gagal.)
     const minLot = ctx.minLot ?? 0;
-    const remaining: typeof state.filledBuys = [];
     for (const b of state.filledBuys) {
       const target = b.price * (1 + grossPct / 100);
       if (price >= target && b.qty * price >= minLot) {
@@ -84,18 +85,12 @@ const grid: Strategy = {
           type: 'sell', qtyBase: b.qty, costBasis: b.cost,
           reason: `[GRID_SELL] Level ${b.level != null ? b.level + 1 : '?'} panen +${((price / b.price - 1) * 100).toFixed(2)}% @ ${Math.round(price)}`,
           tag: 'GRID_SELL',
-          impactRp: (price * b.qty - b.cost) * ctx.usdtIdr
+          impactRp: (price * b.qty - b.cost) * ctx.usdtIdr,
+          meta: { level: b.level }
         });
-        if (b.level != null) state.levelsHit = state.levelsHit.filter(l => l !== b.level);
-      } else {
-        remaining.push(b);
       }
     }
-    state.filledBuys = remaining;
-    if (state.filledBuys.length === 0 && actions.length > 0) {
-      state.anchor = price; // siklus selesai → anchor baru
-      return actions;
-    }
+    if (actions.length > 0) return actions;
 
     // Filter RSI: RSI(7) di 5m < longslide → pasar longsor, tunda buy (sell tetap jalan)
     if (params.rsi_filter !== false) {
