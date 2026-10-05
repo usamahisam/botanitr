@@ -277,7 +277,7 @@ function setupHandlers(inst: Telegraf) {
     }
     await ctx.answerCbQuery('Menghapus…');
     queries.deleteBot.run(id);
-    log('info', 'TELEGRAM', `Bot #${id} "${botRow.name}" dihapus via Telegram oleh chat ${ctx.chat.id}`, { user_id: userId });
+    log('info', 'TELEGRAM', `Bot #${id} "${botRow.name}" dihapus via Telegram oleh @${(ctx as any).from?.username || (ctx as any).from?.id}`, { user_id: userId });
     await ctx.editMessageText(`🗑 Bot #${id} "${botRow.name}" dihapus.`);
   });
 
