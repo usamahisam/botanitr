@@ -24,6 +24,7 @@
 - **Pengecualian penting**: bila di Pengaturan → Indodax Anda mengisi **proxy**, maka yang dilihat Indodax adalah **IP exit proxy tersebut**, bukan IP VPS. Whitelist IP proxy-nya (tanyakan ke penyedia proxy / cek via proxy: `curl -x <proxy> -s ifconfig.me`).
 - Kunci **TAPIv2 mewajibkan** IP whitelist untuk permission trading — tanpa ini order live ditolak (`-2015`), dan bot live akan auto-pause oleh engine.
 - Jangan whitelist IP rumah/kantor kecuali Anda juga menjalankan bot dari sana.
+- **Jalankan dari rumah/koneksi dinamis**: whitelist **kedua** alamat ini (IPv4 + IPv6) karena koneksi ke Indodax (Cloudflare) umumnya lewat IPv6 bila tersedia. Cek IP Anda via `curl https://ifconfig.me` (IPv6) dan `curl -4 https://icanhazip.com` (IPv4). Catatan: IP rumahan bisa berubah sewaktu-waktu (DHCP/ISP) — bila order tiba-tiba ditolak `-2015`, cek ulang IP Anda. Untuk kestabilan, VPS ber-IP statis tetap disarankan.
 
 ## Telegram
 - Whitelist chat_id wajib; command tanpa whitelist → ditolak.
