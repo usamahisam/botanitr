@@ -86,7 +86,7 @@ async function main() {
   // ===== C) Marketplace =====
   console.log('\nC) Marketplace');
   const seeds = db.prepare(`SELECT COUNT(*) c FROM market_presets WHERE user_id=0`).get() as any;
-  check('5 preset bawaan terseed', seeds.c === 5, `got ${seeds.c}`);
+  check('8 preset bawaan terseed', seeds.c === 8, `got ${seeds.c}`);
   const preset = db.prepare('SELECT * FROM market_presets WHERE public=1 LIMIT 1').get() as any;
   const strat2 = getStrategy(preset.strategy);
   const binfo = queries.insertBot.run({

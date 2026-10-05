@@ -130,6 +130,19 @@ const PARAM_FIELDS: Record<string, { key: string; label: string; hint?: string }
   harvester: [
     { key: 'drop_pct', label: 'Akumulasi tiap turun (%)' }, { key: 'harvest_pct', label: 'Target panen (%)' }, { key: 'max_buys', label: 'Maks akumulasi' }
   ],
+  revert: [
+    { key: 'rsi_len', label: 'Panjang RSI' }, { key: 'oversold', label: 'Batas oversold' },
+    { key: 'exit_rsi', label: 'RSI keluar' }, { key: 'tp_pct', label: 'Take profit (%)' }, { key: 'sl_pct', label: 'Stop loss (%)' }
+  ],
+  bollinger: [
+    { key: 'bb_period', label: 'Periode BB' }, { key: 'bb_mult', label: 'Lebar band' },
+    { key: 'entry_b', label: '%b masuk' }, { key: 'exit_b', label: '%b keluar' },
+    { key: 'tp_pct', label: 'Take profit (%)' }, { key: 'sl_pct', label: 'Stop loss (%)' }
+  ],
+  breakout: [
+    { key: 'donchian_n', label: 'Tertinggi N candle' }, { key: 'tp_pct', label: 'Take profit (%)' },
+    { key: 'sl_pct', label: 'Stop loss (%)' }, { key: 'trail_atr_mult', label: 'Trailing (×ATR)', hint: '0 = nonaktif' }
+  ],
   rebalance: [
     { key: 'threshold_pct', label: 'Threshold deviasi (%)' }, { key: 'interval_min', label: 'Cek tiap (menit)' }, { key: 'max_trade_quote', label: 'Maks nominal per order' }
   ]
@@ -170,7 +183,10 @@ const STRAT_EXPLAIN: Record<string, string> = {
   dca: 'Cocok untuk koin bagus yang sedang turun. Bot mencicil beli sedikit-sedikit, jual sekaligus saat target tercapai.',
   scalper: 'Cocok saat pasar aktif. Bot masuk-keluar cepat mengejar untung kecil berkali-kali dalam sehari.',
   harvester: 'Paling aman untuk pemula. Bot menabung saat harga murah, menjual secukupnya saat sudah untung.',
-  rebalance: 'Untuk banyak koin sekaligus. Bot menjaga komposisi portofolio sesuai target persen Anda.'
+  rebalance: 'Untuk banyak koin sekaligus. Bot menjaga komposisi portofolio sesuai target persen Anda.',
+  revert: 'Beli saat harga anjlok sesaat tapi tren besar masih naik, jual begitu memantul. Sinyal paling sering muncul.',
+  bollinger: 'Beli saat harga menyentuh pita bawah, jual saat kembali ke tengah. Cocok pasar naik-turun di tempat.',
+  breakout: 'Ikut saat harga menembus rekor tertingginya, lepas cepat dengan untung kecil. Untuk pasar yang sedang lari.'
 };
 
 interface ExchangeInfo { id: string; name: string; mode: string; has_credentials: boolean }

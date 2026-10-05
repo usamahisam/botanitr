@@ -153,20 +153,30 @@ export function seedIfEmpty() {
   seedMarketplace();
 }
 
-/** Seed marketplace dengan 5 preset bawaan sistem */
+/**
+ * Seed marketplace preset bawaan sistem. Idempoten per nama: DB lama yang
+ * hanya punya 5 preset otomatis dilengkapi preset baru + preset lama
+ * disegarkan ke parameter terbaru (tanpa menyentuh preset milik user).
+ */
 function seedMarketplace() {
-  const n = (db.prepare('SELECT COUNT(*) c FROM market_presets WHERE user_id=0').get() as any).c;
-  if (n > 0) return;
+  const rows: [string, string, string, string, number][] = [
+    ['Scalper Pro 1m', 'scalper', JSON.stringify({ timeframe: '1m', ema_fast: 20, ema_slow: 50, rsi_period: 14, rsi_entry: 55, rsi_overbought: 70, tp_pct: 1.0, sl_pct: 0.8, trailing_pct: 0.8 }), 'Scalping cepat: masuk saat tren naik + RSI adem, TP fee-aware + trailing.', 100000],
+    ['Grid Sideways', 'grid', JSON.stringify({ lower_pct: 3, upper_pct: 3, levels: 6, profit_pct: 0.5, auto_range: true, rsi_filter: true }), 'Panen tiap level sendiri-sendiri saat cuan bersih. Lebar grid ikut volatilitas.', 100000],
+    ['DCA Akumulasi', 'dca', JSON.stringify({ drop_pct: 2, take_profit_pct: 3, max_buys: 5, partial_pct: 50 }), 'Beli bertahap tiap turun 2%, panen parsial cepat + sisa di target +3%.', 100000],
+    ['Harvester Aman', 'harvester', JSON.stringify({ drop_pct: 2.5, harvest_pct: 2, max_buys: 8 }), 'Akumulasi saat turun, panen modal cair + profit (ambang ikut fee exchange).', 100000],
+    ['Rebalance 50/30', 'rebalance', JSON.stringify({ targets: { BTC: 50, ETH: 30 }, threshold_pct: 2, interval_min: 60 }), 'Jaga alokasi BTC 50% + ETH 30%, sisanya kas. Cek tiap jam.', 100000],
+    ['Revert Pantulan', 'revert', JSON.stringify({ timeframe: '5m', rsi_len: 3, oversold: 20, exit_rsi: 65, trend_sma: 100, tp_pct: 1.0, sl_pct: 3.0 }), 'Beli saat oversold ekstrem dalam tren naik, jual saat memantul. Sinyal sering.', 100000],
+    ['Bollinger Reversal', 'bollinger', JSON.stringify({ timeframe: '5m', bb_period: 20, bb_mult: 2, entry_b: 0.0, exit_b: 0.5, tp_pct: 1.0, sl_pct: 3.0 }), 'Beli di lower band, jual di tengah band. Raja pasar sideways berosilasi.', 100000],
+    ['Breakout Mikro', 'breakout', JSON.stringify({ timeframe: '5m', donchian_n: 20, tp_pct: 0.8, sl_pct: 1.2, trail_atr_mult: 1.5 }), 'Ikut tembusan harga tercepat + TP ketat + trailing ATR.', 100000]
+  ];
+  const have = new Set((db.prepare('SELECT name FROM market_presets WHERE user_id=0').all() as any[]).map(r => r.name));
   const ins = db.prepare(`INSERT INTO market_presets (user_id, name, strategy, params, description, budget_quote, public, installs, created_at)
     VALUES (0,?,?,?,?,?,1,0,?)`);
-  const rows: [string, string, string, string, number][] = [
-    ['Scalper Pro 1m', 'scalper', JSON.stringify({ timeframe: '1m', ema_fast: 20, ema_slow: 50, rsi_period: 14, rsi_overbought: 70, tp_pct: 1.2, sl_pct: 0.6 }), 'Momentum mikro candle 1m, konfirmasi ganda EMA 20/50 & RSI.', 100000],
-    ['Grid Sideways', 'grid', JSON.stringify({ lower_pct: 3, upper_pct: 3, levels: 6 }), 'Panen osilasi range ±3% dengan 6 level, unwind di breakeven VWAP.', 100000],
-    ['DCA Akumulasi', 'dca', JSON.stringify({ drop_pct: 2, take_profit_pct: 3, max_buys: 5 }), 'Beli bertahap tiap turun 2%, jual di target +3%.', 100000],
-    ['Harvester Aman', 'harvester', JSON.stringify({ drop_pct: 2.5, harvest_pct: 2, max_buys: 8 }), 'Akumulasi saat turun, panen modal cair + profit saat rebound.', 100000],
-    ['Rebalance 50/30', 'rebalance', JSON.stringify({ targets: { BTC: 50, ETH: 30 }, threshold_pct: 2, interval_min: 60 }), 'Jaga alokasi BTC 50% + ETH 30%, sisanya kas. Cek tiap jam.', 100000]
-  ];
-  for (const [name, strategy, params, desc, budget] of rows) ins.run(name, strategy, params, desc, budget, now());
+  const upd = db.prepare('UPDATE market_presets SET strategy=?, params=?, description=? WHERE user_id=0 AND name=?');
+  for (const [name, strategy, params, desc, budget] of rows) {
+    if (have.has(name)) upd.run(strategy, params, desc, name);
+    else ins.run(name, strategy, params, desc, budget, now());
+  }
 }
 seedIfEmpty();
 
