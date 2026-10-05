@@ -93,6 +93,7 @@ export interface Preset {
   id: string; nama: string; strategi: string; gaya: string; deskripsi: string;
   params: Record<string, any>; leverage_label: string; tp_sl_label: string; timeframe: string;
   skor: number; backtest: { winRate: number; profitPct: number; trades: number; maxDrawdownPct: number; note?: string };
+  market?: { key: string; vol: string; label: string; trendPct: number; interval: string; candles: number };
 }
 export interface PairRow {
   exchange_id: string; symbol: string; base: string; quote: string; label: string; kategori: string; min_lot: number;

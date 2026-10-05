@@ -354,17 +354,27 @@ export default function Wizard() {
 
           {presets.length > 0 && !selected && (
             <div>
+              {presets[0].market && (
+                <div className="rounded-md border border-[#4f7cff]/30 bg-[#4f7cff]/[0.06] px-3 py-2.5 mb-3 text-[12px] leading-relaxed">
+                  <div className="font-semibold">📊 Grafik {pair}: {presets[0].market.label}</div>
+                  <div className="txt-2 mt-0.5">
+                    Peringkat di bawah sudah disesuaikan — peringkat 1 paling cocok untuk kondisi ini
+                    <span className="txt-3 num"> · data {presets[0].market.interval}, {presets[0].market.candles} candle</span>
+                  </div>
+                </div>
+              )}
               <div className="lbl mb-2">Pilih satu strategi untuk {pair}</div>
               <div className="space-y-2">
                 {presets.map((p, i) => {
                   return (
                     <button key={p.id} onClick={() => pickPreset(p)}
-                      className="w-full text-left rounded-md border p-3.5 transition-colors border-white/[0.08] hover:border-white/20 bg-transparent">
+                      className={`w-full text-left rounded-md border p-3.5 transition-colors hover:border-white/20 bg-transparent ${i === 0 ? 'border-[#2ebd85]/50' : 'border-white/[0.08]'}`}>
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="num text-xs txt-3 w-6">0{i + 1}</span>
+                          <span className={`num text-xs w-6 font-bold ${i === 0 ? 'txt-up' : 'txt-3'}`}>0{i + 1}</span>
                           <span className="font-semibold text-[14px]">{p.nama}</span>
                           <span className="tag tag-dim">{p.gaya}</span>
+                          {i === 0 && <span className="tag tag-up">PALING COCOK</span>}
                         </div>
                         <span className="num text-[13px] font-semibold txt-up shrink-0">{p.skor.toFixed(1)}</span>
                       </div>

@@ -77,6 +77,43 @@ export const PRESETS: PresetDef[] = [
 
 interface Metrics { volPct: number; rangePct: number; trendPct: number; candles: number }
 
+export interface MarketRegime {
+  key: 'naik-kuat' | 'naik' | 'sideways' | 'turun' | 'turun-kuat';
+  vol: 'volatile' | 'normal' | 'sepi';
+  label: string;
+  trendPct: number;
+}
+
+/**
+ * Rezim pasar dari grafik pair: posisi harga vs SMA50 + kemiringan + ATR.
+ * Dipakai mengarahkan peringkat strategi (tren → momentum, sideways → range).
+ */
+export function detectMarketRegime(klines: Kline[]): MarketRegime {
+  const closes = klines.map(k => k[4]).filter(Number.isFinite);
+  const last = closes[closes.length - 1] || 0;
+  const first = closes[0] || 0;
+  // ATR% sebagai ukuran gerak
+  let tr = 0, n = 0;
+  for (let i = Math.max(1, closes.length - 30); i < closes.length; i++) {
+    tr += Math.abs(closes[i] - closes[i - 1]) / closes[i - 1]; n++;
+  }
+  const atrPct = n > 0 ? (tr / n) * 100 : 0;
+  // Tren = awal-ke-akhir (selaras metrik skor), bukan vs rata-rata yang
+  // mengecilkan tren bertahap (+8% total hanya +1,9% vs SMA50).
+  const trendPct = first > 0 ? ((last - first) / first) * 100 : 0;
+
+  let key: MarketRegime['key'] = 'sideways';
+  if (trendPct >= 5) key = 'naik-kuat';
+  else if (trendPct >= 1.5) key = 'naik';
+  else if (trendPct <= -5) key = 'turun-kuat';
+  else if (trendPct <= -1.5) key = 'turun';
+
+  const vol: MarketRegime['vol'] = atrPct >= 1.2 ? 'volatile' : atrPct <= 0.25 ? 'sepi' : 'normal';
+  const arah = { 'naik-kuat': 'Uptrend kuat', naik: 'Uptrend', sideways: 'Sideways', turun: 'Downtrend', 'turun-kuat': 'Downtrend kuat' }[key];
+  const gerak = vol === 'volatile' ? 'bergerak cepat' : vol === 'sepi' ? 'bergerak pelan' : 'bergerak normal';
+  return { key, vol, trendPct: Math.round(trendPct * 10) / 10, label: `${arah}, ${gerak} (${trendPct >= 0 ? '+' : ''}${trendPct.toFixed(1)}% sebulan)` };
+}
+
 function computeMetrics(klines: Kline[]): Metrics {
   if (klines.length < 5) return { volPct: 0, rangePct: 0, trendPct: 0, candles: klines.length };
   const closes = klines.map(k => k[4]);
@@ -93,8 +130,8 @@ function computeMetrics(klines: Kline[]): Metrics {
   return { volPct, rangePct, trendPct, candles: klines.length };
 }
 
-/** Skor preset berdasarkan metrik pasar (0–100) */
-function scorePreset(preset: PresetDef, m: Metrics): number {
+/** Skor preset berdasarkan metrik pasar + rezim grafik (0–100) */
+function scorePreset(preset: PresetDef, m: Metrics, regime?: MarketRegime): number {
   let score = 50;
   switch (preset.strategi) {
     case 'scalper':
@@ -136,6 +173,33 @@ function scorePreset(preset: PresetDef, m: Metrics): number {
       score += Math.min(20, m.rangePct * 1.5);       // makin osilasi makin panen
       if (Math.abs(m.trendPct) < 5) score += 8;
       break;
+  }
+  // Lapisan rezim grafik: dorong strategi yang cocok arah pasar, tekan yang
+  // berlawanan. Ini yang membuat peringkat 1-2-3 mengikuti koinnya.
+  if (regime) {
+    const boost = (s: string, v: number) => { if (preset.strategi === s) score += v; };
+    switch (regime.key) {
+      case 'naik-kuat':
+        boost('breakout', 20); boost('scalper', 12); boost('revert', 12); boost('dynamic', 8);
+        boost('grid', -5); boost('harvester', -5);
+        break;
+      case 'naik':
+        boost('breakout', 12); boost('scalper', 8); boost('revert', 8); boost('dynamic', 6);
+        break;
+      case 'turun-kuat':
+        boost('harvester', 15); boost('dca', 15); boost('grid', 10); boost('dynamic', 8); boost('bollinger', 8);
+        boost('breakout', -15); boost('scalper', -10); boost('revert', -5);
+        break;
+      case 'turun':
+        boost('harvester', 10); boost('dca', 10); boost('grid', 8); boost('dynamic', 5);
+        boost('breakout', -8);
+        break;
+      default: // sideways
+        boost('grid', 12); boost('bollinger', 12); boost('dynamic', 10); boost('scalper', 8);
+        break;
+    }
+    if (regime.vol === 'volatile') { boost('scalper', 8); boost('breakout', 8); boost('dynamic', 6); }
+    if (regime.vol === 'sepi') { boost('scalper', -10); boost('breakout', -10); }
   }
   return Math.max(5, Math.min(98, Math.round(score * 10) / 10));
 }
@@ -362,6 +426,8 @@ export async function runCustomBacktest(
 export interface PresetRecommendation extends PresetDef {
   skor: number;
   backtest: BacktestResult;
+  /** Kondisi grafik pair saat dianalisis (sama untuk semua preset) */
+  market: MarketRegime & { interval: string; candles: number };
 }
 
 const recCache = new Map<string, { data: PresetRecommendation[]; ts: number }>();
@@ -420,18 +486,25 @@ export async function recommend(exchangeId: string, pair: string, budgetQuote = 
   }
 
   const metrics = computeMetrics(daily);
+  const regime = detectMarketRegime(daily);
+  const market = { ...regime, interval: dailyInterval, candles: daily.length };
   const out: PresetRecommendation[] = PRESETS.map(preset => {
     const kl = preset.strategi === 'scalper' ? micro : daily;
     const bt = backtest(preset, kl, budgetQuote);
+    // Tak ada sinyal di data ini = strategi tak cocok koinnya → tekan skor
+    const noSignal = bt.trades === 0;
     return {
       ...preset,
-      skor: scorePreset(preset, metrics),
+      skor: scorePreset(preset, metrics, regime) - (noSignal ? 15 : 0),
       backtest: {
         ...bt,
-        note: preset.strategi === 'scalper' || dailyInterval === '1d'
-          ? undefined
-          : `Dihitung dari data ${dailyInterval} (${sourceNote(dailySource, dailyInterval, kl.length)})`
-      }
+        note: noSignal
+          ? `Tak ada sinyal di data ${dailyInterval} ini — kurang cocok untuk ${pair}`
+          : preset.strategi === 'scalper' || dailyInterval === '1d'
+            ? undefined
+            : `Dihitung dari data ${dailyInterval} (${sourceNote(dailySource, dailyInterval, kl.length)})`
+      },
+      market
     };
   }).sort((a, b) => b.skor - a.skor);
 

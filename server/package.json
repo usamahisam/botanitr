@@ -30,7 +30,8 @@
     "test:purge": "tsx scripts/test-demo-purge.ts",
     "test:e2e": "tsx scripts/test-e2e-full.ts",
     "test:equity": "tsx scripts/test-equity-curve.ts",
-    "test:stop": "tsx scripts/test-bot-stop.ts"
+    "test:stop": "tsx scripts/test-bot-stop.ts",
+    "test:rank": "tsx scripts/test-market-rank.ts"
   },
   "dependencies": {
     "axios": "^1.7.9",
