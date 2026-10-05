@@ -85,6 +85,9 @@ async function main() {
   const bb = await replay('bollinger', { timeframe: '5m', bb_period: 20, bb_mult: 2, entry_b: 0 }, sw, { budget: BUDGET });
   check('bollinger: ada buy & sell', bb.buys > 0 && bb.sells > 0, `b=${bb.buys} s=${bb.sells}`);
   check('bollinger: terealisasi positif', bb.realized > 0, `Rp${Math.round(bb.realized)}`);
+  const dyn = await replay('dynamic', { step_pct: 1.0, levels: 8, profit_pct: 0.5 }, sw, { budget: BUDGET });
+  check('dynamic: ping-pong minimal 5x panen', dyn.buys >= 5 && dyn.sells >= 5, `b=${dyn.buys} s=${dyn.sells}`);
+  check('dynamic: terealisasi positif', dyn.realized > 0, `Rp${Math.round(dyn.realized)}`);
   const dca = await replay('dca', { drop_pct: 2, take_profit_pct: 3, max_buys: 5, partial_pct: 50 }, sw, { budget: BUDGET });
   check('dca: akumulasi jalan', dca.buys > 0, `b=${dca.buys}`);
   const harv = await replay('harvester', { drop_pct: 2.5, harvest_pct: 2, max_buys: 8 }, sw, { budget: BUDGET });
@@ -98,11 +101,13 @@ async function main() {
   check('breakout: ikut tren', brk.buys > 0 && brk.sells > 0, `b=${brk.buys} s=${brk.sells} Rp${Math.round(brk.realized)}`);
   const sc = await replay('scalper', { timeframe: '1m', ema_fast: 20, ema_slow: 50, rsi_period: 14, rsi_entry: 55, tp_pct: 1.0, sl_pct: 0.8, trailing_pct: 0.8 }, up, { budget: BUDGET });
   check('scalper: ada posisi & exit', sc.buys > 0 && sc.sells > 0, `b=${sc.buys} s=${sc.sells} Rp${Math.round(sc.realized)}`);
+  const dynUp = await replay('dynamic', { step_pct: 1.0, levels: 8, profit_pct: 0.5 }, up, { budget: BUDGET });
+  check('dynamic uptrend: ikut naik + panen', dynUp.buys > 0 && dynUp.sells > 0, `b=${dynUp.buys} s=${dynUp.sells} Rp${Math.round(dynUp.realized)}`);
 
   console.log('\nE) Crash -30% (risiko campuran: rugi terbatas, tak hang)');
   const cr = crash();
   for (const [name, params] of [
-    ['grid', {}], ['dca', {}], ['scalper', {}], ['revert', {}], ['bollinger', {}], ['breakout', {}],
+    ['grid', {}], ['dca', {}], ['scalper', {}], ['revert', {}], ['bollinger', {}], ['breakout', {}], ['dynamic', {}],
   ] as const) {
     const r = await replay(name, params, cr, { budget: BUDGET });
     check(`${name}: drawdown < 70%`, r.maxDdPct < 70, `${r.maxDdPct.toFixed(1)}%`);

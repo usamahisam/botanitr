@@ -41,7 +41,7 @@ function applyFill(strategyName: string, state: any, action: any, price: number,
   if (typeof state.lastEntryPrice === 'number') state.lastEntryPrice = price;
   if (typeof state.lastBuyPrice === 'number') state.lastBuyPrice = price;
   const lvl = action?.meta?.level;
-  if (strategyName === 'grid' && Number.isInteger(lvl) && Array.isArray(state.levelsHit) && !state.levelsHit.includes(lvl)) {
+  if ((strategyName === 'grid' || strategyName === 'dynamic') && Number.isInteger(lvl) && Array.isArray(state.levelsHit) && !state.levelsHit.includes(lvl)) {
     state.levelsHit.push(lvl);
   }
   return { qty };
@@ -63,6 +63,7 @@ export async function replay(
   await import('../strategies/revert.js');
   await import('../strategies/bollinger.js');
   await import('../strategies/breakout.js');
+  await import('../strategies/dynamic.js');
   const strat = getStrategy(strategyName);
   const state = strat.init(params);
   const t0 = klines.length > 0 ? klines[0][0] : Date.now();

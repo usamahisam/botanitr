@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, MarketPreset } from '../lib/api'
 import { Icon } from '../components/icons';
 
-const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester', rebalance: 'Rebalance', revert: 'Revert', bollinger: 'Bollinger', breakout: 'Breakout' };
+const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester', rebalance: 'Rebalance', revert: 'Revert', bollinger: 'Bollinger', breakout: 'Breakout', dynamic: 'Dynamic' };
 
 function Stars({ value, onRate }: { value: number; onRate?: (s: number) => void }) {
   return (

@@ -15,6 +15,7 @@ import '../strategies/rebalance.js';
 import '../strategies/revert.js';
 import '../strategies/bollinger.js';
 import '../strategies/breakout.js';
+import '../strategies/dynamic.js';
 
 /** Cache ticker in-memory 5 detik per user+exchange+pair */
 const tickerCache = new Map<string, { data: Ticker; ts: number }>();
@@ -125,9 +126,9 @@ export function applyFillToState(strategyName: string, state: any, trade: any, a
     // Tracker harga terakhir (dipakai penentu buy berikutnya)
     if (typeof state.lastEntryPrice === 'number') state.lastEntryPrice = trade.price;
     if (typeof state.lastBuyPrice === 'number') state.lastBuyPrice = trade.price;
-    // Level grid dari meta aksi (bukan saat aksi dibuat)
+    // Level grid/dynamic dari meta aksi (bukan saat aksi dibuat)
     const lvl = action?.meta?.level;
-    if (strategyName === 'grid' && Number.isInteger(lvl) && Array.isArray(state.levelsHit) && !state.levelsHit.includes(lvl)) {
+    if ((strategyName === 'grid' || strategyName === 'dynamic') && Number.isInteger(lvl) && Array.isArray(state.levelsHit) && !state.levelsHit.includes(lvl)) {
       state.levelsHit.push(lvl);
     }
   }

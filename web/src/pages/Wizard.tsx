@@ -143,6 +143,11 @@ const PARAM_FIELDS: Record<string, { key: string; label: string; hint?: string }
     { key: 'donchian_n', label: 'Tertinggi N candle' }, { key: 'tp_pct', label: 'Take profit (%)' },
     { key: 'sl_pct', label: 'Stop loss (%)' }, { key: 'trail_atr_mult', label: 'Trailing (×ATR)', hint: '0 = nonaktif' }
   ],
+  dynamic: [
+    { key: 'step_pct', label: 'Jarak level (%)' }, { key: 'levels', label: 'Jumlah level/sisi' },
+    { key: 'profit_pct', label: 'Target bersih (%)' }, { key: 'max_exposure_pct', label: 'Eksposur maks (%)' },
+    { key: 'sl_pct', label: 'Stop darurat (%)' }
+  ],
   rebalance: [
     { key: 'threshold_pct', label: 'Threshold deviasi (%)' }, { key: 'interval_min', label: 'Cek tiap (menit)' }, { key: 'max_trade_quote', label: 'Maks nominal per order' }
   ]
@@ -186,7 +191,8 @@ const STRAT_EXPLAIN: Record<string, string> = {
   rebalance: 'Untuk banyak koin sekaligus. Bot menjaga komposisi portofolio sesuai target persen Anda.',
   revert: 'Beli saat harga anjlok sesaat tapi tren besar masih naik, jual begitu memantul. Sinyal paling sering muncul.',
   bollinger: 'Beli saat harga menyentuh pita bawah, jual saat kembali ke tengah. Cocok pasar naik-turun di tempat.',
-  breakout: 'Ikut saat harga menembus rekor tertingginya, lepas cepat dengan untung kecil. Untuk pasar yang sedang lari.'
+  breakout: 'Ikut saat harga menembus rekor tertingginya, lepas cepat dengan untung kecil. Untuk pasar yang sedang lari.',
+  dynamic: 'Paling pintar: beli saat turun, ikut saat naik, panen tiap level berkali-kali. Anchor mengikuti harga.'
 };
 
 interface ExchangeInfo { id: string; name: string; mode: string; has_credentials: boolean }

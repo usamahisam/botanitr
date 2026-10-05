@@ -6,10 +6,10 @@ import { getSocket } from '../lib/ws';
 import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 import { Icon } from '../components/icons';
 
-const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester', rebalance: 'Rebalance', revert: 'Revert', bollinger: 'Bollinger', breakout: 'Breakout' };
+const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester', rebalance: 'Rebalance', revert: 'Revert', bollinger: 'Bollinger', breakout: 'Breakout', dynamic: 'Dynamic' };
 const PER_PAGE = 8;
 
-const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'GRID_SELL', 'DCA_TP', 'DCA_TP1', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'REVERT_TP', 'REVERT_SL', 'REVERT_EXIT', 'BB_EXIT', 'BB_SL', 'BRK_TP', 'BRK_SL', 'BRK_EXIT', 'INVENTORY_HARVEST_RECYCLE', 'REBALANCE', 'AUTO_COMPOUND'];
+const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'GRID_SELL', 'DCA_TP', 'DCA_TP1', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'REVERT_TP', 'REVERT_SL', 'REVERT_EXIT', 'BB_EXIT', 'BB_SL', 'BRK_TP', 'BRK_SL', 'BRK_EXIT', 'DYN_SELL', 'DYN_SL', 'INVENTORY_HARVEST_RECYCLE', 'REBALANCE', 'AUTO_COMPOUND'];
 
 function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);

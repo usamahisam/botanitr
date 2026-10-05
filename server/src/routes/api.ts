@@ -18,6 +18,7 @@ import '../strategies/rebalance.js';
 import '../strategies/revert.js';
 import '../strategies/bollinger.js';
 import '../strategies/breakout.js';
+import '../strategies/dynamic.js';
 
 export const api = Router();
 

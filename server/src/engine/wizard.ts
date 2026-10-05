@@ -3,7 +3,7 @@ import { Kline } from '../exchange/base.js';
 
 /**
  * AI Wizard rule-based: analisis metrik candle + backtest replay sederhana
- * untuk men-skor 8 preset strategi per pasangan.
+ * untuk men-skor 9 preset strategi per pasangan.
  */
 
 export interface PresetDef {
@@ -60,6 +60,12 @@ export const PRESETS: PresetDef[] = [
     deskripsi: 'Ikut tembusan harga tercepat + TP ketat + trailing ATR. Untuk grafik trending cepat.',
     params: { timeframe: '5m', donchian_n: 20, tp_pct: 0.8, sl_pct: 1.2, trail_atr_mult: 1.5 },
     leverage_label: '1x', tp_sl_label: 'TP 0.8% / SL 1.2%', timeframe: '5m'
+  },
+  {
+    id: 'dynamic-pingpong', nama: 'Dynamic Ping-Pong', strategi: 'dynamic', gaya: 'Dua-Arah',
+    deskripsi: 'PALING PINTAR. Beli saat turun, ikut saat naik, panen tiap level berkali-kali. Anchor mengikuti harga.',
+    params: { step_pct: 1.0, levels: 8, profit_pct: 0.5, auto_step: true, rsi_filter: true, trend_lot_mult: 0.5, max_trend_buys: 3, max_exposure_pct: 100, sl_pct: 5.0 },
+    leverage_label: '1x', tp_sl_label: 'Auto ping-pong', timeframe: 'Tick + 5m'
   },
   {
     id: 'rebalance-portfolio', nama: 'Rebalance Portfolio', strategi: 'rebalance', gaya: 'Alokasi',
@@ -124,6 +130,11 @@ function scorePreset(preset: PresetDef, m: Metrics): number {
       if (m.trendPct > 2) score += 25;               // tren naik = tembusan valid
       else if (m.trendPct < -2) score -= 15;
       score += Math.min(15, m.volPct * 6);
+      break;
+    case 'dynamic':
+      score += 12;                                   // adaptif semua kondisi
+      score += Math.min(20, m.rangePct * 1.5);       // makin osilasi makin panen
+      if (Math.abs(m.trendPct) < 5) score += 8;
       break;
   }
   return Math.max(5, Math.min(98, Math.round(score * 10) / 10));

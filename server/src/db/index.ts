@@ -167,7 +167,8 @@ function seedMarketplace() {
     ['Rebalance 50/30', 'rebalance', JSON.stringify({ targets: { BTC: 50, ETH: 30 }, threshold_pct: 2, interval_min: 60 }), 'Jaga alokasi BTC 50% + ETH 30%, sisanya kas. Cek tiap jam.', 100000],
     ['Revert Pantulan', 'revert', JSON.stringify({ timeframe: '5m', rsi_len: 3, oversold: 20, exit_rsi: 65, trend_sma: 100, tp_pct: 1.0, sl_pct: 3.0 }), 'Beli saat oversold ekstrem dalam tren naik, jual saat memantul. Sinyal sering.', 100000],
     ['Bollinger Reversal', 'bollinger', JSON.stringify({ timeframe: '5m', bb_period: 20, bb_mult: 2, entry_b: 0.0, exit_b: 0.5, tp_pct: 1.0, sl_pct: 3.0 }), 'Beli di lower band, jual di tengah band. Raja pasar sideways berosilasi.', 100000],
-    ['Breakout Mikro', 'breakout', JSON.stringify({ timeframe: '5m', donchian_n: 20, tp_pct: 0.8, sl_pct: 1.2, trail_atr_mult: 1.5 }), 'Ikut tembusan harga tercepat + TP ketat + trailing ATR.', 100000]
+    ['Breakout Mikro', 'breakout', JSON.stringify({ timeframe: '5m', donchian_n: 20, tp_pct: 0.8, sl_pct: 1.2, trail_atr_mult: 1.5 }), 'Ikut tembusan harga tercepat + TP ketat + trailing ATR.', 100000],
+    ['Dynamic Ping-Pong', 'dynamic', JSON.stringify({ step_pct: 1.0, levels: 8, profit_pct: 0.5, auto_step: true, rsi_filter: true, trend_lot_mult: 0.5, max_trend_buys: 3, max_exposure_pct: 100, sl_pct: 5.0 }), 'Beli saat turun, ikut saat naik, panen tiap level berkali-kali. Paling pintar.', 100000]
   ];
   const have = new Set((db.prepare('SELECT name FROM market_presets WHERE user_id=0').all() as any[]).map(r => r.name));
   const ins = db.prepare(`INSERT INTO market_presets (user_id, name, strategy, params, description, budget_quote, public, installs, created_at)
