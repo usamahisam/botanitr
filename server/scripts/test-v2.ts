@@ -115,6 +115,21 @@ async function main() {
   // Bot user lain tidak ikut terhitung
   const aggAdmin = db.prepare(`SELECT COUNT(*) total FROM bots WHERE market_preset_id=? AND user_id=?`).get(preset.id, adminId) as any;
   check('hitungan terisolasi per user', aggAdmin.total === 0, `got ${aggAdmin.total}`);
+  // Bot tanpa link (jalur Wizard) ikut terhitung di preset berstrategi sama
+  const strat3 = getStrategy(preset.strategy);
+  queries.insertBot.run({
+    user_id: user2, name: 'Wizard Bot', exchange_id: 'indodax', pair: 'BTCIDR',
+    strategy: preset.strategy, params: '{}', budget_idr: 100000, current_budget: 100000,
+    lot: 20000, mode: 'paper', auto_compound_pct: 100, status: 'running',
+    state: JSON.stringify(strat3.init({})), max_daily_loss_pct: 0,
+    market_preset_id: null, created_at: now(), updated_at: now()
+  });
+  const aggFb = db.prepare(`SELECT COUNT(*) total,
+    SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) running FROM bots
+    WHERE user_id=? AND (market_preset_id=? OR (market_preset_id IS NULL AND strategy=?))`)
+    .get(user2, preset.id, preset.strategy) as any;
+  check('fallback strategi: total=3', aggFb.total === 3, `got ${aggFb.total}`);
+  check('fallback strategi: running=2', aggFb.running === 2, `got ${aggFb.running}`);
   db.prepare(`INSERT INTO market_ratings (preset_id, user_id, stars) VALUES (?,?,?)`).run(preset.id, user2, 5);
   const rating = db.prepare(`SELECT COALESCE(AVG(stars),0) r FROM market_ratings WHERE preset_id=?`).get(preset.id) as any;
   check('rating tersimpan (avg=5)', rating.r === 5, `got ${rating.r}`);

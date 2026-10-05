@@ -512,9 +512,13 @@ api.delete('/alerts/:id', asyncH(async (req: any, res: any) => {
 api.get('/marketplace', asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   const search = String(req.query.search || '').trim();
+  // Hitungan bot per preset: link eksak dulu; bot tanpa link (dibuat via Wizard/API)
+  // ikut terhitung di preset berstrategi sama (seed bawaan 1 strategi = 1 preset).
   let sql = `SELECT m.*, COALESCE(AVG(r.stars),0) rating, COUNT(r.stars) ratings,
-             (SELECT COUNT(*) FROM bots b WHERE b.market_preset_id=m.id AND b.user_id=?) bots_total,
-             (SELECT COUNT(*) FROM bots b WHERE b.market_preset_id=m.id AND b.user_id=? AND b.status='running') bots_running
+             (SELECT COUNT(*) FROM bots b WHERE b.user_id=?
+               AND (b.market_preset_id=m.id OR (b.market_preset_id IS NULL AND b.strategy=m.strategy))) bots_total,
+             (SELECT COUNT(*) FROM bots b WHERE b.user_id=? AND b.status='running'
+               AND (b.market_preset_id=m.id OR (b.market_preset_id IS NULL AND b.strategy=m.strategy))) bots_running
              FROM market_presets m LEFT JOIN market_ratings r ON r.preset_id=m.id
              WHERE m.public=1`;
   const args: any[] = [userId, userId];

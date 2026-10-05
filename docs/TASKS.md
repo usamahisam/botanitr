@@ -171,6 +171,11 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] UI: tombol Instal dihapus; tiap preset tampilkan status berjalan/jeda/belum dipakai + total agregat + refresh 30 dtk
 - [x] E2E linkage + isolasi per-user di `test-v2` (+4 asserts); total suite 148/148 ✅
 
+## Revisi: hitungan fallback strategi di Marketplace (ditambahkan)
+- [x] Root cause "Belum dipakai" padahal ada bot jalan: bot via Wizard/API punya `market_preset_id` NULL
+- [x] `GET /marketplace`: bot tanpa link ikut terhitung di preset berstrategi sama (seed 1 strategi = 1 preset, tanpa double-count umum)
+- [x] E2E fallback +2 asserts di `test-v2`; total suite 154/154 ✅
+
 ## Revisi: Data Backtest Indodax + Pilihan Versi API (ditambahkan)
 - [x] Investigasi: `/api/trades` Indodax hanya ~500 trade (±5 jam) → mustahil backtest harian; tidak ada OHLC publik lain
 - [x] Perekam riwayat harga lokal (`price_history`, tiap menit, retensi 45 hari, via summaries sekaligus untuk IDR)
