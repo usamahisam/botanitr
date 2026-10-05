@@ -142,14 +142,22 @@ export async function checkBalancesHealth(userId: number): Promise<BalanceHealth
         : await client.getBalances();
       freeQuote = balances.find(b => b.asset === quote)?.free ?? 0;
     } catch (e: any) { error = e.message; }
+    const { unspentClaim } = await import('./budget.js');
+    // Kebutuhan riil bot = lot TERKECIL vs sisa kas ledgernya. Bot yang sudah
+    // membelikan seluruh kasnya jadi barang (sisa klaim ~0) tidak butuh kas
+    // lagi — menagih full lot ke dia adalah alarm palsu (kasus #46: lot 99rb
+    // padahal kas bot sudah jadi barang XRP). Guard ledger di trader yang
+    // akan menolak bila ia memaksa beli melebihi sisa kasnya.
     const needs: BalanceNeed[] = bots
       .filter(b => b.exchange_id === id)
-      .map(b => ({ bot_id: b.id, name: b.name, lot: b.lot, mode: b.mode, ok: error ? false : freeQuote >= b.lot }));
+      .map(b => {
+        const need = Math.min(Number(b.lot) || 0, unspentClaim(b));
+        return { bot_id: b.id, name: b.name, lot: b.lot, mode: b.mode, ok: error ? false : freeQuote >= need };
+      });
     // Monitor alokasi ganda: total SISA klaim (kas ledger) bot running vs kas.
     // Quick-trade manual / bot lama bisa membuat klaim melebihi kas nyata.
     // PENTING: pakai sisa kas, bukan full budget — barang yang sudah dibeli
     // sudah keluar dari kas bebas (menghitung full = hitung ganda = alarm palsu).
-    const { unspentClaim } = await import('./budget.js');
     const committed = bots
       .filter(x => x.exchange_id === id && x.status === 'running')
       .reduce((s: number, b: any) => s + unspentClaim(b), 0);

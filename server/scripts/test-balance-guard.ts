@@ -85,12 +85,16 @@ async function main() {
 
   // ===== E) Health check =====
   console.log('\nE) checkBalancesHealth');
-  const botE = mkBot('GuardE', 999999999); // lot raksasa -> pasti short
+  const botE = mkBot('GuardE', 999999999); // lot raksasa tapi budget 100rb
+  // Klaim riil (100rb) < kas (10jt) -> SEHAT: lot raksasa tak relevan karena
+  // guard ledger membatasi belanja ke sisa kas (anti alarm palsu kasus #46).
+  // Naikkan budget ke 50jt agar klaim > kas -> baru short.
+  db.prepare(`UPDATE bots SET current_budget=50000000, budget_idr=50000000 WHERE id=?`).run(botE.id);
   const health = await checkBalancesHealth(0);
   const idx = health.find(h => h.exchange_id === 'indodax');
   check('indodax ada di hasil', !!idx);
   const need = idx?.bots.find(b => b.bot_id === botE.id);
-  check('bot lot raksasa ditandai short', need !== undefined && need.ok === false, JSON.stringify(need));
+  check('bot klaim 50jt > kas 10jt ditandai short', need !== undefined && need.ok === false, JSON.stringify(need));
   check('counter short > 0', (idx?.short ?? 0) > 0);
 
   console.log(`\n═══════════════════════════════`);
