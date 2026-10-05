@@ -76,6 +76,7 @@ export interface ExchangeView {
 export interface Bot {
   id: number; name: string; exchange_id: string; pair: string; strategy: string;
   params: Record<string, any>; budget_idr: number; current_budget: number; lot: number;
+  cash_quote: number | null; open_cost_quote: number;
   mode: string; auto_compound_pct: number; status: string;
   stats: { realized: number; wins: number; total: number; trades: number };
   trend: { date: string; pnl: number }[];

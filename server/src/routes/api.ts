@@ -236,9 +236,25 @@ api.get('/bots', asyncH(async (req: any, res: any) => {
   res.json(bots.map(b => ({
     ...b, params: safeJson(b.params, {}), state: undefined,
     stats: pnl.botStats(b.id),
-    trend: pnl.botTrend(b.id)
+    trend: pnl.botTrend(b.id),
+    // Sisa kas ledger + modal nyangkut: budget terlihat dipotong saat beli,
+    // bertambah saat jual (tanpa mengubah modal acuan untuk lot sizing).
+    ...cashInfo(b)
   })));
 }));
+
+/** Sisa kas ledger + modal terbuka dari state bot (untuk display). */
+function cashInfo(b: BotRow): { cash_quote: number | null; open_cost_quote: number } {
+  try {
+    const state = JSON.parse(b.state || '{}');
+    const open: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
+    const openCost = open.reduce((s: number, e: any) => s + (Number(e.cost) || 0), 0);
+    const cash = Number.isFinite(state.cash) ? state.cash : b.current_budget - openCost;
+    return { cash_quote: cash, open_cost_quote: openCost };
+  } catch {
+    return { cash_quote: null, open_cost_quote: 0 };
+  }
+}
 
 api.get('/bots/:id', asyncH(async (req: any, res: any) => {
   const bot = getUserBot(uid(req), req.params.id);

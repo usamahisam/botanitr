@@ -81,6 +81,7 @@ async function main() {
   check('budget > kas demo → 400 + saran', r.status === 400 && /demo|kas/i.test(r.data.error || ''), `got ${r.status}`);
   r = await get('/bots', T);
   check('list bots ada 1', r.status === 200 && r.data.length === 1, `got ${r.status} len=${r.data?.length}`);
+  check('bot bawa cash_quote = budget', r.data[0]?.cash_quote === 100000 && r.data[0]?.open_cost_quote === 0, JSON.stringify({ cash: r.data[0]?.cash_quote, open: r.data[0]?.open_cost_quote }));
   r = await post(`/bots/${botId}/pause`, {}, T);
   check('pause 200', r.status === 200, `got ${r.status}`);
   r = await post(`/bots/${botId}/resume`, {}, T);

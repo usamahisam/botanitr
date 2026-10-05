@@ -79,7 +79,10 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
       </div>
 
       <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-white/[0.06]">
-        <div><div className="lbl !text-[10px]">Budget</div><div className="num text-[13px] font-semibold mt-0.5">{fmtMoney(bot.current_budget, quoteOfPair(bot.pair))}</div></div>
+        <div><div className="lbl !text-[10px]">Budget</div><div className="num text-[13px] font-semibold mt-0.5">{fmtMoney(bot.current_budget, quoteOfPair(bot.pair))}</div>
+          {bot.cash_quote !== null && bot.open_cost_quote > 0 && (
+            <div className="num text-[11px] txt-3 mt-0.5">Sisa kas {fmtMoney(bot.cash_quote, quoteOfPair(bot.pair))} · nyangkut {fmtMoney(bot.open_cost_quote, quoteOfPair(bot.pair))}</div>
+          )}</div>
         <div><div className="lbl !text-[10px]">Profit</div><div className={`num text-[13px] font-semibold mt-0.5 ${bot.stats.realized >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedMoney(bot.stats.realized, quoteOfPair(bot.pair))}</div></div>
         <div><div className="lbl !text-[10px]">Win</div><div className="num text-[13px] font-semibold mt-0.5">{winRate.toFixed(0)}% <span className="txt-3 font-normal">· {bot.stats.trades}</span></div></div>
       </div>
