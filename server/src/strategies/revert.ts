@@ -1,6 +1,6 @@
 import { Strategy, StrategyContext, Action, registerStrategy, numParam } from './types.js';
 import { minGrossTargetPct } from './fees.js';
-import { adaptiveCooldownMs, detectRegime } from './regime.js';
+import { adaptiveCooldownMs, detectRegime, higherTrend } from './regime.js';
 import { closesOf, rsi, sma } from './indicators.js';
 
 /**
@@ -83,13 +83,14 @@ const revert: Strategy = {
       return actions;
     }
 
-    // Entry: oversold ekstrem + tren besar masih naik + cooldown
+    // Entry: oversold ekstrem + tren besar masih naik + 1h selaras + cooldown
     if (!state.position) {
       const r = rsi(closes, rsiLen);
       const trendLen = Math.max(20, Math.min(200, Math.floor(numParam(params, 'trend_sma', 100, 20, 200))));
       const trendOk = closes.length < trendLen ? true : price > sma(closes, trendLen);
+      const htfOk = params.mtf_confirm === false || (await higherTrend(ctx.getKlines)) !== 'down';
       const regime = detectRegime(state.candles, params);
-      if (r <= numParam(params, 'oversold', 20, 2, 40) && trendOk
+      if (r <= numParam(params, 'oversold', 20, 2, 40) && trendOk && htfOk
           && ctx.now - (state.lastEntryTs || 0) >= adaptiveCooldownMs(params, regime.mode)) {
         const pct = Math.max(10, Math.min(100, numParam(params, 'budget_pct', 100, 10, 100)));
         const amount = Math.floor(ctx.bot.current_budget * pct / 100);

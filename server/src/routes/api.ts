@@ -179,6 +179,12 @@ api.post('/demo/purge', asyncH(async (req: any, res: any) => {
   res.json({ ok: true, ...purgePaperData(uid(req), exchange_id || undefined) });
 }));
 
+// Guard korelasi antar pair bot berjalan
+api.get('/correlation', asyncH(async (req: any, res: any) => {
+  const { correlationReport } = await import('../engine/correlation.js');
+  res.json(correlationReport(uid(req)));
+}));
+
 // Health check saldo: kecukupan kas per exchange + per bot yang running
 api.get('/balances/check', asyncH(async (req: any, res: any) => {
   const { checkBalancesHealth } = await import('../engine/balances.js');
@@ -567,6 +573,36 @@ api.post('/wizard/backtest', asyncH(async (req: any, res: any) => {
     const client = registry.get(exchange_id || 'indodax');
     const klines = await client.getKlines(pair, preset.strategi === 'scalper' ? '1m' : '1d', 500);
     res.json(backtest(preset, klines, 100000));
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+}));
+
+// Optimasi parameter otomatis (walk-forward, anti overfitting)
+api.post('/optimize', asyncH(async (req: any, res: any) => {
+  const { exchange_id, pair, strategy, params, days = 30, budget = 100000 } = req.body || {};
+  if (!exchange_id || !pair || !strategy) {
+    return res.status(400).json({ error: 'Field wajib: exchange_id, pair, strategy' });
+  }
+  const { supportedStrategies, optimize } = await import('../engine/optimizer.js');
+  if (!supportedStrategies().includes(strategy)) {
+    return res.status(400).json({ error: `Strategi ${strategy} belum didukung optimizer (${supportedStrategies().join(', ')})` });
+  }
+  try {
+    const { fetchKlinesChain } = await import('../engine/wizard.js');
+    const d = num(days, 30, 7, 90);
+    const r = await fetchKlinesChain(exchange_id, pair.toUpperCase(), [
+      { interval: '1h', limit: Math.min(d * 24, 1000) },
+      { interval: '15m', limit: 600 },
+      { interval: '5m', limit: 800 },
+    ]);
+    if (r.klines.length < 60) return res.status(400).json({ error: `Data kurang (${r.klines.length} candle, butuh ≥60)` });
+    const { takerFee } = await import('../strategies/fees.js');
+    const top = await optimize(strategy, params || {}, r.klines as any, {
+      budget: num(budget, 100000, 1, 1e12), fee: takerFee(exchange_id, params || {}),
+      exchangeId: exchange_id, maxCombos: 100,
+    });
+    res.json({ strategy, pair: pair.toUpperCase(), candles: r.klines.length, interval: r.interval, source: r.source, top });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }

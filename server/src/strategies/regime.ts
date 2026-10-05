@@ -52,6 +52,26 @@ export function adaptiveTargetPct(basePct: number, mode: RegimeMode, feeFloorPct
   return Math.max(scaled, feeFloorPct);
 }
 
+/**
+ * Konfirmasi multi-timeframe: arah tren 1h (SMA20 vs SMA50).
+ * Sinyal 5m hanya diambil bila selaras (atau netral) dengan timeframe besar
+ * — memotong sinyal palsu melawan arus. Gagal ambil data = netral (fail-open).
+ */
+export async function higherTrend(getKlines: (interval: string, limit: number) => Promise<any[]>): Promise<'up' | 'down' | 'flat'> {
+  try {
+    const kl = await getKlines('1h', 60);
+    const closes = closesOf(kl);
+    if (closes.length < 50) return 'flat';
+    const sma = (n: number) => closes.slice(-n).reduce((s, v) => s + v, 0) / n;
+    const f = sma(20), s = sma(50);
+    if (f > s * 1.001) return 'up';
+    if (f < s * 0.999) return 'down';
+    return 'flat';
+  } catch {
+    return 'flat';
+  }
+}
+
 /** Cooldown antar-entry: scalp 2 mnt, normal 5 mnt, hemat 15 mnt (override via params.cooldown_min). */
 export function adaptiveCooldownMs(params: any, mode: RegimeMode): number {
   const override = Number(params?.cooldown_min);

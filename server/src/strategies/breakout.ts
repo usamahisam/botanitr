@@ -1,6 +1,6 @@
 import { Strategy, StrategyContext, Action, registerStrategy, numParam } from './types.js';
 import { minGrossTargetPct } from './fees.js';
-import { adaptiveCooldownMs, detectRegime } from './regime.js';
+import { adaptiveCooldownMs, detectRegime, higherTrend } from './regime.js';
 import { atr, closesOf, donchian, toCandles } from './indicators.js';
 
 /**
@@ -84,8 +84,8 @@ const breakout: Strategy = {
       return actions;
     }
 
-    // Entry: tembus high N candle + cooldown
-    if (price > dc.high) {
+    // Entry: tembus high N candle + 1h selaras (jangan lawan arus) + cooldown
+    if (price > dc.high && (params.mtf_confirm === false || (await higherTrend(ctx.getKlines)) !== 'down')) {
       const regime = detectRegime(state.candles, params);
       if (ctx.now - (state.lastEntryTs || 0) >= adaptiveCooldownMs(params, regime.mode)) {
         const pct = Math.max(10, Math.min(100, numParam(params, 'budget_pct', 100, 10, 100)));

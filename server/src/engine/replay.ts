@@ -10,6 +10,7 @@ export type KlineTuple = [number, number, number, number, number, number];
 export interface ReplayOpts {
   budget?: number;
   fee?: number;          // fraksi per sisi (def 0.003 = Indodax)
+  slippagePct?: number;  // selip eksekusi per sisi dalam % (def 0 = tanpa selip)
   minLot?: number;
   exchangeId?: string;
   stepMs?: number;       // waktu antar candle (def 5 mnt)
@@ -52,6 +53,7 @@ export async function replay(
 ): Promise<ReplayResult> {
   const budget = opts.budget ?? 1000000;
   const fee = opts.fee ?? 0.003;
+  const slip = (opts.slippagePct ?? 0) / 100;
   const stepMs = opts.stepMs ?? 300000;
   const maxPer = opts.maxActionsPerTick ?? 10;
 
@@ -93,7 +95,8 @@ export async function replay(
       if (a.type === 'buy') {
         const amount = Number(a.amountQuote ?? 0);
         if (!(amount > 0) || cash < amount) continue;
-        const { qty } = applyFill(strategyName, state, a, price, fee);
+        // Selip: beli dieksekusi sedikit lebih mahal dari sinyal
+        const { qty } = applyFill(strategyName, state, a, price * (1 + slip), fee);
         if (qty <= 0) continue;
         cash -= amount;
         invQty += qty;
@@ -104,7 +107,8 @@ export async function replay(
         qty = Math.min(qty, invQty); // tak bisa jual melebihi punya
         if (qty <= 0) continue;
         const ratio = qty / Number(a.qtyBase);
-        const proceeds = qty * price * (1 - fee);
+        // Selip: jual dieksekusi sedikit lebih murah dari sinyal
+        const proceeds = qty * price * (1 - slip) * (1 - fee);
         const costPart = Number(a.costBasis ?? qty * price) * ratio;
         cash += proceeds;
         invQty -= qty;

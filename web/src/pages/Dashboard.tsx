@@ -41,8 +41,14 @@ export default function Dashboard() {
   const [err, setErr] = useState('');
   const [issues, setIssues] = useState<BalanceIssue[]>([]);
 
+  const [corrNote, setCorrNote] = useState('');
+
   const load = useCallback(() => {
     api.get<DashboardData>('/dashboard').then(d => { setData(d); setErr(''); }).catch(e => setErr(e.message));
+    api.get<{ high: any[]; note: string }>('/correlation').then(r => {
+      if (r.high.length > 0) setCorrNote(r.note);
+      else setCorrNote('');
+    }).catch(() => {});
     api.get<any[]>('/balances/check').then(rows => {
       setIssues(rows.flatMap(r => [
         ...((r.bots || []).filter((b: any) => !b.ok).map((b: any) => ({
@@ -87,6 +93,13 @@ export default function Dashboard() {
   return (
     <div className="space-y-4">
       <Tape />
+
+      {corrNote && (
+        <div className="panel p-4 border-l-2 !border-l-[#f0b90b]">
+          <div className="text-[13px] font-semibold text-[#f0b90b] mb-1">Bot bergerak sama</div>
+          <div className="text-xs txt-2">{corrNote}</div>
+        </div>
+      )}
 
       {issues.length > 0 && (
         <div className="panel p-4 border-l-2 !border-l-[#f0b90b]">

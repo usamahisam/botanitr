@@ -1,6 +1,6 @@
 import { Strategy, StrategyContext, Action, registerStrategy, lotFromBudget, numParam } from './types.js';
 import { minGrossTargetPct } from './fees.js';
-import { adaptiveCooldownMs, detectRegime } from './regime.js';
+import { adaptiveCooldownMs, detectRegime, higherTrend } from './regime.js';
 import { atrPct, closesOf, rsi, sma } from './indicators.js';
 
 /**
@@ -151,10 +151,11 @@ const dynamic: Strategy = {
       }
     }
 
-    // === 3) BELI ATAS (ikut-tren): tembus garis atas + tren naik + tidak pucuk ===
+    // === 3) BELI ATAS (ikut-tren): tembus garis atas + tren naik + 1h selaras + tidak pucuk ===
     const trendCount = state.filledBuys.filter(b => (b.level ?? 0) >= TOP_OFF).length;
     const trendLot = Math.floor(lot * numParam(params, 'trend_lot_mult', 0.5, 0.1, 1));
-    if (!toppy && trendUp && trendCount < Math.max(1, Math.min(10, Math.floor(numParam(params, 'max_trend_buys', 3, 1, 10))))
+    const htf = params.mtf_confirm === false ? 'flat' : await higherTrend(ctx.getKlines);
+    if (!toppy && trendUp && htf !== 'down' && trendCount < Math.max(1, Math.min(10, Math.floor(numParam(params, 'max_trend_buys', 3, 1, 10))))
         && ctx.now - (state.lastTrendBuyTs || 0) >= adaptiveCooldownMs(params, regimeMode)) {
       for (let i = 1; i <= levels; i++) {
         const line = state.anchor * (1 + i * step);

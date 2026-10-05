@@ -47,13 +47,16 @@ function MaxBudgetBox({ exchange, budget, mode, onMax }: {
   );
 }
 
-function BacktestPanel({ exchange, pair, strategy, params, budget }: {
+function BacktestPanel({ exchange, pair, strategy, params, budget, onParams }: {
   exchange: string; pair: string; strategy: string; params: Record<string, any>; budget: number;
+  onParams: (p: Record<string, any>) => void;
 }) {
   const [days, setDays] = useState(14);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BtResult | null>(null);
   const [err, setErr] = useState('');
+  const [optLoading, setOptLoading] = useState(false);
+  const [optTop, setOptTop] = useState<{ params: Record<string, any>; testRet: number; trades: number }[] | null>(null);
 
   const run = async () => {
     setLoading(true); setErr(''); setResult(null);
@@ -62,6 +65,15 @@ function BacktestPanel({ exchange, pair, strategy, params, budget }: {
       setResult(r);
     } catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
+  };
+
+  const optimize = async () => {
+    setOptLoading(true); setErr(''); setOptTop(null);
+    try {
+      const r: any = await api.post('/optimize', { exchange_id: exchange, pair, strategy, params, days: 30, budget });
+      setOptTop(r.top);
+    } catch (e: any) { setErr(e.message); }
+    finally { setOptLoading(false); }
   };
 
   const up = (result?.profitPct ?? 0) >= 0;
@@ -78,8 +90,24 @@ function BacktestPanel({ exchange, pair, strategy, params, budget }: {
           <button onClick={run} disabled={loading} className="btn btn-ghost btn-sm">
             {loading ? 'Menguji…' : 'Jalankan uji'}
           </button>
+          <button onClick={optimize} disabled={optLoading} className="btn btn-ghost btn-sm" title="Cari parameter terbaik otomatis (walk-forward 30 hari, anti overfitting)">
+            {optLoading ? 'Mencari…' : '✨ Optimasi otomatis'}
+          </button>
         </div>
       </div>
+      {optTop && optTop.length > 0 && (
+        <div className="mt-3 rounded-md border border-[#2ebd85]/30 bg-[#2ebd85]/[0.05] px-3 py-2.5 text-[12px]">
+          <div className="font-semibold txt-up mb-1.5">Parameter terbaik dari data 30 hari (uji-murni, bukan jago-kandang):</div>
+          {optTop.slice(0, 3).map((t, i) => (
+            <div key={i} className="flex items-center gap-2 py-1 flex-wrap">
+              <span className="num txt-3">#{i + 1}</span>
+              <span className="num txt-2">{Object.entries(t.params).map(([k, v]) => `${k}=${v}`).join(' · ')}</span>
+              <span className={`num font-semibold ${t.testRet >= 0 ? 'txt-up' : 'txt-down'}`}>{t.testRet >= 0 ? '+' : ''}{t.testRet.toFixed(2)}% · {t.trades}n</span>
+              <button onClick={() => onParams({ ...params, ...t.params })} className="btn btn-ghost btn-sm !py-0.5 !px-2 !text-[11px]">Pakai</button>
+            </div>
+          ))}
+        </div>
+      )}
       {err && <div className="text-[13px] txt-down mt-2">{err}</div>}
       {result && (
         <div className="mt-3">
@@ -436,7 +464,7 @@ export default function Wizard() {
             </div>
           </div>
           <p className="text-[11px] txt-3 mt-2">Batas rugi 0 = nonaktif. Bot dijeda otomatis bila rugi harian melewati batas.</p>
-          <BacktestPanel exchange={exchange} pair={pair} strategy={selected.strategi} params={params} budget={budget} />
+          <BacktestPanel exchange={exchange} pair={pair} strategy={selected.strategi} params={params} budget={budget} onParams={setParams} />
           <div className="flex justify-between mt-4">
             <button onClick={() => setStep(1)} className="btn btn-ghost">Kembali</button>
             <button onClick={() => setStep(3)} className="btn btn-primary">Lanjut <Icon.arrowRight size={14} /></button>
