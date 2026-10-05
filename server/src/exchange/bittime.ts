@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { db } from '../db/index.js';
 import { config } from '../config.js';
 import { createHttp } from './http.js';
-import { ExchangeClient, Ticker, Balance, OrderResult, Kline, ExchangeError } from './base.js';
+import { ExchangeClient, Ticker, Balance, OrderResult, Kline, ExchangeError, assertTicker, validKline } from './base.js';
 
 /**
  * Client Bittime spot — https://openapi.bittime.com (dok: bittime-docs.github.io).
@@ -66,13 +66,13 @@ export class BittimeClient implements ExchangeClient {
       if (!t24) throw new ExchangeError(`Bittime: simbol ${symbol} tidak ditemukan`, -1121);
       const last = parseFloat(t24.lastPrice);
       if (!Number.isFinite(last)) throw new ExchangeError(`Bittime: respons ticker tidak valid`, t24?.code);
-      return {
+      return assertTicker({
         pair: symbol,
         bid: parseFloat(book.bidPrice), ask: parseFloat(book.askPrice), last,
         high24: parseFloat(t24.highPrice ?? t24.high24h ?? '0'),
         low24: parseFloat(t24.lowPrice ?? t24.low24h ?? '0'),
         vol24: parseFloat(t24.quoteVolume || '0'), ts: Date.now()
-      };
+      }, this.label);
     } catch (e: any) {
       if (e instanceof ExchangeError) throw e;
       throw normalizeError(e);
@@ -100,7 +100,8 @@ export class BittimeClient implements ExchangeClient {
         else { b.h = Math.max(b.h, price); b.l = Math.min(b.l, price); b.c = price; b.v += amount; }
       }
       const out = [...buckets.entries()].sort((a, b) => a[0] - b[0])
-        .map(([t, b]) => [t, b.o, b.h, b.l, b.c, b.v] as Kline);
+        .map(([t, b]) => [t, b.o, b.h, b.l, b.c, b.v] as Kline)
+        .filter(validKline);
       if (out.length >= 3) return out.slice(-limit);
     } catch { /* lanjut fallback */ }
     const t = await this.getTicker(pair);

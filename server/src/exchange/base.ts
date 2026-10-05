@@ -36,6 +36,29 @@ export class ExchangeError extends Error {
   constructor(message: string, public readonly code?: string | number) { super(message); this.name = 'ExchangeError'; }
 }
 
+/**
+ * Validasi ticker mentah dari exchange. Harga korup (NaN/<=0) pernah terjadi
+ * (halaman maintenance, respons terpotong) dan bila lolos akan meracuni
+ * saldo paper (NaN), EMA scalper, dan PnL — semuanya diam-diam.
+ */
+export function assertTicker(t: Ticker, label: string): Ticker {
+  const bad = !t || !Number.isFinite(t.last) || t.last <= 0 ||
+    !Number.isFinite(t.bid) || t.bid <= 0 ||
+    !Number.isFinite(t.ask) || t.ask <= 0;
+  if (bad) throw new ExchangeError(`${label}: respons ticker tidak valid`);
+  if (!Number.isFinite(t.high24)) t.high24 = t.last;
+  if (!Number.isFinite(t.low24)) t.low24 = t.last;
+  if (!Number.isFinite(t.vol24)) t.vol24 = 0;
+  return t;
+}
+
+/** Validasi satu baris kline hasil agregasi; baris korup dibuang, bukan diracuni. */
+export function validKline(k: any[]): k is Kline {
+  if (!Array.isArray(k) || k.length < 6) return false;
+  const [, o, h, l, c] = k;
+  return [o, h, l, c].every(v => Number.isFinite(v) && (v as number) > 0) && Number.isFinite(k[0]);
+}
+
 export function parsePair(pair: string, quote: string): { base: string; quote: string } {
   const p = pair.toUpperCase();
   if (p.endsWith(quote)) return { base: p.slice(0, -quote.length), quote };

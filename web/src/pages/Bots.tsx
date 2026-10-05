@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, Bot, LogRow } from '../lib/api';
 import { fmtIDR, fmtSignedIDR, fmtTime } from '../lib/format';
 import { getSocket } from '../lib/ws';
@@ -8,7 +9,7 @@ import { Icon } from '../components/icons';
 const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester', rebalance: 'Rebalance' };
 const PER_PAGE = 8;
 
-const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'DCA_TP', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'INVENTORY_HARVEST_RECYCLE', 'AUTO_COMPOUND'];
+const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'DCA_TP', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'INVENTORY_HARVEST_RECYCLE', 'REBALANCE', 'AUTO_COMPOUND'];
 
 function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -30,7 +31,8 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
       if (action === 'delete') { if (!confirm(`Hapus bot "${bot.name}"?`)) return; await api.del(`/bots/${bot.id}`); }
       else await api.post(`/bots/${bot.id}/${action}`);
       onChanged();
-    } finally { setBusy(false); }
+    } catch (e: any) { alert(e.message || 'Aksi gagal'); }
+    finally { setBusy(false); }
   };
   const winRate = bot.stats.total > 0 ? (bot.stats.wins / bot.stats.total) * 100 : 0;
   const running = bot.status === 'running';
@@ -187,13 +189,13 @@ export default function Bots() {
           <h2 className="text-[17px] font-bold tracking-tight">Bot</h2>
           <p className="text-xs txt-3 mt-0.5">{bots.length} bot terdaftar · {bots.filter(b => b.status === 'running').length} berjalan</p>
         </div>
-        <a href="/wizard" className="btn btn-primary btn-sm shrink-0"><Icon.plus size={14} /> Bot baru</a>
+        <Link to="/wizard" className="btn btn-primary btn-sm shrink-0"><Icon.plus size={14} /> Bot baru</Link>
       </div>
 
       {bots.length === 0 ? (
         <div className="panel p-10 text-center">
           <p className="txt-2 text-sm">Belum ada bot yang berjalan.</p>
-          <a href="/wizard" className="btn btn-primary btn-sm mt-4">Buat bot pertama</a>
+          <Link to="/wizard" className="btn btn-primary btn-sm mt-4">Buat bot pertama</Link>
         </div>
       ) : (
         <>

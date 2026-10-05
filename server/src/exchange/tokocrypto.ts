@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { createHttp } from './http.js';
-import { ExchangeClient, Ticker, Balance, OrderResult, Kline, ExchangeError } from './base.js';
+import { ExchangeClient, Ticker, Balance, OrderResult, Kline, ExchangeError, assertTicker, validKline } from './base.js';
 
 /** Error 3701 = IP diblokir/geo-restrict. Pesan jelas agar user tahu harus pakai proxy. */
 export function normalizeError(e: any, label = 'Tokocrypto'): ExchangeError {
@@ -57,12 +57,12 @@ export class TokocryptoClient implements ExchangeClient {
       ]);
       const last = parseFloat(t24.lastPrice);
       if (!Number.isFinite(last)) throw new ExchangeError(`${this.label}: respons ticker tidak valid`, t24?.code);
-      return {
+      return assertTicker({
         pair: symbol,
         bid: parseFloat(book.bidPrice), ask: parseFloat(book.askPrice), last,
         high24: parseFloat(t24.highPrice), low24: parseFloat(t24.lowPrice),
         vol24: parseFloat(t24.quoteVolume || '0'), ts: Date.now()
-      };
+      }, this.label);
     } catch (e: any) { throw normalizeError(e, this.label); }
   }
 
@@ -72,7 +72,7 @@ export class TokocryptoClient implements ExchangeClient {
         params: { symbol: pair.toUpperCase(), interval, limit: Math.min(limit, 1000) }
       });
       if (!Array.isArray(data)) throw new ExchangeError(`${this.label}: respons klines tidak valid`, data?.code);
-      return data.map((k: any[]) => [k[0], parseFloat(k[1]), parseFloat(k[2]), parseFloat(k[3]), parseFloat(k[4]), parseFloat(k[5])] as Kline);
+      return (data.map((k: any[]) => [k[0], parseFloat(k[1]), parseFloat(k[2]), parseFloat(k[3]), parseFloat(k[4]), parseFloat(k[5])] as Kline)).filter(validKline);
     } catch (e: any) {
       if (e instanceof ExchangeError) throw e;
       throw normalizeError(e, this.label);

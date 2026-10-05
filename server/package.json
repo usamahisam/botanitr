@@ -22,7 +22,8 @@
     "test:budget": "tsx scripts/test-bot-budget.ts",
     "test:backtest": "tsx scripts/test-backtest-fallback.ts",
     "typecheck": "tsc --noEmit",
-    "test:resume": "tsx scripts/test-resume.ts"
+    "test:resume": "tsx scripts/test-resume.ts",
+    "test:audit": "tsx scripts/test-audit-http.ts"
   },
   "dependencies": {
     "axios": "^1.7.9",

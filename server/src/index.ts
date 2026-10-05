@@ -97,3 +97,13 @@ main().catch(e => {
   console.error('Fatal:', e);
   process.exit(1);
 });
+
+// Jaring pengaman terakhir: catat rejection tak tertangani ke DB + konsol
+// agar tak hilang diam-diam (proses tetap hidup; crash fatal tetap exit via handler di atas).
+process.on('unhandledRejection', (reason: any) => {
+  const msg = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
+  try {
+    log('error', 'ERROR', `Unhandled rejection: ${msg.slice(0, 300)}`);
+  } catch { /* DB belum siap */ }
+  console.error('Unhandled rejection:', msg);
+});

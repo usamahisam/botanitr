@@ -4,7 +4,7 @@ import {
   hashPassword, verifyPassword, signToken, userCount,
   backfillLegacyToAdmin, authCookie, clearCookie, uid
 } from '../auth.js';
-import { requireAuth, requireAdmin } from '../auth.js';
+import { requireAuth, requireAdmin, loginRateLimit } from '../auth.js';
 
 export const authRouter = Router();
 const asyncH = (fn: any) => (req: any, res: any, next: any) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -15,7 +15,7 @@ authRouter.get('/auth/status', asyncH(async (_req: any, res: any) => {
 }));
 
 /** Setup awal: buat admin pertama (hanya jika belum ada user) + klaim data legacy */
-authRouter.post('/auth/setup', asyncH(async (req: any, res: any) => {
+authRouter.post('/auth/setup', loginRateLimit, asyncH(async (req: any, res: any) => {
   if (userCount() > 0) return res.status(400).json({ error: 'Setup sudah dilakukan. Login sebagai admin untuk menambah user.' });
   const { username, password } = req.body || {};
   if (!username || String(username).length < 3) return res.status(400).json({ error: 'Username minimal 3 karakter' });
@@ -30,7 +30,7 @@ authRouter.post('/auth/setup', asyncH(async (req: any, res: any) => {
 }));
 
 /** Login */
-authRouter.post('/auth/login', asyncH(async (req: any, res: any) => {
+authRouter.post('/auth/login', loginRateLimit, asyncH(async (req: any, res: any) => {
   const { username, password } = req.body || {};
   const row = queries.getUserByName.get(String(username || '').trim()) as UserRow | undefined;
   if (!row || !(await verifyPassword(String(password || ''), row.pass_hash))) {
@@ -89,6 +89,16 @@ authRouter.delete('/auth/users/:id', requireAuth, requireAdmin, asyncH(async (re
   const target = queries.getUser.get(id) as UserRow | undefined;
   if (!target) return res.status(404).json({ error: 'User tidak ditemukan' });
   if (target.role === 'admin' && admins <= 1) return res.status(400).json({ error: 'Tidak bisa menghapus admin terakhir' });
+  // Hapus bersih seluruh data milik user (bot, trade, log, kredensial, dsb.)
+  // agar API key terenkripsi & riwayatnya tak tertinggal yatim di DB.
+  const del = (table: string) => db.prepare(`DELETE FROM ${table} WHERE user_id=?`).run(id);
+  for (const t of ['bots', 'trades', 'logs', 'settings', 'exchanges', 'paper_balances', 'balance_snapshots', 'price_alerts']) del(t);
+  db.prepare('DELETE FROM telegram_chats WHERE user_id=?').run(id);
+  db.prepare('DELETE FROM market_ratings WHERE user_id=?').run(id);
+  db.prepare('DELETE FROM market_presets WHERE user_id=?').run(id);
+  db.prepare('DELETE FROM market_ratings WHERE preset_id NOT IN (SELECT id FROM market_presets)').run();
   db.prepare('DELETE FROM users WHERE id=?').run(id);
+  const { registry } = await import('../exchange/registry.js');
+  registry.dropUser(id);
   res.json({ ok: true });
 }));

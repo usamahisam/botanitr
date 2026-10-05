@@ -1,5 +1,5 @@
 import { db, now } from '../db/index.js';
-import { registry } from '../exchange/registry.js';
+import { registry, KNOWN_EXCHANGES } from '../exchange/registry.js';
 import { log } from '../log.js';
 import { notify } from '../telegram/notify.js';
 
@@ -23,7 +23,7 @@ export async function activateKillSwitch(triggeredBy: string, userId: number): P
   result.bots_paused = info.changes;
 
   // 2. Batalkan open order live (client milik user)
-  for (const id of ['indodax', 'tokocrypto', 'binance']) {
+  for (const id of KNOWN_EXCHANGES) {
     try {
       const client = registry.getForUser(id, userId);
       if (!client.hasCredentials()) continue;

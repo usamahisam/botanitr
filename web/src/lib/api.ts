@@ -30,6 +30,11 @@ export async function download(path: string, filename: string) {
   const token = getToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(BASE + path, { headers });
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    setToken(null);
+    if (window.location.pathname !== '/login') window.location.href = '/login';
+    throw new Error('Sesi berakhir, silakan login ulang');
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

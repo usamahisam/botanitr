@@ -1,7 +1,7 @@
 import { Telegraf } from 'telegraf';
 import { db, queries, settings, now } from '../db/index.js';
 import type { UserRow } from '../db/index.js';
-import { registry } from '../exchange/registry.js';
+import { registry, KNOWN_EXCHANGES } from '../exchange/registry.js';
 import { log } from '../log.js';
 import { fmtIDR, fmtPct } from '../utils/format.js';
 import { fetchExchangeBalance, getUsdtIdr } from '../engine/balances.js';
@@ -84,7 +84,7 @@ function maskChat(ctx: any): number | null {
 
 function userExchangeIds(userId: number): string[] {
   const rows = db.prepare('SELECT id FROM exchanges WHERE user_id=?').all(userId) as any[];
-  return rows.length > 0 ? rows.map(r => r.id) : ['indodax', 'tokocrypto', 'binance'];
+  return rows.length > 0 ? rows.map(r => r.id) : [...KNOWN_EXCHANGES];
 }
 
 async function buildStatus(userId: number): Promise<string> {
@@ -293,9 +293,14 @@ function setupHandlers(inst: Telegraf) {
     await ctx.editMessageText('✅ Kill switch dibatalkan. Bot tetap berjalan.');
   });
   inst.action('panic_confirm', async ctx => {
+    const userId = (ctx as any).state?.userId;
+    if (!userId) {
+      await ctx.answerCbQuery('Sesi kedaluwarsa, ulangi /panic.');
+      return;
+    }
     await ctx.answerCbQuery('Mengaktifkan…');
     const { activateKillSwitch } = await import('../engine/killswitch.js');
-    const r = await activateKillSwitch(`Telegram @${ctx.from?.username || ctx.from?.id}`, ctx.state.userId);
+    const r = await activateKillSwitch(`Telegram @${ctx.from?.username || ctx.from?.id}`, userId);
     const total = Object.values(r.orders_cancelled).reduce((s, n) => s + n, 0);
     await ctx.editMessageText(`🚨 KILL SWITCH AKTIF\n${r.bots_paused} bot di-pause\n${total} open order dibatalkan${r.errors.length ? `\n⚠️ ${r.errors.join('; ')}` : ''}\n\nGunakan /resume untuk menjalankan lagi.`);
   });

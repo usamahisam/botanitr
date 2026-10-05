@@ -9,7 +9,8 @@ export default function ExchangeCard({ ex, onSynced }: { ex: ExchangeView; onSyn
 
   const sync = async () => {
     setSyncing(true);
-    try { await api.post(`/exchanges/${ex.id}/sync`); onSynced(); } finally { setSyncing(false); }
+    try { await api.post(`/exchanges/${ex.id}/sync`); } catch { /* onSynced di bawah me-refresh status error */ }
+    finally { setSyncing(false); onSynced(); }
   };
 
   const changePct = ex.profit_harian && ex.saldo_total_idr

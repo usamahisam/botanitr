@@ -89,6 +89,13 @@ function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: 
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Sinkronkan state lokal bila data exchange berubah dari server (mis. setelah Simpan)
+  useEffect(() => {
+    setProxy(ex.proxy_url || '');
+    setMode(ex.mode);
+    setApiVersion(ex.api_version_setting || 'auto');
+  }, [ex.proxy_url, ex.mode, ex.api_version_setting]);
+
   const save = async () => {
     setSaving(true); setResult(null);
     try {

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { createHttp } from './http.js';
-import { Ticker, Balance, OrderResult, ExchangeError } from './base.js';
+import { Ticker, Balance, OrderResult, ExchangeError, assertTicker } from './base.js';
 
 /**
  * Client Indodax TAPI v2 (Binance-style).
@@ -150,9 +150,9 @@ export class IndodaxV2Client {
     const p = pair.toLowerCase().includes('_') ? pair.toLowerCase() : pair.toLowerCase().replace(/idr$/, '_idr');
     const { data } = await this.apiHttp.get(`/api/${p}/ticker`);
     const t = data.ticker;
-    return {
+    return assertTicker({
       pair: pair.toUpperCase(), bid: parseFloat(t.buy), ask: parseFloat(t.sell), last: parseFloat(t.last),
       high24: parseFloat(t.high), low24: parseFloat(t.low), vol24: parseFloat(t.vol_idr || '0'), ts: Date.now()
-    };
+    }, 'Indodax');
   }
 }

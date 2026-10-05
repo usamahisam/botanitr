@@ -1,4 +1,4 @@
-import { Strategy, StrategyContext, Action, registerStrategy, lotFromBudget } from './types.js';
+import { Strategy, StrategyContext, Action, registerStrategy, lotFromBudget, numParam } from './types.js';
 
 /**
  * Inventory Harvester: akumulasi saat turun, saat target tercapai jual cukup
@@ -20,9 +20,9 @@ const harvester: Strategy = {
 
   onTick(ctx: StrategyContext, state: HarvesterState, params: any): Action[] {
     const price = ctx.ticker.last;
-    const drop = Number(params.drop_pct) / 100;
-    const harvestPct = Number(params.harvest_pct) / 100;
-    const maxBuys = Math.max(1, Number(params.max_buys));
+    const drop = numParam(params, 'drop_pct', 2.5, 0.1, 50) / 100;
+    const harvestPct = numParam(params, 'harvest_pct', 2, 0.1, 100) / 100;
+    const maxBuys = Math.max(1, Math.min(50, Math.floor(numParam(params, 'max_buys', 8, 1, 50))));
     const lot = lotFromBudget(ctx.bot.current_budget, maxBuys);
     const actions: Action[] = [];
 
@@ -34,9 +34,11 @@ const harvester: Strategy = {
     if (totalQty > 0 && avgCost > 0 && price >= avgCost * (1 + harvestPct + 0.004)) {
       // qty_sell * price = totalCost * (1 + fee) → modal kembali
       const targetCair = totalCost * 1.003;
-      let qtySell = targetCair / price;
-      qtySell = Math.min(qtySell, totalQty);
+      const qtySell = Math.min(targetCair / price, totalQty);
       const kasCair = qtySell * price;
+      // Dust-hold SEBELUM emit: hasil di bawah minimum exchange pasti ditolak
+      // (error-loop); tahan — akumulasi berikutnya memperbesar kasCair.
+      if (kasCair < (ctx.minLot ?? 0)) return actions;
       const profit = kasCair - (totalCost * (qtySell / totalQty));
       actions.push({
         type: 'sell', qtyBase: qtySell,
@@ -51,10 +53,9 @@ const harvester: Strategy = {
       return actions;
     }
 
-    // BUY pertama
+    // BUY pertama (lastBuyPrice dicatat scheduler HANYA bila fill sukses)
     if (state.entries.length === 0 && lot > 0) {
       actions.push({ type: 'buy', amountQuote: lot, reason: `Harvester entry @ ${Math.round(price)}`, tag: 'TRADE' });
-      state.lastBuyPrice = price;
       return actions;
     }
 
@@ -66,7 +67,6 @@ const harvester: Strategy = {
         reason: `Harvester akumulasi ke-${state.entries.length + 1} @ ${Math.round(price)}`,
         tag: 'TRADE'
       });
-      state.lastBuyPrice = price;
     }
 
     return actions;

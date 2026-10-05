@@ -85,3 +85,33 @@ Fitur darurat satu aksi: **pause semua bot + batalkan semua open order live**.
 **Verifikasi E2E:** `test:killswitch` **7/7 ✅** — 2 bot running + 2 open order mock → semua paused + semua order dibatalkan, tanpa error.
 
 Jalankan: `npm run test:killswitch -w server`
+
+## Audit Putaran 2 — Stop/Resume & Seluruh Alur (Okt 2026)
+Audit sistematis backend + frontend + HTTP menemukan dan memperbaiki:
+
+**Strategi (anti dust-loop → dust-hold):** grid/harvester/scalper menahan
+(dust-hold) aksi di bawah `ctx.minLot` alih-alih menjual paksa atau menghapus
+state (menghapus = abandon aset riil). Fill-deferral: `levelsHit`/`lastEntryPrice`/
+`position` maju hanya via `applyFillToState` setelah fill terkonfirmasi.
+Grid re-anchor saat keluar range tanpa posisi. Scalper tahan crash saat
+`state.candles` undefined (state legacy) + filter candle korup.
+Rebalance: normalisasi targets + fallback quote bila `ctx.quote` kosong.
+
+**Engine:** stagger per-bot via `shouldTick` + `pruneTickCache`; skip log
+di-throttle (`logSkipOnce`, 1/15 mnt per sebab) agar DB tak bloat;
+koersi defensif hasil fill; compound dijepit ke budget.
+
+**API:** helper `num()` untuk semua query numerik (tak ada lagi 500 karena
+`LIMIT 'rusak'`); validasi budget/mode/strategi/compound/target/alert/
+marketplace; quick-trade pre-flight saldo; alert tolak exchange tak dikenal.
+
+**Auth:** `loginRateLimit` (10/5 mnt/IP), hapus user kaskade penuh
+(bots, exchanges, settings, dsb.) + token user terhapus jadi 401.
+
+**Telegram/Index:** guard `ctx.chat` di `/panic`, tangkap `unhandledRejection`.
+
+**Frontend:** `safeNum` di format, guard hapus alert, ExchangeCard refresh
+sinkron, download CSV tangani 401, Pengaturan sinkron state, Wizard retry analisis.
+
+**Verifikasi:** `npm run test:all` **215/215 ✅** termasuk file baru
+`test:audit-http` (23 cek lapisan HTTP) dan `test:resume` (38 cek).

@@ -1,4 +1,4 @@
-import { Strategy, StrategyContext, Action, registerStrategy, lotFromBudget } from './types.js';
+import { Strategy, StrategyContext, Action, registerStrategy, lotFromBudget, numParam } from './types.js';
 
 /**
  * DCA: beli bertahap tiap harga turun x% dari entry terakhir,
@@ -20,9 +20,9 @@ const dca: Strategy = {
 
   onTick(ctx: StrategyContext, state: DcaState, params: any): Action[] {
     const price = ctx.ticker.last;
-    const drop = Number(params.drop_pct) / 100;
-    const tp = Number(params.take_profit_pct) / 100;
-    const maxBuys = Math.max(1, Number(params.max_buys));
+    const drop = numParam(params, 'drop_pct', 2, 0.1, 50) / 100;
+    const tp = numParam(params, 'take_profit_pct', 3, 0.1, 100) / 100;
+    const maxBuys = Math.max(1, Math.min(50, Math.floor(numParam(params, 'max_buys', 5, 1, 50))));
     const lot = lotFromBudget(ctx.bot.current_budget, maxBuys);
     const actions: Action[] = [];
 
@@ -30,8 +30,8 @@ const dca: Strategy = {
     const totalQty = state.entries.reduce((s, e) => s + e.qty, 0);
     const avgCost = totalQty > 0 ? totalCost / totalQty : 0;
 
-    // SELL: target profit tercapai
-    if (totalQty > 0 && avgCost > 0 && price >= avgCost * (1 + tp + 0.004)) {
+    // SELL: target profit tercapai (tahan bila nilai di bawah minimum exchange)
+    if (totalQty > 0 && avgCost > 0 && price >= avgCost * (1 + tp + 0.004) && totalQty * price >= (ctx.minLot ?? 0)) {
       actions.push({
         type: 'sell', qtyBase: totalQty, costBasis: totalCost,
         reason: `[DCA_TP] Target profit +${params.take_profit_pct}% tercapai. Jual ${totalQty.toFixed(8)} @ ${Math.round(price)} (avg ${Math.round(avgCost)})`,
@@ -43,10 +43,9 @@ const dca: Strategy = {
       return actions;
     }
 
-    // BUY pertama
+    // BUY pertama (lastEntryPrice dicatat scheduler HANYA bila fill sukses)
     if (state.entries.length === 0 && lot > 0) {
       actions.push({ type: 'buy', amountQuote: lot, reason: `DCA entry pertama @ ${Math.round(price)}`, tag: 'TRADE' });
-      state.lastEntryPrice = price;
       return actions;
     }
 
@@ -55,10 +54,9 @@ const dca: Strategy = {
         && price <= state.lastEntryPrice * (1 - drop) && lot > 0) {
       actions.push({
         type: 'buy', amountQuote: lot,
-        reason: `DCA beli ke-${state.entries.length + 1} saat turun ${params.drop_pct}% @ ${Math.round(price)}`,
+        reason: `DCA beli ke-${state.entries.length + 1} saat turun ${numParam(params, 'drop_pct', 2)}% @ ${Math.round(price)}`,
         tag: 'TRADE'
       });
-      state.lastEntryPrice = price;
     }
 
     return actions;

@@ -1,5 +1,4 @@
-import { Strategy, StrategyContext, Action, registerStrategy } from './types.js';
-import { parsePair } from '../exchange/base.js';
+import { Strategy, StrategyContext, Action, registerStrategy, numParam } from './types.js';
 
 /**
  * Rebalance Portfolio: jaga alokasi aset sesuai target %.
@@ -27,18 +26,26 @@ const rebalance: Strategy = {
 
   async onTick(ctx: StrategyContext, state: RebalanceState, params: any): Promise<Action[]> {
     const actions: Action[] = [];
-    const intervalMs = Number(params.interval_min ?? 60) * 60000;
+    const intervalMs = numParam(params, 'interval_min', 60, 1, 1440) * 60000;
     if (ctx.now - state.lastRun < intervalMs) return actions;
 
-    let targets: Record<string, number> = {};
+    let rawTargets: Record<string, number> = {};
     try {
-      targets = typeof params.targets === 'string' ? JSON.parse(params.targets) : (params.targets || {});
+      rawTargets = typeof params.targets === 'string' ? JSON.parse(params.targets) : (params.targets || {});
     } catch { return actions; }
-    const threshold = Number(params.threshold_pct ?? 2) / 100;
-    const maxTrade = Number(params.max_trade_quote ?? ctx.bot.current_budget);
-    if (Object.keys(targets).length === 0) return actions;
+    // Normalisasi: abaikan entri non-angka, skala agar total = 100%
+    const clean = Object.entries(rawTargets)
+      .map(([k, v]) => [String(k).toUpperCase(), Number(v)] as const)
+      .filter(([, v]) => Number.isFinite(v) && v > 0);
+    const sum = clean.reduce((s, [, v]) => s + v, 0);
+    if (clean.length === 0 || sum <= 0) return actions;
+    const targets: Record<string, number> = Object.fromEntries(clean.map(([k, v]) => [k, (v / sum) * 100]));
+    const threshold = numParam(params, 'threshold_pct', 2, 0.1, 50) / 100;
+    const maxTrade = Math.max(numParam(params, 'max_trade_quote', ctx.bot.current_budget, 0), 0);
+    if (maxTrade <= 0) return actions;
 
-    const quote = ctx.bot.exchange_id === 'indodax' ? 'IDR' : 'USDT';
+    // Fallback derivasi lama bila pemanggil tak mengisi ctx.quote (ctx manual/tes)
+    const quote = String(ctx.quote || (ctx.bot.exchange_id === 'indodax' ? 'IDR' : 'USDT') || 'IDR').toUpperCase();
     const balances = await ctx.getBalances();
     const byAsset = new Map(balances.map(b => [b.asset.toUpperCase(), b.free + b.locked]));
 

@@ -59,7 +59,8 @@ function extractToken(req: any): string | null {
 /** Middleware: wajib login. Path publik: /health, /auth/status|setup|login|logout */
 const PUBLIC_AUTH = new Set(['/auth/status', '/auth/setup', '/auth/login', '/auth/logout']);
 export function requireAuth(req: any, res: any, next: any) {
-  const path: string = req.path || '';
+  const raw: string = req.path || '';
+  const path = raw.length > 1 ? raw.replace(/\/+$/, '') : raw;
   if (path === '/health' || PUBLIC_AUTH.has(path)) return next();
   const token = extractToken(req);
   const user = token ? verifyToken(token) : null;
@@ -80,6 +81,31 @@ export function requireAdmin(req: any, res: any, next: any) {
 
 export function uid(req: any): number {
   return req.user.id;
+}
+
+/**
+ * Rate limit sederhana in-memory untuk endpoint sensitif (login/setup).
+ * Tanpa ini, halaman login yang terekspos ke internet bisa di-brute-force.
+ * Batas: 10 percobaan per IP per 5 menit; lebihnya ditolak 429.
+ */
+const attempts = new Map<string, { count: number; resetAt: number }>();
+export function loginRateLimit(req: any, res: any, next: any) {
+  const ip = String(req.ip || req.socket?.remoteAddress || 'unknown');
+  const nowMs = Date.now();
+  const cur = attempts.get(ip);
+  if (!cur || nowMs >= cur.resetAt) {
+    attempts.set(ip, { count: 1, resetAt: nowMs + 5 * 60 * 1000 });
+    // Bersihkan entri basi sesekali agar Map tak membesar
+    if (attempts.size > 5000) {
+      for (const [k, v] of attempts) if (v.resetAt <= nowMs) attempts.delete(k);
+    }
+    return next();
+  }
+  cur.count++;
+  if (cur.count > 10) {
+    return res.status(429).json({ error: 'Terlalu banyak percobaan. Coba lagi dalam 5 menit.' });
+  }
+  next();
 }
 
 export const COOKIE_NAME = 'botani_token';

@@ -20,6 +20,28 @@ export const api = Router();
 
 const asyncH = (fn: any) => (req: any, res: any, next: any) => Promise.resolve(fn(req, res, next)).catch(next);
 
+/**
+ * Ambil angka query/body dengan aman. Parameter tak valid (NaN, "abc")
+ * sebelumnya lolos menjadi NaN dan menyebabkan respons 500/aneh.
+ */
+function num(v: any, def: number, min?: number, max?: number): number {
+  let n = Number(v);
+  if (!Number.isFinite(n)) n = def;
+  if (min !== undefined) n = Math.max(min, n);
+  if (max !== undefined) n = Math.min(max, n);
+  return n;
+}
+
+/** Parse JSON aman — data korup di DB tak boleh menumbangkan seluruh respons. */
+function safeJson<T>(s: string | null | undefined, fallback: T): T {
+  if (!s) return fallback;
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 function getUserExchange(userId: number, id: string) {
   return db.prepare('SELECT * FROM exchanges WHERE id=? AND user_id=?').get(id, userId) as ExchangeRow | undefined;
 }
@@ -193,7 +215,7 @@ api.get('/bots', asyncH(async (req: any, res: any) => {
     ? db.prepare('SELECT * FROM bots WHERE user_id=? AND status=? ORDER BY id DESC').all(userId, status)
     : db.prepare('SELECT * FROM bots WHERE user_id=? ORDER BY id DESC').all(userId)) as BotRow[];
   res.json(bots.map(b => ({
-    ...b, params: JSON.parse(b.params), state: undefined,
+    ...b, params: safeJson(b.params, {}), state: undefined,
     stats: pnl.botStats(b.id),
     trend: pnl.botTrend(b.id)
   })));
@@ -202,7 +224,7 @@ api.get('/bots', asyncH(async (req: any, res: any) => {
 api.get('/bots/:id', asyncH(async (req: any, res: any) => {
   const bot = getUserBot(uid(req), req.params.id);
   if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
-  res.json({ ...bot, params: JSON.parse(bot.params), state: JSON.parse(bot.state), stats: pnl.botStats(bot.id), trend: pnl.botTrend(bot.id) });
+  res.json({ ...bot, params: safeJson(bot.params, {}), state: safeJson(bot.state, {}), stats: pnl.botStats(bot.id), trend: pnl.botTrend(bot.id) });
 }));
 
 api.post('/bots', asyncH(async (req: any, res: any) => {
@@ -210,6 +232,13 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
   const { name, exchange_id, pair, strategy, params, budget_idr, auto_compound_pct, mode, confirmed_live, max_daily_loss_pct, status } = req.body || {};
   if (!name || !exchange_id || !pair || !strategy || !budget_idr) {
     return res.status(400).json({ error: 'Field wajib: name, exchange_id, pair, strategy, budget_idr' });
+  }
+  const budgetNum = Number(budget_idr);
+  if (!Number.isFinite(budgetNum) || budgetNum <= 0) {
+    return res.status(400).json({ error: 'budget_idr harus angka lebih dari 0' });
+  }
+  if (mode !== undefined && mode !== 'paper' && mode !== 'live') {
+    return res.status(400).json({ error: "mode harus 'paper' atau 'live'" });
   }
   const strat = stratRegistry.get(strategy);
   if (!strat) return res.status(400).json({ error: `Strategi tidak dikenal: ${strategy}` });
@@ -223,20 +252,23 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
     if (!confirmed_live) return res.status(400).json({ error: 'Konfirmasi live trading diperlukan (confirmed_live)' });
     // Validasi budget vs kas riil agar gagal cepat dengan pesan jelas (bukan diam saat engine jalan)
     const { validateLiveBudget } = await import('../engine/budget.js');
-    const check = await validateLiveBudget(userId, exchange_id, Number(budget_idr));
+    const check = await validateLiveBudget(userId, exchange_id, budgetNum);
     if (!check.ok) return res.status(400).json({ error: check.message, free_quote: check.freeQuote, quote: check.quote });
   }
 
-  const mergedParams = { ...strat.defaultParams, ...(params || {}) };
-  const divisor = strategy === 'grid' ? Math.max(2, Number(mergedParams.levels ?? 6)) : Math.max(1, Number(mergedParams.max_buys ?? 5));
-  const lot = Math.floor(Number(budget_idr) / divisor);
+  const mergedParams = { ...strat.defaultParams, ...((params && typeof params === 'object' ? params : {})) };
+  const rawDiv = strategy === 'grid' ? mergedParams.levels : mergedParams.max_buys;
+  const divisor = Math.max(strategy === 'grid' ? 2 : 1, Math.min(50, Math.floor(Number(rawDiv)) || 0) || 1);
+  const lot = Math.floor(budgetNum / divisor);
   const finalStatus = status === 'paused' ? 'paused' : 'running';
+  const compoundPct = Number(auto_compound_pct ?? 100);
+  const safeCompound = Number.isFinite(compoundPct) ? Math.min(100, Math.max(0, compoundPct)) : 100;
 
   const info = queries.insertBot.run({
-    user_id: userId, name, exchange_id, pair: pair.toUpperCase(), strategy,
-    params: JSON.stringify(mergedParams), budget_idr: Number(budget_idr),
-    current_budget: Number(budget_idr), lot,
-    mode: finalMode, auto_compound_pct: Number(auto_compound_pct ?? 100),
+    user_id: userId, name: String(name).slice(0, 80), exchange_id, pair: String(pair).toUpperCase().slice(0, 20), strategy,
+    params: JSON.stringify(mergedParams), budget_idr: budgetNum,
+    current_budget: budgetNum, lot,
+    mode: finalMode, auto_compound_pct: safeCompound,
     status: finalStatus, state: JSON.stringify(strat.init(mergedParams)),
     max_daily_loss_pct: Math.max(0, Number(max_daily_loss_pct ?? 0)),
     market_preset_id: null,
@@ -263,14 +295,14 @@ api.delete('/bots/:id', asyncH(async (req: any, res: any) => {
 }));
 api.get('/bots/:id/trend', asyncH(async (req: any, res: any) => {
   if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
-  res.json(pnl.botTrend(Number(req.params.id), Number(req.query.days || 7)));
+  res.json(pnl.botTrend(Number(req.params.id), num(req.query.days, 7, 1, 90)));
 }));
 
 // Equity curve per bot (termasuk titik live agar langsung tampil)
 api.get('/bots/:id/equity', asyncH(async (req: any, res: any) => {
   if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   const { getEquityCurve } = await import('../engine/equity.js');
-  res.json(await getEquityCurve(Number(req.params.id), Number(req.query.days || 30)));
+  res.json(await getEquityCurve(Number(req.params.id), num(req.query.days, 30, 1, 365)));
 }));
 
 // Kas maksimal yang bisa dipakai sebagai budget bot (per exchange milik user).
@@ -317,6 +349,23 @@ api.post('/trade/quick', asyncH(async (req: any, res: any) => {
   const trader = usePaper ? registry.getPaperForUser(exchange_id, userId) : client;
   const clientOrderId = `quick-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`.slice(0, 36);
 
+  // Pre-flight yang sama dengan engine agar gagal cepat berpesan jelas
+  try {
+    const { checkBalance } = await import('../engine/trader.js');
+    const { getUsdtIdr } = await import('../engine/balances.js');
+    const probeRate = client.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
+    const balErr = await checkBalance(
+      { id: 0, user_id: userId, exchange_id, pair } as any,
+      side === 'buy'
+        ? { type: 'buy', amountQuote: numAmount, reason: '', tag: 'QUICK' }
+        : { type: 'sell', qtyBase: numAmount, reason: '', tag: 'QUICK' },
+      usePaper, probeRate
+    );
+    if (balErr) return res.status(400).json({ error: balErr });
+  } catch {
+    // Gagal baca saldo → biarkan exchange yang memutuskan (fail-open)
+  }
+
   try {
     let result;
     if (side === 'buy') {
@@ -356,7 +405,7 @@ api.get('/trades', asyncH(async (req: any, res: any) => {
   const { sql, args } = tradeFilter(req);
   const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) c');
   const total = (db.prepare(countSql).get(...args) as any).c;
-  res.json({ total, rows: db.prepare(sql + ' ORDER BY id DESC LIMIT ? OFFSET ?').all(...args, Number(limit), Number(offset)) });
+  res.json({ total, rows: db.prepare(sql + ' ORDER BY id DESC LIMIT ? OFFSET ?').all(...args, num(limit, 50, 1, 200), num(offset, 0, 0, 1000000)) });
 }));
 
 // Ekspor CSV riwayat trades (filter sama, tanpa pagination)
@@ -389,7 +438,7 @@ api.get('/logs', asyncH(async (req: any, res: any) => {
   if (tag === 'trades') sql += ` AND tag IN ('TRADE','GRID_UNWIND','DCA_TP','SCALPER_TP','SCALPER_SL','SCALPER_EXIT','INVENTORY_HARVEST_RECYCLE','REBALANCE','AUTO_COMPOUND')`;
   else if (tag) { sql += ' AND tag=?'; args.push(tag); }
   sql += ' ORDER BY id DESC LIMIT ?';
-  args.push(Number(limit));
+  args.push(num(limit, 100, 1, 500));
   res.json(db.prepare(sql).all(...args));
 }));
 api.delete('/logs', asyncH(async (req: any, res: any) => {
@@ -403,7 +452,7 @@ api.delete('/logs', asyncH(async (req: any, res: any) => {
 api.get('/wizard/presets', asyncH(async (req: any, res: any) => {
   const { exchange = 'indodax', pair = 'XRPIDR', budget = 100000 } = req.query as any;
   try {
-    res.json(await recommend(String(exchange), String(pair).toUpperCase(), Number(budget)));
+    res.json(await recommend(String(exchange), String(pair).toUpperCase(), num(budget, 100000, 1, 1e12)));
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
@@ -428,10 +477,11 @@ api.post('/backtest', asyncH(async (req: any, res: any) => {
     return res.status(400).json({ error: 'Field wajib: exchange_id, pair, strategy' });
   }
   if (!stratRegistry.get(strategy)) return res.status(400).json({ error: `Strategi tidak dikenal: ${strategy}` });
-  const d = Math.min(Math.max(Number(days) || 14, 1), 90);
+  const d = num(days, 14, 1, 90);
+  const b = num(budget, 100000, 1, 1e12);
   try {
     const { runCustomBacktest } = await import('../engine/wizard.js');
-    res.json(await runCustomBacktest(exchange_id, pair.toUpperCase(), strategy, params || {}, d, Number(budget) || 100000));
+    res.json(await runCustomBacktest(exchange_id, pair.toUpperCase(), strategy, params || {}, d, b));
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
@@ -458,6 +508,10 @@ api.put('/settings', asyncH(async (req: any, res: any) => {
   if (body.indodax_api_version !== undefined && body.indodax_api_version !== '' &&
       !['auto', 'v1', 'v2'].includes(String(body.indodax_api_version))) {
     return res.status(400).json({ error: 'indodax_api_version harus auto, v1, atau v2' });
+  }
+  if (body.daily_summary_time !== undefined && body.daily_summary_time !== '' &&
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.daily_summary_time))) {
+    return res.status(400).json({ error: 'daily_summary_time harus format JJ:MM (00:00–23:59)' });
   }
   const allowed = ['telegram_bot_token', 'telegram_allowed_chat_ids', 'proxy_telegram', 'default_paper_mode', 'daily_summary_time', 'indodax_api_version', 'paper_seed_idr', 'paper_seed_usdt'];
   for (const k of allowed) {
@@ -498,9 +552,19 @@ api.post('/alerts', asyncH(async (req: any, res: any) => {
   if (!exchange_id || !pair || !direction || !target_price) {
     return res.status(400).json({ error: 'Field wajib: exchange_id, pair, direction, target_price' });
   }
+  // Exchange tak dikenal/diverifikasi di sini agar alert tak mati diam-diam selamanya
+  try {
+    registry.getForUser(exchange_id, userId);
+  } catch {
+    return res.status(400).json({ error: 'Exchange tidak dikenal' });
+  }
   if (!['above', 'below'].includes(direction)) return res.status(400).json({ error: 'direction harus above atau below' });
+  const targetNum = Number(target_price);
+  if (!Number.isFinite(targetNum) || targetNum <= 0) {
+    return res.status(400).json({ error: 'target_price harus angka lebih dari 0' });
+  }
   const info = db.prepare('INSERT INTO price_alerts (user_id, exchange_id, pair, direction, target_price, note, active, created_at) VALUES (?,?,?,?,?,?,1,?)')
-    .run(userId, exchange_id, pair.toUpperCase(), direction, Number(target_price), note || null, now());
+    .run(userId, exchange_id, pair.toUpperCase(), direction, targetNum, (note ? String(note) : null)?.slice(0, 200) ?? null, now());
   res.status(201).json(db.prepare('SELECT * FROM price_alerts WHERE id=? AND user_id=?').get(info.lastInsertRowid, userId));
 }));
 api.delete('/alerts/:id', asyncH(async (req: any, res: any) => {
@@ -524,7 +588,11 @@ api.get('/marketplace', asyncH(async (req: any, res: any) => {
              FROM market_presets m LEFT JOIN market_ratings r ON r.preset_id=m.id
              WHERE m.public=1`;
   const args: any[] = [userId, userId];
-  if (search) { sql += ' AND (m.name LIKE ? OR m.description LIKE ?)'; args.push(`%${search}%`, `%${search}%`); }
+  if (search) {
+    const esc = search.replace(/[%_\\]/g, m => `\\${m}`);
+    sql += ` AND (m.name LIKE ? ESCAPE '\\' OR m.description LIKE ? ESCAPE '\\')`;
+    args.push(`%${esc}%`, `%${esc}%`);
+  }
   sql += ' GROUP BY m.id ORDER BY m.installs DESC, m.id ASC LIMIT 100';
   const rows = db.prepare(sql).all(...args) as any[];
   res.json(rows.map(r => ({ ...r, params: JSON.parse(r.params || '{}'), rating: Math.round(r.rating * 10) / 10 })));
@@ -536,9 +604,12 @@ api.post('/marketplace', asyncH(async (req: any, res: any) => {
   if (!name || !strategy) return res.status(400).json({ error: 'Field wajib: name, strategy' });
   const strat = stratRegistry.get(strategy);
   if (!strat) return res.status(400).json({ error: `Strategi tidak dikenal: ${strategy}` });
+  if (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params))) {
+    return res.status(400).json({ error: 'params harus objek' });
+  }
   const merged = { ...strat.defaultParams, ...(params || {}) };
   const info = db.prepare(`INSERT INTO market_presets (user_id, name, strategy, params, description, budget_quote, public, installs, created_at)
-    VALUES (?,?,?,?,?,?,1,0,?)`).run(userId, String(name).slice(0, 80), strategy, JSON.stringify(merged), String(description || '').slice(0, 500), Number(budget_quote) || 100000, now());
+    VALUES (?,?,?,?,?,?,1,0,?)`).run(userId, String(name).slice(0, 80), strategy, JSON.stringify(merged), String(description || '').slice(0, 500), num(budget_quote, 100000, 1, 1e12), now());
   res.status(201).json({ id: info.lastInsertRowid });
 }));
 
@@ -553,21 +624,23 @@ api.post('/marketplace/:id/install', asyncH(async (req: any, res: any) => {
   if (!exRow) return res.status(400).json({ error: 'Exchange tidak dikenal' });
   const strat = stratRegistry.get(preset.strategy);
   if (!strat) return res.status(400).json({ error: `Strategi tidak dikenal: ${preset.strategy}` });
-  const budget = Number(budget_quote) || preset.budget_quote || 100000;
+  const presetParams = safeJson<Record<string, any>>(preset.params, {});
+  const budgetRaw = Number(budget_quote ?? preset.budget_quote ?? 100000);
+  const budget = Number.isFinite(budgetRaw) && budgetRaw > 0 ? budgetRaw : 100000;
   const divisor = preset.strategy === 'grid' ? 6 : 5;
   const info = queries.insertBot.run({
-    user_id: userId, name: `${preset.name} (market)`, exchange_id, pair: String(pair || 'XRPIDR').toUpperCase(),
-    strategy: preset.strategy, params: preset.params,
+    user_id: userId, name: `${preset.name} (market)`.slice(0, 80), exchange_id, pair: String(pair || 'XRPIDR').toUpperCase().slice(0, 20),
+    strategy: preset.strategy, params: JSON.stringify(presetParams),
     budget_idr: budget, current_budget: budget, lot: Math.floor(budget / divisor),
     mode: 'paper', auto_compound_pct: 100,
     status: status === 'running' ? 'running' : 'paused',
-    state: JSON.stringify(strat.init(JSON.parse(preset.params))),
+    state: JSON.stringify(strat.init(presetParams)),
     max_daily_loss_pct: 0, market_preset_id: preset.id,
     created_at: now(), updated_at: now()
   });
   db.prepare('UPDATE market_presets SET installs=installs+1 WHERE id=?').run(preset.id);
   const bot = queries.getBot.get(info.lastInsertRowid) as BotRow;
-  res.status(201).json({ ...bot, params: JSON.parse(bot.params), state: JSON.parse(bot.state) });
+  res.status(201).json({ ...bot, params: safeJson(bot.params, {}), state: safeJson(bot.state, {}) });
 }));
 
 // Rating preset (1-5)

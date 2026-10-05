@@ -1,4 +1,4 @@
-import { queries, now, BotRow } from '../db/index.js';
+import { db, queries, now, BotRow } from '../db/index.js';
 import { registry } from '../exchange/registry.js';
 import { Ticker } from '../exchange/base.js';
 import { log } from '../log.js';
@@ -81,8 +81,9 @@ async function processBot(bot: BotRow) {
     balanceCache.set(balKey, balEntry);
   }
 
+  const minLot = (db.prepare('SELECT min_lot_idr FROM exchanges WHERE id=? AND user_id=?').get(bot.exchange_id, bot.user_id) as any)?.min_lot_idr ?? 10000;
   const ctx: StrategyContext = {
-    bot, ticker, usdtIdr, now: Date.now(),
+    bot, ticker, quote: client.quoteAsset, minLot, usdtIdr, now: Date.now(),
     getKlines: (interval, limit) => client.getKlines(bot.pair, interval, limit),
     getBalances: async () => balEntry!.data,
     getPrice: async (pair: string) => (await getTickerCached(bot.exchange_id, pair, bot.user_id)).last
@@ -104,13 +105,26 @@ async function processBot(bot: BotRow) {
   if (bot.error_count > 0) queries.setBotError.run(0, now(), bot.id);
 }
 
-/** Catat hasil fill ke struktur state internal strategi */
-function applyFillToState(strategyName: string, state: any, trade: any, action: any) {
+/**
+ * Catat hasil fill ke struktur state internal strategi.
+ * Diekspor untuk pengujian. PENTING: tracker (level/terakhir-beli) hanya
+ * dimajukan di sini — SETELAH fill terkonfirmasi — agar order yang gagal
+ * tetap dicoba lagi tick berikutnya, bukan hangus diam-diam.
+ */
+export function applyFillToState(strategyName: string, state: any, trade: any, action: any) {
   if (action.type === 'buy') {
     const entry = { price: trade.price, qty: trade.qty, cost: trade.value };
     if (Array.isArray(state.filledBuys)) state.filledBuys.push(entry);
     else if (Array.isArray(state.entries)) state.entries.push(entry);
     else if (strategyName === 'scalper') state.position = { entryPrice: trade.price, qty: trade.qty, cost: trade.value };
+    // Tracker harga terakhir (dipakai penentu buy berikutnya)
+    if (typeof state.lastEntryPrice === 'number') state.lastEntryPrice = trade.price;
+    if (typeof state.lastBuyPrice === 'number') state.lastBuyPrice = trade.price;
+    // Level grid dari meta aksi (bukan saat aksi dibuat)
+    const lvl = action?.meta?.level;
+    if (strategyName === 'grid' && Number.isInteger(lvl) && Array.isArray(state.levelsHit) && !state.levelsHit.includes(lvl)) {
+      state.levelsHit.push(lvl);
+    }
   }
   // Sell: state sudah di-reset oleh strategi itu sendiri saat menghasilkan aksi
 }

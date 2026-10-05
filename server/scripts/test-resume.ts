@@ -76,7 +76,83 @@ async function main() {
   const dip = { anchor: 1000, filledBuys: [], levelsHit: [] as number[] };
   const actsDip = await grid.onTick(mkCtx(985), dip, params);
   check('beli normal saat sentuh level 990', actsDip.length === 1 && actsDip[0].type === 'buy', JSON.stringify(actsDip.map(a => a.type)));
-  check('level ditandai', JSON.stringify(dip.levelsHit) === '[2]', JSON.stringify(dip.levelsHit));
+  check('level BELUM ditandai sebelum fill (deferral)', dip.levelsHit.length === 0, JSON.stringify(dip.levelsHit));
+  check('meta level terbawa di aksi', actsDip[0].meta?.level === 2, JSON.stringify(actsDip[0].meta));
+  const { applyFillToState } = await import('../src/engine/scheduler.js');
+  applyFillToState('grid', dip, { price: 985, qty: 1, value: 985 }, actsDip[0]);
+  check('level ditandai SETELAH fill', JSON.stringify(dip.levelsHit) === '[2]', JSON.stringify(dip.levelsHit));
+  // DCA: lastEntryPrice maju hanya saat fill
+  await import('../src/strategies/dca.js');
+  const dcaState: any = { entries: [], lastEntryPrice: 0 };
+  const dca = getStrategy('dca');
+  const dcaCtx: any = { bot: { id: 2, current_budget: 100000 }, ticker: { pair: 'XRPIDR', bid: 99, ask: 101, last: 100, high24: 100, low24: 100, vol24: 0, ts: 1 }, usdtIdr: 1, now: Date.now(), getKlines: async () => [], getBalances: async () => [], getPrice: async () => 100 };
+  const dcaActs = await dca.onTick(dcaCtx, dcaState, { drop_pct: 2, take_profit_pct: 3, max_buys: 5 });
+  check('DCA entry pertama teremisi', dcaActs.length === 1, `got ${dcaActs.length}`);
+  check('lastEntryPrice BELUM maju sebelum fill', dcaState.lastEntryPrice === 0, `got ${dcaState.lastEntryPrice}`);
+  applyFillToState('dca', dcaState, { price: 100, qty: 1, value: 100 }, dcaActs[0]);
+  check('lastEntryPrice maju SETELAH fill', dcaState.lastEntryPrice === 100, `got ${dcaState.lastEntryPrice}`);
+  check('entry tercatat', dcaState.entries.length === 1);
+
+  // ===== E) numParam: parameter korup tak boleh mematikan strategi =====
+  console.log('\nE) numParam sanitasi');
+  const { numParam } = await import('../src/strategies/types.js');
+  check('NaN -> default', numParam({ x: 'abc' }, 'x', 5) === 5);
+  check('undefined -> default', numParam({}, 'x', 5) === 5);
+  check('clamp min/max', numParam({ x: 1000 }, 'x', 5, 1, 50) === 50 && numParam({ x: -3 }, 'x', 5, 1, 50) === 1);
+  check('nilai valid lolos', numParam({ x: '2.5' }, 'x', 5) === 2.5);
+  const badParams = { drop_pct: 'rusak', take_profit_pct: NaN, max_buys: 'banyak' };
+  const deadState: any = { entries: [], lastEntryPrice: 0 };
+  const deadActs = await dca.onTick(dcaCtx, deadState, badParams);
+  check('DCA param korup tetap hasilkan entry (default)', deadActs.length === 1, `got ${deadActs.length}`);
+
+  // ===== F) Harvester: dust-hold — sisa debu ditahan, bukan dipanen paksa =====
+  console.log('\nF) Harvester dust-hold');
+  await import('../src/strategies/harvester.js');
+  const harv = getStrategy('harvester');
+  const hState: any = { entries: [{ price: 100, qty: 0.5, cost: 50 }], lastBuyPrice: 90 };
+  // minLot 30: panen-1 cair 50.15 (lolos), panen-2 cair ~25 (ditahan)
+  const hCtx: any = { ...dcaCtx, minLot: 30, ticker: { pair: 'XRPIDR', bid: 199, ask: 201, last: 200, high24: 200, low24: 200, vol24: 0, ts: 1 } };
+  const hActs = await harv.onTick(hCtx, hState, { drop_pct: 2.5, harvest_pct: 2, max_buys: 8 });
+  check('panen besar teremisi', hActs.length === 1 && hActs[0].tag === 'INVENTORY_HARVEST_RECYCLE', JSON.stringify(hActs.map(a => a.tag)));
+  check('sisa dipertahankan (bukan dikosongkan)', hState.entries.length === 1, `got ${hState.entries.length}`);
+  // Panen kedua beruntun di harga sama -> hasil < minLot -> DITAHAN (entries utuh)
+  const hActs2 = await harv.onTick(hCtx, hState, { drop_pct: 2.5, harvest_pct: 2, max_buys: 8 });
+  check('panen kedua ditahan (debu)', hActs2.length === 0, `got ${JSON.stringify(hActs2.map(a => a.tag))}`);
+  check('entries tetap utuh saat hold', hState.entries.length === 1, `got ${hState.entries.length}`);
+
+  // ===== G) Grid dust-hold: unwind terlalu kecil ditahan, bukan diclear =====
+  console.log('\nG) Grid dust-hold');
+  const gState: any = { anchor: 100, filledBuys: [{ level: 0, price: 100, qty: 0.0001, cost: 0.01 }], levelsHit: [0] };
+  const gCtx: any = { ...mkCtx(104), minLot: 50000 };
+  const gActs = await grid.onTick(gCtx, gState, params);
+  check('unwind debu ditahan (tanpa aksi)', gActs.length === 0, `got ${JSON.stringify(gActs.map(a => a.tag))}`);
+  check('filledBuys tetap (menunggu harga naik)', gState.filledBuys.length === 1, `got ${gState.filledBuys.length}`);
+  const gState2: any = { anchor: 100, filledBuys: [{ level: 0, price: 100, qty: 0.5, cost: 50 }], levelsHit: [0] };
+  const gCtx2: any = { ...mkCtx(104), minLot: 1 };
+  const gActs2 = await grid.onTick(gCtx2, gState2, params);
+  check('unwind normal tetap jalan', gActs2.length === 1 && gActs2[0].type === 'sell', `got ${JSON.stringify(gActs2.map(a => a.tag))}`);
+
+  // ===== H) Scalper: exit debu ditahan, bukan dijual paksa =====
+  console.log('\nH) Scalper dust-exit');
+  await import('../src/strategies/scalper.js');
+  const scalper = getStrategy('scalper');
+  // Tuple [t,o,h,l,c,v] sesuai tipe Kline exchange
+  const klinesUp = (n: number, start: number, step: number) =>
+    Array.from({ length: n }, (_, i) => [i, start + i * step, start + i * step + 1, start + i * step - 1, start + i * step, 1]);
+  const dustPos: any = { entryPrice: 100, qty: 0.0001 };
+  const sCtxHold: any = { ...mkCtx(110), minLot: 50000, getKlines: async () => klinesUp(30, 100, 1) };
+  const sActsHold = await scalper.onTick(sCtxHold, { position: dustPos, cooldownUntil: 0 }, { ema_fast: 5, ema_slow: 20, take_profit_pct: 50, stop_loss_pct: 50 });
+  check('take-profit debu ditahan', sActsHold.length === 0, `got ${JSON.stringify(sActsHold.map(a => a.tag))}`);
+  const bigPos: any = { entryPrice: 100, qty: 10 };
+  const sCtxBig: any = { ...mkCtx(110), minLot: 1, getKlines: async () => klinesUp(30, 100, 1) };
+  const sActsBig = await scalper.onTick(sCtxBig, { position: bigPos, cooldownUntil: 0 }, { ema_fast: 5, ema_slow: 20, take_profit_pct: 5, stop_loss_pct: 50 });
+  check('take-profit normal tetap jalan', sActsBig.length === 1 && sActsBig[0].type === 'sell', `got ${JSON.stringify(sActsBig.map(a => a.tag))}`);
+  // State legacy tanpa cache + getKlines gagal total -> tak crash, tak ada aksi
+  const sCtxDead: any = { ...mkCtx(110), minLot: 1, getKlines: async () => { throw new Error('jaringan putus'); } };
+  let deadScalpActs: any[] = [];
+  let crashed = false;
+  try { deadScalpActs = await scalper.onTick(sCtxDead, {} as any, {}); } catch { crashed = true; }
+  check('state korup + klines gagal tak crash', !crashed && deadScalpActs.length === 0, `crashed=${crashed}`);
 
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);

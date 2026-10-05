@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { createHttp } from './http.js';
-import { ExchangeClient, Ticker, Balance, OrderResult, Kline, ExchangeError, parsePair } from './base.js';
+import { ExchangeClient, Ticker, Balance, OrderResult, Kline, ExchangeError, parsePair, assertTicker, validKline } from './base.js';
 import { sleep } from '../utils/format.js';
 import { IndodaxV2Client } from './indodax-v2.js';
 import { log } from '../log.js';
@@ -49,20 +49,28 @@ export class IndodaxClient implements ExchangeClient {
   }
   hasCredentials() { return !!(this.apiKey && this.apiSecret); }
 
-  /** Deteksi versi API: true jika kredensial valid sebagai key TAPI v2 */
+  private detectPromise: Promise<boolean> | null = null;
+
+  /** Deteksi versi API: true jika kredensial valid sebagai key TAPI v2.
+   *  Promise di-cache agar probe konkuren (banyak bot satu tick) tak membanjiri API. */
   private async detectV2(): Promise<boolean> {
     if (this.useV2 !== null) return this.useV2;
     if (this.forceVersion === 'v1') { this.useV2 = false; return false; }
     if (!this.hasCredentials()) { this.useV2 = false; return false; }
-    this.useV2 = await this.v2.probe();
-    if (this.forceVersion === 'v2' && !this.useV2) {
-      throw new ExchangeError(
-        'Mode paksa v2 tetapi kredensial bukan kunci TAPI v2 yang valid. ' +
-        'Buat kunci khusus di indodax.com/trade_api, atau pilih Otomatis.'
-      );
+    if (!this.detectPromise) {
+      this.detectPromise = this.v2.probe().then(ok => {
+        this.useV2 = ok;
+        if (this.forceVersion === 'v2' && !ok) {
+          throw new ExchangeError(
+            'Mode paksa v2 tetapi kredensial bukan kunci TAPI v2 yang valid. ' +
+            'Buat kunci khusus di indodax.com/trade_api, atau pilih Otomatis.'
+          );
+        }
+        log('info', 'SYSTEM', `Indodax: menggunakan TAPI ${ok ? 'v2' : 'v1 (legacy)'} untuk akun ini`);
+        return ok;
+      }).finally(() => { this.detectPromise = null; });
     }
-    log('info', 'SYSTEM', `Indodax: menggunakan TAPI ${this.useV2 ? 'v2' : 'v1 (legacy)'} untuk akun ini`);
-    return this.useV2;
+    return this.detectPromise;
   }
 
   /** Format pair per endpoint: ticker → 'xrp_idr'; trades/depth → 'xrpidr' */
@@ -88,12 +96,12 @@ export class IndodaxClient implements ExchangeClient {
   async getTicker(pair: string): Promise<Ticker> {
     const { data } = await this.http.get(`/api/${IndodaxClient.pairUnderscore(pair)}/ticker`);
     const t = data.ticker;
-    return {
+    return assertTicker({
       pair: pair.toUpperCase(),
       bid: parseFloat(t.buy), ask: parseFloat(t.sell), last: parseFloat(t.last),
       high24: parseFloat(t.high), low24: parseFloat(t.low),
       vol24: parseFloat(t.vol_idr || '0'), ts: (t.server_time || Date.now() / 1000) * 1000
-    };
+    }, 'Indodax');
   }
 
   /**
@@ -118,7 +126,8 @@ export class IndodaxClient implements ExchangeClient {
         else { b.h = Math.max(b.h, price); b.l = Math.min(b.l, price); b.c = price; b.v += amount; }
       }
       const out = [...buckets.entries()].sort((a, b) => a[0] - b[0])
-        .map(([t, b]) => [t, b.o, b.h, b.l, b.c, b.v] as Kline);
+        .map(([t, b]) => [t, b.o, b.h, b.l, b.c, b.v] as Kline)
+        .filter(validKline);
       if (out.length >= 3) return out.slice(-limit);
     } catch { /* lanjut fallback */ }
     // Fallback: candle degenerate dari ticker

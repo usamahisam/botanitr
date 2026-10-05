@@ -65,7 +65,7 @@ async function main() {
   const state: any = { lastRun: 0 };
   const ctx: any = {
     bot, ticker: { pair: 'BTCIDR', bid: 1.5e9, ask: 1.5e9, last: 1.5e9, high24: 0, low24: 0, vol24: 0, ts: 1 },
-    usdtIdr: 1, now: Date.now(),
+    quote: 'IDR', usdtIdr: 1, now: Date.now(),
     getKlines: async () => [],
     getBalances: async () => [{ asset: 'BTC', free: 0.0005, locked: 0 }, { asset: 'IDR', free: 250000, locked: 0 }],
     getPrice: async (p: string) => p === 'BTCIDR' ? 1.5e9 : 48e6

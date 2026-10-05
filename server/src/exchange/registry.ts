@@ -20,7 +20,9 @@ function createClient(id: string): ExchangeClient {
   throw new Error(`Exchange tidak dikenal: ${id}`);
 }
 
-const KNOWN = ['indodax', 'tokocrypto', 'binance', 'bittime'];
+/** Daftar exchange terdaftar — satu sumber (killswitch, telegram, sync, health). */
+export const KNOWN_EXCHANGES = ['indodax', 'tokocrypto', 'binance', 'bittime'];
+const KNOWN = KNOWN_EXCHANGES;
 
 class ExchangeRegistry {
   private clients = new Map<string, ExchangeClient>();
@@ -87,6 +89,20 @@ class ExchangeRegistry {
     const users = db.prepare('SELECT id FROM users').all() as any[];
     const ids = users.length > 0 ? users.map(u => u.id) : [0];
     for (const uid of ids) this.reloadUser(uid);
+  }
+
+  /**
+   * Buang seluruh instance milik user (dipakai setelah user dihapus) agar
+   * kredensial terdekripsi tak tertinggal di memori.
+   */
+  dropUser(userId: number) {
+    const suffix = `:u${userId}`;
+    for (const k of [...this.clients.keys()]) {
+      if (k.endsWith(suffix)) this.clients.delete(k);
+    }
+    for (const k of [...this.paperTraders.keys()]) {
+      if (k.endsWith(suffix)) this.paperTraders.delete(k);
+    }
   }
 
   list(): ExchangeClient[] {

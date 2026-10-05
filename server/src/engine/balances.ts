@@ -1,5 +1,5 @@
 import { db, queries, now, ExchangeRow } from '../db/index.js';
-import { registry } from '../exchange/registry.js';
+import { registry, KNOWN_EXCHANGES } from '../exchange/registry.js';
 import { log } from '../log.js';
 
 let usdtIdrCache = { rate: 16000, ts: 0 };
@@ -60,6 +60,9 @@ export async function fetchExchangeBalance(exchangeId: string, userId = 0): Prom
       } else {
         try {
           const ticker = await client.getTicker(`${b.asset}${quote}`);
+          // getTicker sudah tervalidasi; pengaman ganda agar satu koin korup
+          // tak meracuni total portofolio menjadi NaN
+          if (!Number.isFinite(ticker.last) || ticker.last <= 0) continue;
           valueQuote = qty * ticker.last;
           valueIdr = valueQuote * usdtIdr;
         } catch { valueQuote = 0; valueIdr = 0; }
@@ -122,7 +125,7 @@ export interface BalanceHealth {
  */
 export async function checkBalancesHealth(userId: number): Promise<BalanceHealth[]> {
   const rows = db.prepare('SELECT id FROM exchanges WHERE user_id=?').all(userId) as any[];
-  const ids = rows.length > 0 ? rows.map(r => r.id) : ['indodax', 'tokocrypto', 'binance'];
+  const ids = rows.length > 0 ? rows.map(r => r.id) : [...KNOWN_EXCHANGES];
   const bots = db.prepare(`SELECT * FROM bots WHERE user_id=? AND status='running'`).all(userId) as any[];
   const out: BalanceHealth[] = [];
   for (const id of ids) {
@@ -150,7 +153,7 @@ let syncTimer: NodeJS.Timeout | null = null;
 export function startBalanceSync(broadcast: (views: ExchangeBalanceView[], userId: number) => void) {
   const syncUser = async (userId: number) => {
     const rows = db.prepare('SELECT id FROM exchanges WHERE user_id=?').all(userId) as any[];
-    const ids = rows.length > 0 ? rows.map(r => r.id) : ['indodax', 'tokocrypto', 'binance'];
+    const ids = rows.length > 0 ? rows.map(r => r.id) : [...KNOWN_EXCHANGES];
     const views: ExchangeBalanceView[] = [];
     for (const id of ids) {
       views.push(await fetchExchangeBalance(id, userId));

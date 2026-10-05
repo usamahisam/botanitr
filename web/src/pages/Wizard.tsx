@@ -264,7 +264,9 @@ export default function Wizard() {
 
       {error && (
         <div className="flex items-start gap-2 text-[13px] txt-down border border-[rgba(246,70,93,0.3)] bg-[rgba(246,70,93,0.07)] rounded-md px-3 py-2.5 mb-4">
-          <Icon.warn size={15} /> <span>{error}</span>
+          <Icon.warn size={15} />
+          <span className="flex-1">{error}</span>
+          {step === 2 && <button onClick={analyze} disabled={loadingPresets} className="btn btn-ghost btn-sm shrink-0">Coba lagi</button>}
         </div>
       )}
 

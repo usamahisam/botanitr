@@ -10,11 +10,32 @@ import { compound } from './compound.js';
 let tradeCounter = 0;
 
 /**
+ * Throttle log skip berulang: kondisi persisten (kas kurang/lot kecil) bisa
+ * terpicu tiap tick (~450 baris/jam ke DB). Batasi 1 log per 15 menit per
+ * (bot, jenis-sebab); eksekusi skip-nya sendiri tetap jalan tiap tick.
+ */
+const lastSkipLog = new Map<string, number>();
+const SKIP_LOG_MS = 15 * 60 * 1000;
+function logSkipOnce(botId: number, kind: string, level: 'info' | 'warn', tag: any, message: string, opts: any): boolean {
+  const key = `${botId}:${kind}`;
+  const last = lastSkipLog.get(key) || 0;
+  if (Date.now() - last < SKIP_LOG_MS) return false;
+  lastSkipLog.set(key, Date.now());
+  log(level, tag, message, opts);
+  // Bersihkan entri basi sesekali
+  if (lastSkipLog.size > 1000) {
+    const cutoff = Date.now() - SKIP_LOG_MS;
+    for (const [k, t] of lastSkipLog) if (t < cutoff) lastSkipLog.delete(k);
+  }
+  return true;
+}
+
+/**
  * Pre-flight balance guard: pastikan saldo cukup SEBELUM order dikirim.
  * Mengembalikan null bila aman, atau pesan error yang jelas bila tidak.
  * Fail-open: bila saldo gagal dibaca, biarkan order jalan (exchange yang menolak bila kurang).
  */
-async function checkBalance(bot: BotRow, action: Action, paper: boolean, usdtIdr: number): Promise<string | null> {
+export async function checkBalance(bot: BotRow, action: Action, paper: boolean, usdtIdr: number): Promise<string | null> {
   const client = registry.getForUser(bot.exchange_id, bot.user_id);
   const quote = client.quoteAsset;
   const { base } = parsePair(bot.pair, quote);
@@ -67,25 +88,42 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
 
     // Pre-flight: lot minimum + kecukupan saldo (skip bersih tanpa error_count)
     if (action.type === 'buy' && (action.amountQuote ?? 0) < minLot) {
-      log('warn', 'TRADE', `Order buy ${fmtIDR((action.amountQuote ?? 0) * usdtIdr)} < lot minimum ${fmtIDR(minLot * usdtIdr)}, dilewati`, { bot_id: bot.id, user_id: bot.user_id });
+      logSkipOnce(bot.id, 'minlot', 'warn', 'TRADE', `Order buy ${fmtIDR((action.amountQuote ?? 0) * usdtIdr)} < lot minimum ${fmtIDR(minLot * usdtIdr)}, dilewati`, { bot_id: bot.id, user_id: bot.user_id });
       return null;
     }
     const balErr = await checkBalance(bot, action, paper, usdtIdr);
     if (balErr) {
-      log('warn', 'TRADE', `${balErr} — order dilewati`, { bot_id: bot.id, user_id: bot.user_id });
-      if (!paper) await notify(`⚠️ Order ${bot.name} dilewati:\n${balErr}`, bot.user_id).catch(() => {});
+      const logged = logSkipOnce(bot.id, 'balance', 'warn', 'TRADE', `${balErr} — order dilewati`, { bot_id: bot.id, user_id: bot.user_id });
+      if (logged && !paper) await notify(`⚠️ Order ${bot.name} dilewati:\n${balErr}`, bot.user_id).catch(() => {});
       return null;
     }
 
     if (action.type === 'buy') {
       const amount = action.amountQuote ?? 0;
       result = await trader.buyMarket(bot.pair, amount, clientOrderId);
+      // Koersi defensif: client harusnya mengembalikan number, tapi jangan percaya buta
+      result = { ...result, price: Number(result.price), qty: Number(result.qty), fee: Number(result.fee) || 0 };
       value = result.qty * result.price;
+      if (!Number.isFinite(value) || !Number.isFinite(result.qty) || !Number.isFinite(result.price) || result.qty <= 0) {
+        logSkipOnce(bot.id, 'badfill', 'warn', 'TRADE', `Hasil buy ${bot.pair} tak valid dari exchange, dilewati`, { bot_id: bot.id, user_id: bot.user_id });
+        return null;
+      }
     } else {
       const qty = action.qtyBase ?? 0;
       if (qty <= 0) return null;
       result = await trader.sellMarket(bot.pair, qty, clientOrderId);
+      result = { ...result, price: Number(result.price), qty: Number(result.qty), fee: Number(result.fee) || 0 };
       value = result.qty * result.price;
+      // Validasi hasil fill: nilai korup/NaN atau debu jauh di bawah lot minimum
+      // dilewati bersih (bukan error) agar sisa fraksional tak memicu error-loop.
+      if (!Number.isFinite(value) || !Number.isFinite(result.qty) || !Number.isFinite(result.price)) {
+        logSkipOnce(bot.id, 'badfill', 'warn', 'TRADE', `Hasil sell ${bot.pair} tak valid dari exchange, dilewati`, { bot_id: bot.id, user_id: bot.user_id });
+        return null;
+      }
+      if (value < minLot * 0.2) {
+        logSkipOnce(bot.id, 'dust', 'warn', 'TRADE', `Hasil sell ${bot.pair} terlalu kecil/debu (${fmtIDR(value * usdtIdr)}), dilewati`, { bot_id: bot.id, user_id: bot.user_id });
+        return null;
+      }
     }
 
     const realized = action.type === 'sell' ? value - result.fee - (action.costBasis ?? 0) : 0;

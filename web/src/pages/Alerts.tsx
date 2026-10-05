@@ -101,7 +101,7 @@ export default function Alerts() {
                   </td>
                   <td className="!text-right num font-semibold">{fmtIDR(a.target_price)}</td>
                   <td className="!text-right w-24">
-                    <button onClick={async () => { await api.del(`/alerts/${a.id}`); load(); }} className="btn btn-ghost btn-sm">Hapus</button>
+                    <button onClick={async () => { try { await api.del(`/alerts/${a.id}`); load(); } catch (e: any) { alert(e.message || 'Hapus gagal'); } }} className="btn btn-ghost btn-sm">Hapus</button>
                   </td>
                 </tr>
               ))}
@@ -123,7 +123,7 @@ export default function Alerts() {
                     <div className="text-xs txt-3 mt-0.5">Terpicu {a.triggered_at ? fmtDateTime(a.triggered_at) : '—'}</div>
                   </td>
                   <td className="!text-right w-24">
-                    <button onClick={async () => { await api.del(`/alerts/${a.id}`); load(); }} className="btn btn-ghost btn-sm">Hapus</button>
+                    <button onClick={async () => { try { await api.del(`/alerts/${a.id}`); load(); } catch (e: any) { alert(e.message || 'Hapus gagal'); } }} className="btn btn-ghost btn-sm">Hapus</button>
                   </td>
                 </tr>
               ))}
