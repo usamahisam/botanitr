@@ -195,30 +195,34 @@ export function backtest(preset: PresetDef, klines: Kline[], budgetQuote: number
       }
     }
   } else {
-    // Grid/DCA/Harvester disederhanakan: simulasi mean-reversion
+    // Grid/DCA/Harvester disederhanakan: simulasi mean-reversion.
+    // avg = harga rata-rata tertimbang qty (satuan HARGA — bukan nominal).
     const p = preset.params;
     const stepPct = Number(p.drop_pct ?? p.lower_pct ?? 2) / 100;
     const tpPct = Number(p.take_profit_pct ?? p.harvest_pct ?? 3) / 100;
     const maxN = Number(p.max_buys ?? p.levels ?? 5);
-    let entries: { price: number; cost: number }[] = [];
+    let entries: { price: number; qty: number; cost: number }[] = [];
     const lot = budgetQuote / maxN;
     let lastBuy = 0;
     closes.forEach((price, i) => {
-      if (entries.length === 0) { entries.push({ price, cost: lot }); lastBuy = price; }
+      if (!(price > 0)) return;
+      if (entries.length === 0) { entries.push({ price, qty: lot / price, cost: lot }); lastBuy = price; }
       else {
         const totalCost = entries.reduce((s, e) => s + e.cost, 0);
-        const avg = totalCost / entries.length;
-        if (price >= avg * (1 + tpPct + fee)) {
-          const pnl = totalCost * tpPct - totalCost * fee;
+        const totalQty = entries.reduce((s, e) => s + e.qty, 0);
+        const avg = totalQty > 0 ? totalCost / totalQty : 0;
+        if (avg > 0 && price >= avg * (1 + tpPct + fee)) {
+          const proceeds = totalQty * price * (1 - fee);
+          const pnl = proceeds - totalCost;
           profit += pnl; total++; if (pnl > 0) wins++;
           entries = [];
           trackDd(budgetQuote + profit);
         } else if (lastBuy > 0 && price <= lastBuy * (1 - stepPct) && entries.length < maxN) {
-          entries.push({ price, cost: lot }); lastBuy = price;
+          entries.push({ price, qty: lot / price, cost: lot }); lastBuy = price;
         }
       }
       if (i % sampleEvery === 0 || i === closes.length - 1) {
-        const floating = entries.reduce((s, e) => s + ((e.cost / e.price) * price - e.cost), 0);
+        const floating = entries.reduce((s, e) => s + (e.qty * price - e.cost), 0);
         const eq = budgetQuote + profit + floating;
         equity.push({ t: times[i], v: r2(eq) });
         trackDd(eq);

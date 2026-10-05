@@ -42,8 +42,9 @@ async function main() {
   // Seed 60 tick 1 menit (= ~1 jam) untuk pair CHAINIDR: tidak cukup untuk 1d,
   // tapi cukup untuk 1h (1 bucket? tidak — 1 jam = 1 bucket 1h!). Pakai 15m: 4 bucket. Hmm.
   // Skenario realistis: 3.300 tick (±55 jam) → 1h memberi ~55 bucket.
+  // Amplitudo ±3,8% agar ambang sim (drop 2% / TP 3%+fee) benar-benar terpicu.
   for (let i = 0; i < 3300; i++) {
-    ins.run('indodax', 'CHAINIDR', nowMs - (3300 - i) * 60000, 26000 + Math.sin(i / 20) * 300);
+    ins.run('indodax', 'CHAINIDR', nowMs - (3300 - i) * 60000, 26000 + Math.sin(i / 20) * 1000);
   }
   // Stub client exchange: selalu kembalikan <30 candle (simulasi Indodax)
   const client = registry.get('indodax') as any;
