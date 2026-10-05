@@ -23,8 +23,9 @@ interface ExchangeClient {
 - Base: `https://indodax.com`
 - Public: `GET /api/{pair}/ticker` (pair lowercase tanpa pemisah, mis. `btcidr`), `GET /api/{pair}/depth`, `GET /api/{pair}/trades`, klines tidak tersedia → ambil `GET /api/summaries` atau gunakan history trades; untuk backtest gunakan `GET https://indodax.com/api/{pair}/trades` (agregasi ke candle sederhana).
 - Private: `POST /tapi` header `Key: <apiKey>`, `Sign: HMAC_SHA512(postBody, secret)`; body `method=<m>&timestamp=<ms>`. Method: `getInfo`, `trade` (params: pair, type, price, idr/btc), `getOrder`, `openOrders`, `cancelOrder`, `tradeHistory`, `transactions`.
-- Fee: 0.3% (taker).
+- Fee: 0.3% (taker; aktual TAPIv2 0.2% — kode memakai estimasi konservatif, rekonsiliasi pakai fee aktual).
 - Ticker map: `buy`→bid, `sell`→ask, `last`→last.
+- **Minimum order resmi** (dari `GET /api/pairs`, contoh DOGEIDR): `trade_min_base_currency` = Rp 10.000 per order, `trade_min_traded_currency` = ±5,84 DOGE (bervariasi per koin). Guard `trader.ts` menolak order < `min_lot` exchange + pre-flight balance check menolak bila kas/aset kurang — keduanya skip bersih (tanpa `error_count`) + log angka butuh vs tersedia. Jadi "bot diam" karena minimum SELALU tercatat di log, bukan diam misterius.
 
 ## Tokocrypto (`exchange/tokocrypto.ts`)
 - Binance-compatible REST v3.
