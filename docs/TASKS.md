@@ -176,6 +176,11 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] `GET /marketplace`: bot tanpa link ikut terhitung di preset berstrategi sama (seed 1 strategi = 1 preset, tanpa double-count umum)
 - [x] E2E fallback +2 asserts di `test-v2`; total suite 154/154 ✅
 
+## Revisi: tombol Bersihkan Log tak berfungsi (ditambahkan)
+- [x] Root cause: GET baca `(user_id OR 0)` tapi DELETE hanya `user_id` → log sistem global selalu tersisa
+- [x] DELETE disamakan `(user_id OR 0)`; log user lain tetap aman
+- [x] E2E HTTP +4 asserts di `test-auth-http` (tampil, hapus, kosong, isolasi); total suite 158/158 ✅
+
 ## Revisi: Data Backtest Indodax + Pilihan Versi API (ditambahkan)
 - [x] Investigasi: `/api/trades` Indodax hanya ~500 trade (±5 jam) → mustahil backtest harian; tidak ada OHLC publik lain
 - [x] Perekam riwayat harga lokal (`price_history`, tiap menit, retensi 45 hari, via summaries sekaligus untuk IDR)

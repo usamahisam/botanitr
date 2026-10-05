@@ -46,6 +46,10 @@ async function main() {
     const res = await fetch(base + p, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     return { status: res.status, data: await res.json().catch(() => ({})) };
   };
+  const del = async (p: string, token?: string) => {
+    const res = await fetch(base + p, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    return { status: res.status, data: await res.json().catch(() => ({})) };
+  };
 
   // 1. Status awal: butuh setup
   let r = await get('/auth/status');
@@ -91,6 +95,36 @@ async function main() {
   // 10. Token user2 akses /secret → uid=2 (isolasi)
   const s2 = await get('/secret', l2.data.token);
   check('token user2 → uid=2', s2.status === 200 && s2.data.uid === 2, JSON.stringify(s2.data));
+
+  // 11. DELETE /logs menghapus log milik user DAN log global (kasus tombol Bersihkan)
+  const { api: realApi } = await import('../src/routes/api.js');
+  const { db, queries } = await import('../src/db/index.js');
+  const app2 = express();
+  app2.use(express.json());
+  app2.use('/api', authRouter);
+  app2.use('/api', requireAuth, realApi);
+  const server2 = await new Promise<any>(r => { const s = app2.listen(0, () => r(s)); });
+  const base2 = `http://127.0.0.1:${server2.address().port}/api`;
+  const get2 = async (p: string, token?: string) => {
+    const res = await fetch(base2 + p, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    return { status: res.status, data: await res.json().catch(() => ({})) };
+  };
+  const del2 = async (p: string, token?: string) => {
+    const res = await fetch(base2 + p, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    return { status: res.status, data: await res.json().catch(() => ({})) };
+  };
+  queries.insertLog.run(1, 'info', 'SYSTEM', null, 'log milik admin', null, null, new Date().toISOString());
+  queries.insertLog.run(0, 'info', 'ENGINE', null, 'log global sistem', null, null, new Date().toISOString());
+  queries.insertLog.run(2, 'info', 'TRADE', null, 'log milik user lain', null, null, new Date().toISOString());
+  let lr = await get2('/logs?limit=100', adminToken);
+  check('GET /logs tampilkan milik sendiri + global', Array.isArray(lr.data) && lr.data.length === 2, `got ${JSON.stringify(lr.data).length} chars`);
+  r = await del2('/logs', adminToken);
+  check('DELETE /logs → 200', r.status === 200, `got ${r.status}`);
+  lr = await get2('/logs?limit=100', adminToken);
+  check('setelah hapus, feed kosong', Array.isArray(lr.data) && lr.data.length === 0, `got ${JSON.stringify(lr.data)}`);
+  const sisa = db.prepare('SELECT COUNT(*) c FROM logs').get() as any;
+  check('log user lain tidak ikut terhapus', sisa.c === 1, `got ${sisa.c}`);
+  server2.close();
 
   server.close();
   console.log(`\n═══════════════════════════════`);

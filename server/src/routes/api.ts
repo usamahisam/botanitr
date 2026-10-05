@@ -393,7 +393,9 @@ api.get('/logs', asyncH(async (req: any, res: any) => {
   res.json(db.prepare(sql).all(...args));
 }));
 api.delete('/logs', asyncH(async (req: any, res: any) => {
-  db.prepare('DELETE FROM logs WHERE user_id=?').run(uid(req));
+  // Samakan dengan yang dibaca GET /logs (milik user + global user_id=0),
+  // kalau tidak feed tetap penuh log sistem dan terlihat "tidak bisa dibersihkan".
+  db.prepare('DELETE FROM logs WHERE (user_id=? OR user_id=0)').run(uid(req));
   res.json({ ok: true });
 }));
 
