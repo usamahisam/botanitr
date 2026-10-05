@@ -108,7 +108,7 @@ async function main() {
     name: 'DCA Live Mock', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca',
     params: JSON.stringify(params), budget_idr: 200000, current_budget: 200000, lot: 40000,
     mode: 'live', auto_compound_pct: 100, status: 'running',
-    state: JSON.stringify(strat.init(params)), max_daily_loss_pct: 0, user_id: 0, created_at: now(), updated_at: now()
+    state: JSON.stringify(strat.init(params)), max_daily_loss_pct: 0,market_preset_id: null, user_id: 0, created_at: now(), updated_at: now()
   });
   const bot = queries.getBot.get(info.lastInsertRowid) as any;
   check('bot live dibuat', bot.mode === 'live');

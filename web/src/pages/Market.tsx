@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, MarketPreset, PairRow } from '../lib/api'
-import { EXCHANGES } from '../lib/exchanges';
+import { api, MarketPreset } from '../lib/api'
 import { Icon } from '../components/icons';
 
 const STRAT_LABEL: Record<string, string> = { grid: 'Grid', dca: 'DCA', scalper: 'Scalper', harvester: 'Harvester', rebalance: 'Rebalance' };
@@ -26,9 +25,6 @@ export default function Market() {
   const navigate = useNavigate();
   const [presets, setPresets] = useState<MarketPreset[]>([]);
   const [search, setSearch] = useState('');
-  const [exchange, setExchange] = useState('indodax');
-  const [pairs, setPairs] = useState<PairRow[]>([]);
-  const [pair, setPair] = useState('XRPIDR');
   const [msg, setMsg] = useState('');
 
   const load = useCallback(() => {
@@ -36,16 +32,9 @@ export default function Market() {
   }, [search]);
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
   useEffect(() => {
-    api.get<PairRow[]>(`/pairs?exchange=${exchange}`).then(p => { setPairs(p); if (p.length) setPair(p[0].symbol); }).catch(() => {});
-  }, [exchange]);
-
-  const install = async (p: MarketPreset) => {
-    setMsg('');
-    try {
-      const bot: any = await api.post('/marketplace/' + p.id + '/install', { exchange_id: exchange, pair, budget_quote: p.budget_quote, status: 'paused' });
-      setMsg(`Preset "${p.name}" terpasang sebagai bot #${bot.id} (${pair}, dijeda — periksa dulu di halaman Bot).`);
-    } catch (e: any) { setMsg(e.message); }
-  };
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [load]);
 
   const rate = async (p: MarketPreset, stars: number) => {
     try {
@@ -54,21 +43,34 @@ export default function Market() {
     } catch (e: any) { setMsg(e.message); }
   };
 
+  const totalRunning = presets.reduce((s, p) => s + (p.bots_running || 0), 0);
+  const totalBots = presets.reduce((s, p) => s + (p.bots_total || 0), 0);
+
   return (
     <div className="max-w-[1000px]">
       <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
         <div>
           <h2 className="text-[17px] font-bold tracking-tight">Marketplace strategi</h2>
-          <p className="text-xs txt-3 mt-0.5">Preset siap pakai dari sistem & komunitas. Instalasi selalu dimulai dalam keadaan dijeda.</p>
+          <p className="text-xs txt-3 mt-0.5">
+            Preset siap pakai dari sistem & komunitas. Bot dibuat lewat Wizard (mode Demo/Riil di langkah awal).
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari preset…" className="input !w-full sm:!w-48" />
-          <select value={exchange} onChange={e => setExchange(e.target.value)} className="input !w-auto">
-            {EXCHANGES.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
-          </select>
-          <select value={pair} onChange={e => setPair(e.target.value)} className="input !w-auto num">
-            {pairs.map(p => <option key={p.symbol} value={p.symbol}>{p.symbol}</option>)}
-          </select>
+        </div>
+      </div>
+
+      <div className="panel px-4 py-3 mb-4 flex items-center gap-5 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="txt-up"><Icon.dot size={7} /></span>
+          <span className="num text-[15px] font-semibold">{totalRunning}</span>
+          <span className="text-xs txt-2">bot berjalan</span>
+        </div>
+        <div className="w-px h-6 bg-white/[0.07]" />
+        <div className="flex items-center gap-2">
+          <Icon.cpu size={15} className="txt-3" />
+          <span className="num text-[15px] font-semibold">{totalBots}</span>
+          <span className="text-xs txt-2">total bot dari preset</span>
         </div>
       </div>
 
@@ -96,10 +98,17 @@ export default function Market() {
               {p.description && <p className="text-xs txt-2 mt-2 leading-relaxed">{p.description}</p>}
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/[0.06]">
                 <span className="text-xs txt-3 num">Budget saran {Number(p.budget_quote).toLocaleString('id-ID')}</span>
-                <div className="flex gap-2">
-                  <button onClick={() => install(p)} className="btn btn-primary btn-sm">
-                    <Icon.plus size={13} /> Instal ke {exchange}
-                  </button>
+                <div className="flex items-center gap-2">
+                  {(p.bots_running || 0) > 0 ? (
+                    <span className="tag tag-up">
+                      <Icon.dot size={6} /> {p.bots_running} berjalan
+                      {p.bots_total > p.bots_running ? ` · ${p.bots_total - p.bots_running} jeda` : ''}
+                    </span>
+                  ) : (p.bots_total || 0) > 0 ? (
+                    <span className="tag tag-dim">{p.bots_total} dijeda</span>
+                  ) : (
+                    <span className="text-xs txt-3">Belum dipakai</span>
+                  )}
                   <button onClick={() => navigate('/bots')} className="btn btn-ghost btn-sm">Lihat bot</button>
                 </div>
               </div>

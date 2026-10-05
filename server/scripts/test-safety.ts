@@ -118,7 +118,7 @@ async function main() {
     name: 'LossBot', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca',
     params: JSON.stringify(strat.defaultParams), budget_idr: 100000, current_budget: 100000, lot: 20000,
     mode: 'live', auto_compound_pct: 100, status: 'running', state: '{}',
-    max_daily_loss_pct: 5, user_id: 0, created_at: now(), updated_at: now()
+    max_daily_loss_pct: 5,market_preset_id: null, user_id: 0, created_at: now(), updated_at: now()
   });
   const bot = queries.getBot.get(info.lastInsertRowid) as any;
   check('bot dibuat dengan max_daily_loss_pct=5', bot.max_daily_loss_pct === 5);
@@ -146,7 +146,7 @@ async function main() {
     params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000,
     mode: 'live', auto_compound_pct: 100, status: 'running',
     state: JSON.stringify({ entries: [{ price: 26600, qty: 3.75, cost: 99750 }] }),
-    max_daily_loss_pct: 0, user_id: 0, created_at: now(), updated_at: now()
+    max_daily_loss_pct: 0,market_preset_id: null, user_id: 0, created_at: now(), updated_at: now()
   });
   const drifts = await reconcileOnce({ tolerancePct: 5, notifyOnDrift: false });
   check('drift terdeteksi', drifts.length >= 1, `got ${drifts.length}`);

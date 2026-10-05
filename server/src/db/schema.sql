@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS bots (
   state TEXT NOT NULL DEFAULT '{}',
   error_count INTEGER NOT NULL DEFAULT 0,
   max_daily_loss_pct REAL NOT NULL DEFAULT 0,
+  market_preset_id INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

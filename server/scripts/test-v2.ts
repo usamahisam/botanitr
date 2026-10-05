@@ -94,10 +94,27 @@ async function main() {
     strategy: preset.strategy, params: preset.params, budget_idr: 100000, current_budget: 100000,
     lot: 20000, mode: 'paper', auto_compound_pct: 100, status: 'paused',
     state: JSON.stringify(strat2.init(JSON.parse(preset.params))), max_daily_loss_pct: 0,
-    created_at: now(), updated_at: now()
+    market_preset_id: preset.id, created_at: now(), updated_at: now()
   });
   const installed = queries.getBot.get(binfo.lastInsertRowid) as any;
   check('install membuat bot paused milik user2', installed.status === 'paused' && installed.user_id === user2);
+  check('bot ter-link ke preset', installed.market_preset_id === preset.id, `got ${installed.market_preset_id}`);
+  // Bot kedua dari preset sama, status running
+  const binfo2 = queries.insertBot.run({
+    user_id: user2, name: `${preset.name} (market) #2`, exchange_id: 'indodax', pair: 'XRPIDR',
+    strategy: preset.strategy, params: preset.params, budget_idr: 50000, current_budget: 50000,
+    lot: 10000, mode: 'paper', auto_compound_pct: 100, status: 'running',
+    state: JSON.stringify(strat2.init(JSON.parse(preset.params))), max_daily_loss_pct: 0,
+    market_preset_id: preset.id, created_at: now(), updated_at: now()
+  });
+  const agg = db.prepare(`SELECT COUNT(*) total,
+    SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) running
+    FROM bots WHERE market_preset_id=? AND user_id=?`).get(preset.id, user2) as any;
+  check('hitungan per preset: total=2', agg.total === 2, `got ${agg.total}`);
+  check('hitungan per preset: running=1', agg.running === 1, `got ${agg.running}`);
+  // Bot user lain tidak ikut terhitung
+  const aggAdmin = db.prepare(`SELECT COUNT(*) total FROM bots WHERE market_preset_id=? AND user_id=?`).get(preset.id, adminId) as any;
+  check('hitungan terisolasi per user', aggAdmin.total === 0, `got ${aggAdmin.total}`);
   db.prepare(`INSERT INTO market_ratings (preset_id, user_id, stars) VALUES (?,?,?)`).run(preset.id, user2, 5);
   const rating = db.prepare(`SELECT COALESCE(AVG(stars),0) r FROM market_ratings WHERE preset_id=?`).get(preset.id) as any;
   check('rating tersimpan (avg=5)', rating.r === 5, `got ${rating.r}`);

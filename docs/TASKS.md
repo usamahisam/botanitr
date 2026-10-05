@@ -165,6 +165,12 @@ Status keseluruhan: ✅ **v1.0 MVP SELESAI** (semua 11 tahap tuntas & terverifik
 - [x] E2E `test-v2` 21/21 ✅ + `test-auth-http` 12/12 ✅; total suite 88/88 ✅
 - [x] Dokumentasi `docs/15-v2-multipengguna-marketplace.md` + ROADMAP ditandai selesai
 
+## Revisi: Marketplace tampilkan bot berjalan (ganti tombol Instal)
+- [x] Kolom `bots.market_preset_id` (migrasi ensureColumn + schema) + insertBot diperbarui
+- [x] Install menautkan preset; `GET /marketplace` sertakan `bots_running`/`bots_total` per user
+- [x] UI: tombol Instal dihapus; tiap preset tampilkan status berjalan/jeda/belum dipakai + total agregat + refresh 30 dtk
+- [x] E2E linkage + isolasi per-user di `test-v2` (+4 asserts); total suite 148/148 ✅
+
 ## Revisi: Data Backtest Indodax + Pilihan Versi API (ditambahkan)
 - [x] Investigasi: `/api/trades` Indodax hanya ~500 trade (±5 jam) → mustahil backtest harian; tidak ada OHLC publik lain
 - [x] Perekam riwayat harga lokal (`price_history`, tiap menit, retensi 45 hari, via summaries sekaligus untuk IDR)

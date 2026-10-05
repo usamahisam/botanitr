@@ -239,6 +239,7 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
     mode: finalMode, auto_compound_pct: Number(auto_compound_pct ?? 100),
     status: finalStatus, state: JSON.stringify(strat.init(mergedParams)),
     max_daily_loss_pct: Math.max(0, Number(max_daily_loss_pct ?? 0)),
+    market_preset_id: null,
     created_at: now(), updated_at: now()
   });
   const bot = queries.getBot.get(info.lastInsertRowid) as BotRow;
@@ -509,11 +510,14 @@ api.delete('/alerts/:id', asyncH(async (req: any, res: any) => {
 
 // ===== Marketplace preset strategi (v2.0) =====
 api.get('/marketplace', asyncH(async (req: any, res: any) => {
+  const userId = uid(req);
   const search = String(req.query.search || '').trim();
-  let sql = `SELECT m.*, COALESCE(AVG(r.stars),0) rating, COUNT(r.stars) ratings
+  let sql = `SELECT m.*, COALESCE(AVG(r.stars),0) rating, COUNT(r.stars) ratings,
+             (SELECT COUNT(*) FROM bots b WHERE b.market_preset_id=m.id AND b.user_id=?) bots_total,
+             (SELECT COUNT(*) FROM bots b WHERE b.market_preset_id=m.id AND b.user_id=? AND b.status='running') bots_running
              FROM market_presets m LEFT JOIN market_ratings r ON r.preset_id=m.id
              WHERE m.public=1`;
-  const args: any[] = [];
+  const args: any[] = [userId, userId];
   if (search) { sql += ' AND (m.name LIKE ? OR m.description LIKE ?)'; args.push(`%${search}%`, `%${search}%`); }
   sql += ' GROUP BY m.id ORDER BY m.installs DESC, m.id ASC LIMIT 100';
   const rows = db.prepare(sql).all(...args) as any[];
@@ -552,7 +556,8 @@ api.post('/marketplace/:id/install', asyncH(async (req: any, res: any) => {
     mode: 'paper', auto_compound_pct: 100,
     status: status === 'running' ? 'running' : 'paused',
     state: JSON.stringify(strat.init(JSON.parse(preset.params))),
-    max_daily_loss_pct: 0, created_at: now(), updated_at: now()
+    max_daily_loss_pct: 0, market_preset_id: preset.id,
+    created_at: now(), updated_at: now()
   });
   db.prepare('UPDATE market_presets SET installs=installs+1 WHERE id=?').run(preset.id);
   const bot = queries.getBot.get(info.lastInsertRowid) as BotRow;

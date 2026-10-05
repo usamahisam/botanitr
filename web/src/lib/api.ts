@@ -51,6 +51,7 @@ export interface MarketPreset {
   id: number; user_id: number; name: string; strategy: string; params: Record<string, any>;
   description: string | null; budget_quote: number; public: number; installs: number;
   created_at: string; rating: number; ratings: number;
+  bots_running: number; bots_total: number;
 }
 
 // ===== Types =====

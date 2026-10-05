@@ -22,6 +22,7 @@ function ensureColumn(table: string, column: string, ddl: string) {
   } catch { /* tabel belum ada → schema di bawah yang membuatnya */ }
 }
 ensureColumn('bots', 'max_daily_loss_pct', 'max_daily_loss_pct REAL NOT NULL DEFAULT 0');
+ensureColumn('bots', 'market_preset_id', 'market_preset_id INTEGER');
 for (const t of ['bots', 'trades', 'logs', 'balance_snapshots', 'paper_balances', 'price_alerts']) {
   ensureColumn(t, 'user_id', 'user_id INTEGER NOT NULL DEFAULT 0');
 }
@@ -195,7 +196,7 @@ export interface BotRow {
   id: number; user_id: number; name: string; exchange_id: string; pair: string; strategy: string;
   params: string; budget_idr: number; current_budget: number; lot: number;
   mode: 'paper' | 'live'; auto_compound_pct: number; status: 'running' | 'paused' | 'stopped';
-  state: string; error_count: number; max_daily_loss_pct: number; created_at: string; updated_at: string;
+  state: string; error_count: number; max_daily_loss_pct: number; market_preset_id: number | null; created_at: string; updated_at: string;
 }
 export interface TradeRow {
   id: number; user_id: number; bot_id: number | null; exchange_id: string; pair: string; side: 'buy' | 'sell';
@@ -215,8 +216,8 @@ export interface MarketPresetRow {
 export const queries = {
   getExchange: db.prepare('SELECT * FROM exchanges WHERE id=? AND user_id=?'),
   allExchanges: db.prepare('SELECT * FROM exchanges WHERE user_id=? ORDER BY id'),
-  insertBot: db.prepare(`INSERT INTO bots (user_id, name, exchange_id, pair, strategy, params, budget_idr, current_budget, lot, mode, auto_compound_pct, status, state, max_daily_loss_pct, created_at, updated_at)
-    VALUES (@user_id, @name, @exchange_id, @pair, @strategy, @params, @budget_idr, @current_budget, @lot, @mode, @auto_compound_pct, @status, @state, @max_daily_loss_pct, @created_at, @updated_at)`),
+  insertBot: db.prepare(`INSERT INTO bots (user_id, name, exchange_id, pair, strategy, params, budget_idr, current_budget, lot, mode, auto_compound_pct, status, state, max_daily_loss_pct, market_preset_id, created_at, updated_at)
+    VALUES (@user_id, @name, @exchange_id, @pair, @strategy, @params, @budget_idr, @current_budget, @lot, @mode, @auto_compound_pct, @status, @state, @max_daily_loss_pct, @market_preset_id, @created_at, @updated_at)`),
   getBot: db.prepare('SELECT * FROM bots WHERE id=?'),
   allBots: db.prepare('SELECT * FROM bots WHERE user_id=? ORDER BY id DESC'),
   runningBots: db.prepare(`SELECT * FROM bots WHERE status='running'`),

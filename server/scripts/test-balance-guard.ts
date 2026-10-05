@@ -35,7 +35,7 @@ async function main() {
       user_id: 0, name, exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca',
       params: '{}', budget_idr: 100000, current_budget: 100000, lot,
       mode: 'paper', auto_compound_pct: 100, status: 'running', state: '{}',
-      max_daily_loss_pct: 0, created_at: now(), updated_at: now()
+      max_daily_loss_pct: 0,market_preset_id: null, created_at: now(), updated_at: now()
     });
     return queries.getBot.get(info.lastInsertRowid) as any;
   };
