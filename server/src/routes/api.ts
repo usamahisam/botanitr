@@ -346,24 +346,54 @@ api.post('/bots/:id/stop', asyncH(async (req: any, res: any) => {
     const state = JSON.parse(bot.state || '{}');
     initCashLedger(state, bot.current_budget);
     const entries: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
+    // Saldo aktual per aset (untuk deteksi drift: tercatat ≠ ada di exchange)
+    let actualByAsset = new Map<string, number>();
+    try {
+      const bals = bot.mode === 'paper'
+        ? registry.getPaperForUser(bot.exchange_id, userId).getBalances()
+        : await client.getBalances();
+      actualByAsset = new Map(bals.map(b => [b.asset.toUpperCase(), (b.free || 0) + (b.locked || 0)]));
+    } catch { /* gagal baca → coba jual apa adanya, guard trader yang menilai */ }
+    const { parsePair } = await import('../exchange/base.js');
+    const { base } = parsePair(bot.pair, client.quoteAsset);
     for (const e of entries) {
       const qty = Number(e.qty) || 0, cost = Number(e.cost) || 0;
       if (qty <= 0) continue;
       if (qty * (e.price || 0) < minLot) { skipped.push(`${qty.toFixed(8)} (debu, < lot min)`) ; continue; }
+      // Drift: exchange memegang lebih sedikit dari catatan → jual yang ADA,
+      // laporkan selisihnya dengan jelas (bukan diam sold:0).
+      const actual = actualByAsset.get(base.toUpperCase());
+      const sellQty = actual !== undefined ? Math.min(qty, actual) : qty;
+      if (sellQty <= 0) {
+        errors.push(`${qty.toFixed(8)} ${base}: saldo di exchange kosong (tercatat ${qty.toFixed(8)} — kemungkinan terjual manual/partial fill).`);
+        continue;
+      }
       try {
         const trade = await executeAction(bot,
-          { type: 'sell', qtyBase: qty, costBasis: cost, reason: `[STOP] Likuidasi stop bot "${bot.name}"`, tag: 'STOP_LIQUIDATE' },
+          { type: 'sell', qtyBase: sellQty, costBasis: cost * (sellQty / qty), reason: `[STOP] Likuidasi stop bot "${bot.name}"`, tag: 'STOP_LIQUIDATE' },
           usdtIdr, state.cash);
-        if (trade) {
-          applyFillToState(bot.strategy, state, trade, { type: 'sell' });
-          // Bersihkan fill dari state agar tak dijual ganda
+        if (!trade) {
+          errors.push(`${sellQty.toFixed(8)} ${base}: order dilewati guard (lihat log TRADE terakhir).`);
+          continue;
+        }
+        applyFillToState(bot.strategy, state, trade, { type: 'sell' });
+        // Bersihkan/kurangi fill dari state agar tak dijual ganda.
+        // Jual parsial (drift) → sisa entry dipertahankan proporsional.
+        if (sellQty < qty) {
+          const ratio = 1 - sellQty / qty;
+          e.qty = qty - sellQty;
+          e.cost = cost * ratio;
+        } else {
           for (const key of ['entries', 'filledBuys'] as const) {
             if (Array.isArray(state[key])) state[key] = state[key].filter((x: any) => x !== e);
           }
           if (state.position === e) state.position = null;
-          sold++;
-          realized += (trade.value - trade.fee) - cost;
         }
+        sold++;
+        realized += (trade.value - trade.fee) - cost * (sellQty / qty);
+        // Kurangi saldo aktual lokal agar entry berikutnya memakai sisa real
+        const cur = actualByAsset.get(base.toUpperCase()) ?? 0;
+        actualByAsset.set(base.toUpperCase(), Math.max(0, cur - trade.qty));
       } catch (err: any) { errors.push(err.message); }
     }
     queries.updateBotState.run(JSON.stringify(state), now(), bot.id);

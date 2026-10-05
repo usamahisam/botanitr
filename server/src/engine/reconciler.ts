@@ -29,7 +29,9 @@ export interface DriftReport {
 export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift?: boolean } = {}): Promise<DriftReport[]> {
   const tolerance = opts.tolerancePct ?? 5; // toleransi drift 5%
   const drifts: DriftReport[] = [];
-  const bots = (db.prepare(`SELECT * FROM bots WHERE status != 'stopped' AND mode='live'`).all() as BotRow[]);
+  // Termasuk bot stopped yang masih mencatat posisi: justru saat stop/likuidasi
+  // drift paling berbahaya (Stop & Jual gagal tanpa penjelasan).
+  const bots = (db.prepare(`SELECT * FROM bots WHERE mode='live'`).all() as BotRow[]);
 
   for (const bot of bots) {
     const client = registry.getForUser(bot.exchange_id, bot.user_id);

@@ -54,7 +54,7 @@ async function main() {
     user_id: U, name: 'StopMe', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca',
     params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000, mode: 'paper',
     auto_compound_pct: 100, status: 'running',
-    state: JSON.stringify({ entries: [{ price: 25000, qty: 4, cost: 100000 }], lastEntryPrice: 25000, tier1Done: false, cash: 0 }),
+    state: JSON.stringify({ entries: [{ price: 25000, qty: 4, cost: 100000 }, { price: 25000, qty: 10, cost: 250000 }], lastEntryPrice: 25000, tier1Done: false, cash: 0 }),
     max_daily_loss_pct: 0, market_preset_id: null, created_at: now(), updated_at: now(),
   });
   const botId = info.lastInsertRowid as number;
@@ -64,13 +64,14 @@ async function main() {
   let r = await rq('DELETE', `/bots/${botId}`, undefined, T);
   check('DELETE running -> 400 + pesan stop dulu', r.status === 400 && /hentikan|stop/i.test(r.data.error || ''), `got ${r.status} ${r.data.error || ''}`);
 
-  console.log('\nB) Stop & likuidasi');
+  console.log('\nB) Stop & likuidasi (saldo XRP cuma 4, entry kedua 10 = drift)');
   r = await rq('POST', `/bots/${botId}/stop`, { liquidate: true }, T);
   check('stop 200 + sold=1', r.status === 200 && r.data.sold === 1, `got ${r.status} ${JSON.stringify(r.data)}`);
+  check('drift dilaporkan di errors (bukan diam)', r.status === 200 && (r.data.errors || []).length === 1, JSON.stringify(r.data.errors));
   const after = queries.getBot.get(botId) as any;
   check('status stopped', after.status === 'stopped', `got ${after.status}`);
   const st = JSON.parse(after.state);
-  check('entries bersih', (st.entries || []).length === 0, JSON.stringify(st.entries));
+  check('entry terjual bersih, entry drift tersisa', (st.entries || []).length === 1, JSON.stringify(st.entries));
   check('kas ledger terisi hasil jual', st.cash > 100000, `got ${st.cash}`);
   const sellTrades = db.prepare(`SELECT COUNT(*) c FROM trades WHERE bot_id=? AND side='sell'`).get(botId) as any;
   check('trade sell tercatat', sellTrades.c === 1, `got ${sellTrades.c}`);
