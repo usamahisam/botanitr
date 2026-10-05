@@ -155,7 +155,8 @@ const PARAM_FIELDS: Record<string, { key: string; label: string; hint?: string }
     { key: 'lower_pct', label: 'Batas bawah (%)' }, { key: 'upper_pct', label: 'Batas atas (%)' }, { key: 'levels', label: 'Jumlah level' }
   ],
   dca: [
-    { key: 'drop_pct', label: 'Beli tiap turun (%)' }, { key: 'take_profit_pct', label: 'Target profit (%)' }, { key: 'max_buys', label: 'Maks pembelian' }
+    { key: 'drop_pct', label: 'Beli tiap turun (%)' }, { key: 'take_profit_pct', label: 'Target profit (%)' }, { key: 'max_buys', label: 'Maks pembelian' },
+    { key: 'sl_pct', label: 'Stop-rugi (%)' }
   ],
   scalper: [
     { key: 'ema_fast', label: 'EMA cepat' }, { key: 'ema_slow', label: 'EMA lambat' },
@@ -435,6 +436,16 @@ export default function Wizard() {
             <div className="lbl mb-1.5">Nama bot</div>
             <input value={botName} onChange={e => setBotName(e.target.value)} className="input" />
           </div>
+          {selected.strategi === 'dca' && (
+            <div className="mb-3">
+              <div className="lbl mb-1.5">Gaya masuk</div>
+              <select value={params.all_in || 'mati'} onChange={e => setParams({ ...params, all_in: e.target.value })} className="input">
+                <option value="mati">Normal — cicil saat turun</option>
+                <option value="cadangan">All-in cadangan — lot 1 langsung, sisanya averaging</option>
+                <option value="agresif">All-in agresif — semua lot sekaligus (risiko nyangkut total)</option>
+              </select>
+            </div>
+          )}
           {selected.strategi === 'rebalance' && (
             <div className="mb-3">
               <div className="lbl mb-1.5">Target alokasi (JSON, contoh: {'{"BTC": 50, "ETH": 30}'} — sisa jadi kas)</div>

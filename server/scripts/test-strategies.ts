@@ -90,6 +90,8 @@ async function main() {
   check('dynamic: terealisasi positif', dyn.realized > 0, `Rp${Math.round(dyn.realized)}`);
   const dca = await replay('dca', { drop_pct: 2, take_profit_pct: 3, max_buys: 5, partial_pct: 50 }, sw, { budget: BUDGET });
   check('dca: akumulasi jalan', dca.buys > 0, `b=${dca.buys}`);
+  const agg = await replay('dca', { drop_pct: 2, take_profit_pct: 3, max_buys: 4, all_in: 'agresif' }, sw, { budget: BUDGET });
+  check('dca agresif: borong 4 lot di depan', agg.buys >= 4, `b=${agg.buys}`);
   const harv = await replay('harvester', { drop_pct: 2.5, harvest_pct: 2, max_buys: 8 }, sw, { budget: BUDGET });
   check('harvester: akumulasi jalan', harv.buys > 0, `b=${harv.buys}`);
 
@@ -112,6 +114,8 @@ async function main() {
     const r = await replay(name, params, cr, { budget: BUDGET });
     check(`${name}: drawdown < 70%`, r.maxDdPct < 70, `${r.maxDdPct.toFixed(1)}%`);
   }
+  const dcaSL = await replay('dca', { drop_pct: 2, take_profit_pct: 3, max_buys: 5, all_in: 'cadangan', sl_pct: 4 }, cr, { budget: BUDGET });
+  check('dca stop-rugi memotong saat crash', dcaSL.sells > 0, `s=${dcaSL.sells}`);
 
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);

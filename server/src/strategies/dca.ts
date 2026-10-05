@@ -15,7 +15,7 @@ interface DcaState {
 const dca: Strategy = {
   name: 'dca',
   label: 'DCA',
-  defaultParams: { drop_pct: 2, take_profit_pct: 3, max_buys: 5, partial_pct: 50 },
+  defaultParams: { drop_pct: 2, take_profit_pct: 3, max_buys: 5, partial_pct: 50, all_in: 'mati', sl_pct: 4 },
 
   init(): DcaState {
     return { entries: [], lastEntryPrice: 0, tier1Done: false };
@@ -37,6 +37,20 @@ const dca: Strategy = {
     const avgCost = totalQty > 0 ? totalCost / totalQty : 0;
 
     if (totalQty > 0 && avgCost > 0) {
+      // STOP-RUGI: tebak arah meleset → potong, jangan kunci modal berminggu-minggu
+      const sl = numParam(params, 'sl_pct', 4, 0.5, 50) / 100;
+      if (price <= avgCost * (1 - sl) && totalQty * price >= minLot) {
+        actions.push({
+          type: 'sell', qtyBase: totalQty, costBasis: totalCost,
+          reason: `[DCA_SL] Stop-rugi -${((1 - price / avgCost) * 100).toFixed(2)}% @ ${Math.round(price)} (avg ${Math.round(avgCost)})`,
+          tag: 'DCA_SL',
+          impactRp: (price * totalQty - totalCost) * ctx.usdtIdr
+        });
+        state.entries = [];
+        state.lastEntryPrice = 0;
+        state.tier1Done = false;
+        return actions;
+      }
       // TINGKAT-2: target penuh → jual SEMUA (kunci profit besar)
       if (price >= avgCost * (1 + tp + 0.004) && totalQty * price >= minLot) {
         actions.push({
@@ -70,9 +84,14 @@ const dca: Strategy = {
       }
     }
 
-    // BUY pertama
+    // BUY pertama — mode all_in:
+    // 'agresif': lot 1-4 SEMUA dibelikan sekaligus di harga sekarang.
+    // 'cadangan'/'mati': lot 1 saja, sisanya siaga averaging saat turun.
     if (state.entries.length === 0 && lot > 0) {
-      actions.push({ type: 'buy', amountQuote: lot, reason: `DCA entry pertama @ ${Math.round(price)}`, tag: 'TRADE' });
+      const n = String(params.all_in || 'mati') === 'agresif' ? maxBuys : 1;
+      for (let k = 0; k < n; k++) {
+        actions.push({ type: 'buy', amountQuote: lot, reason: `DCA entry ${k + 1}/${n} @ ${Math.round(price)}${n > 1 ? ' [ALL-IN]' : ''}`, tag: 'TRADE' });
+      }
       return actions;
     }
 
@@ -90,7 +109,9 @@ const dca: Strategy = {
   },
 
   describe(p: any) {
-    return `Beli tiap turun ${p.drop_pct}% (maks ${p.max_buys}x), panen parsial ${p.partial_pct ?? 50}% + TP +${p.take_profit_pct}%`;
+    const mode = String(p.all_in || 'mati');
+    const gaya = mode === 'agresif' ? 'ALL-IN agresif, ' : mode === 'cadangan' ? 'all-in cadangan, ' : '';
+    return `${gaya}Beli tiap turun ${p.drop_pct}% (maks ${p.max_buys}x), panen parsial ${p.partial_pct ?? 50}% + TP +${p.take_profit_pct}%, SL -${p.sl_pct ?? 4}%`;
   }
 };
 

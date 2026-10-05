@@ -115,7 +115,7 @@ async function main() {
   console.log('\n5) Marketplace');
   r = await get('/marketplace', T);
   const sysCount = r.data?.length ?? 0;
-  check(`marketplace 9 preset sistem (got ${sysCount})`, r.status === 200 && sysCount === 9, `got ${r.status}`);
+  check(`marketplace 10 preset sistem (got ${sysCount})`, r.status === 200 && sysCount === 10, `got ${r.status}`);
   const dynPreset = (r.data || []).find((p: any) => p.strategy === 'dynamic');
   check('preset dynamic ada', !!dynPreset);
   r = await post('/marketplace', { name: 'E2E Preset', strategy: 'revert', params: {}, budget_quote: 50000 }, T);
