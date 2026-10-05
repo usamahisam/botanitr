@@ -170,6 +170,14 @@ api.post('/exchanges/:id/paper-reset', asyncH(async (req: any, res: any) => {
   res.json({ ok: true, ...result });
 }));
 
+// Hapus TUNTAS data demo: bot paper + riwayat paper + log + snapshot, saldo kembali ke seed.
+// Data live tidak disentuh. Body opsional { exchange_id } untuk satu exchange saja.
+api.post('/demo/purge', asyncH(async (req: any, res: any) => {
+  const { purgePaperData } = await import('../engine/demo.js');
+  const { exchange_id } = req.body || {};
+  res.json({ ok: true, ...purgePaperData(uid(req), exchange_id || undefined) });
+}));
+
 // Health check saldo: kecukupan kas per exchange + per bot yang running
 api.get('/balances/check', asyncH(async (req: any, res: any) => {
   const { checkBalancesHealth } = await import('../engine/balances.js');
@@ -296,7 +304,14 @@ api.post('/bots/:id/resume', asyncH(async (req: any, res: any) => {
   res.json({ ok: true });
 }));
 api.delete('/bots/:id', asyncH(async (req: any, res: any) => {
-  if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  const bot = getUserBot(uid(req), req.params.id);
+  if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  // Bot demo: ikut hapus riwayat + lognya agar tak ada transaksi menggantung.
+  // Bot live: riwayat dipertahankan sebagai jejak audit.
+  if (bot.mode === 'paper') {
+    db.prepare('DELETE FROM trades WHERE bot_id=?').run(bot.id);
+    db.prepare('DELETE FROM logs WHERE bot_id=?').run(bot.id);
+  }
   queries.deleteBot.run(req.params.id);
   res.json({ ok: true });
 }));

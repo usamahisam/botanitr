@@ -335,6 +335,26 @@ export default function Pengaturan({ me }: { me: AuthUser }) {
         </div>
         <button onClick={saveSeeds} className="btn btn-ghost btn-sm mt-3">Simpan modal demo</button>
         {seedMsg && <div className="text-[13px] txt-up mt-2">{seedMsg}</div>}
+        <div className="mt-4 pt-4 border-t border-[rgba(246,70,93,0.25)]">
+          <div className="text-[13px] font-semibold txt-down mb-1">Zona berbahaya — data demo</div>
+          <p className="text-xs txt-3 mb-3 leading-relaxed">
+            Hapus TUNTAS seluruh data demo: semua bot demo, riwayat transaksi demo (termasuk yang yatim),
+            log demo, dan kembalikan saldo demo ke modal awal. Data Riil tidak tersentuh.
+          </p>
+          <button
+            onClick={async () => {
+              if (!confirm('Hapus SEMUA data demo (bot + riwayat + log demo, saldo kembali ke awal)? Data Riil aman.')) return;
+              if (!confirm('Yakin? Tindakan ini tidak bisa dibatalkan.')) return;
+              try {
+                const r: any = await api.post('/demo/purge', {});
+                alert(`Data demo dihapus: ${r.bots} bot, ${r.trades} transaksi, ${r.logs} log. Saldo demo kembali ke awal.`);
+                load();
+              } catch (e: any) { alert(e.message || 'Gagal menghapus'); }
+            }}
+            className="btn btn-sm !border-[rgba(246,70,93,0.4)] !text-[#ff7a8c] hover:!bg-[rgba(246,70,93,0.1)]">
+            Hapus semua data demo
+          </button>
+        </div>
         <div className="mt-3 text-xs txt-3 flex items-center gap-2">
           <Icon.shield size={14} />
           Kunci enkripsi server: {settings.secret_key_ok === 'true' ? <span className="txt-up">terkonfigurasi</span> : <span className="txt-down">lemah — isi SECRET_KEY di .env</span>}
