@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api, download, TradeRow } from '../lib/api'
+import { api, download, TradeRow, Bot } from '../lib/api'
 import { EXCHANGES } from '../lib/exchanges';
 import { fmtQty, fmtDateTime, fmtMoney, fmtSignedMoney, quoteOfPair } from '../lib/format';
 
 interface BotSummary { bot: { id: number; name: string; pair: string; strategy: string; mode: string }; buys: number; sells: number; realized: number; trades: number }
 
 export default function Riwayat() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const botId = params.get('bot_id') || '';
   const [rows, setRows] = useState<TradeRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -15,7 +15,20 @@ export default function Riwayat() {
   const [mode, setMode] = useState('');
   const [page, setPage] = useState(1);
   const [summary, setSummary] = useState<BotSummary | null>(null);
+  const [bots, setBots] = useState<Bot[]>([]);
   const LIMIT = 25;
+
+  // Daftar bot untuk dropdown (sinkron dengan ?bot_id= dari tombol Riwayat)
+  useEffect(() => {
+    api.get<Bot[]>('/bots').then(setBots).catch(() => {});
+  }, []);
+
+  const pickBot = (v: string) => {
+    setPage(1);
+    if (v) params.set('bot_id', v);
+    else params.delete('bot_id');
+    setParams(params);
+  };
 
   const load = useCallback(() => {
     const q = new URLSearchParams({ limit: String(LIMIT), offset: String((page - 1) * LIMIT) });
@@ -55,6 +68,14 @@ export default function Riwayat() {
           <span className="num text-xs txt-3 ml-2">{total} baris{botId ? ' · bot ini' : ''}</span>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <select value={botId} onChange={e => pickBot(e.target.value)} className="input !w-auto !py-1.5 text-xs" aria-label="Filter bot">
+            <option value="">Semua bot</option>
+            {bots.map(b => (
+              <option key={b.id} value={b.id}>
+                #{b.id} {b.name}{b.status === 'running' ? ' · jalan' : b.status === 'paused' ? ' · jeda' : ''}
+              </option>
+            ))}
+          </select>
           <select value={exchange} onChange={e => { setExchange(e.target.value); setPage(1); }} className="input !w-auto !py-1.5 text-xs">
             <option value="">Semua exchange</option>
             {EXCHANGES.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
