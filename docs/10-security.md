@@ -14,6 +14,17 @@
 - Server bind `127.0.0.1` default (`HOST` env). Untuk akses publik, user wajib pakai reverse proxy + auth sendiri (di luar scope).
 - Proxy disimpan plaintext di DB (bukan rahasia selevel API key; berisi kredensial proxy opsional — didokumentasikan di UI).
 
+## Whitelist IP API Key Indodax
+- Indodax menilai izin API berdasarkan **IP publik mesin yang memanggil API** (bukan IP server web / IP rumah Anda).
+- Bot berjalan di VPS → yang dilihat Indodax adalah **IP outbound VPS**. Cek dengan perintah ini di VPS:
+  ```bash
+  curl -s ifconfig.me
+  ```
+  Isi hasilnya ke whitelist IP di pengaturan API key Indodax (biasanya `43.134.232.199` untuk instalasi ini).
+- **Pengecualian penting**: bila di Pengaturan → Indodax Anda mengisi **proxy**, maka yang dilihat Indodax adalah **IP exit proxy tersebut**, bukan IP VPS. Whitelist IP proxy-nya (tanyakan ke penyedia proxy / cek via proxy: `curl -x <proxy> -s ifconfig.me`).
+- Kunci **TAPIv2 mewajibkan** IP whitelist untuk permission trading — tanpa ini order live ditolak (`-2015`), dan bot live akan auto-pause oleh engine.
+- Jangan whitelist IP rumah/kantor kecuali Anda juga menjalankan bot dari sana.
+
 ## Telegram
 - Whitelist chat_id wajib; command tanpa whitelist → ditolak.
 - Command destruktif (`/stop`, `/buy`, `/sell` live) pakai konfirmasi inline button.
