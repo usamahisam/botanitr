@@ -1,59 +1,51 @@
 import { Strategy, StrategyContext, Action, registerStrategy, numParam } from './types.js';
+import { minGrossTargetPct } from './fees.js';
+import { adaptiveCooldownMs, detectRegime } from './regime.js';
+import { closesOf, ema, rsi } from './indicators.js';
 
 /**
- * Scalper 1m: EMA fast/slow cross + RSI filter, TP/SL % dari entry.
+ * Scalper pintar (candle cepat, default 1m):
+ * - Entry longgar: cukup EMA fast > slow + RSI tidak panas (tak wajib cross
+ *   tepat) + cooldown → sinyal jauh lebih sering, tetap anti-fomo.
+ * - TP fee-aware + adaptif rezim (kecil & sering saat volatile).
+ * - Trailing stop default aktif; SL darurat tetap ada.
  */
 interface ScalperState {
   position: { entryPrice: number; qty: number; cost: number; peakPrice?: number } | null;
   prevFastAbove: boolean | null;
   candlesTs: number;
   candles: number[][];
-}
-
-function ema(values: number[], period: number): number {
-  const k = 2 / (period + 1);
-  let e = values[0];
-  for (let i = 1; i < values.length; i++) e = values[i] * k + e * (1 - k);
-  return e;
-}
-
-function rsi(closes: number[], period: number): number {
-  if (closes.length < period + 1) return 50;
-  let gains = 0, losses = 0;
-  for (let i = closes.length - period; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff > 0) gains += diff; else losses -= diff;
-  }
-  if (losses === 0) return 100;
-  const rs = gains / losses;
-  return 100 - 100 / (1 + rs);
+  lastEntryTs: number;
 }
 
 const scalper: Strategy = {
   name: 'scalper',
   label: 'Scalper',
-  defaultParams: { timeframe: '1m', ema_fast: 20, ema_slow: 50, rsi_period: 14, rsi_overbought: 70, tp_pct: 1.2, sl_pct: 0.6, trailing_pct: 0 },
+  defaultParams: {
+    timeframe: '1m', ema_fast: 20, ema_slow: 50, rsi_period: 14,
+    rsi_entry: 55, rsi_overbought: 70,
+    tp_pct: 1.0, sl_pct: 0.8, trailing_pct: 0.8,
+  },
 
   init(): ScalperState {
-    return { position: null, prevFastAbove: null, candlesTs: 0, candles: [] };
+    return { position: null, prevFastAbove: null, candlesTs: 0, candles: [], lastEntryTs: 0 };
   },
 
   async onTick(ctx: StrategyContext, state: ScalperState, params: any): Promise<Action[]> {
     const actions: Action[] = [];
     const price = ctx.ticker.last;
+    if (!(price > 0)) return actions;
 
-    // TP/SL/Trailing dievaluasi DULU (tidak butuh candle) — penting agar posisi
-    // selalu terproteksi walau data klines belum cukup.
+    // TP/SL/Trailing dievaluasi DULU (tidak butuh candle)
     if (state.position) {
       const p = state.position;
-      const tpPrice = p.entryPrice * (1 + numParam(params, 'tp_pct', 1.2, 0.1, 100) / 100);
-      const slPrice = p.entryPrice * (1 - numParam(params, 'sl_pct', 0.6, 0.1, 100) / 100);
-      const trailingPct = numParam(params, 'trailing_pct', 0, 0, 50);
-      // Dust-hold: posisi di bawah minimum exchange tak bisa dijual — tahan diam.
-      // (trader juga punya pengaman yang sama sebagai lapis kedua)
+      // TP tak boleh di bawah floor fee (agar tiap TP = cuan bersih)
+      const tpPct = Math.max(numParam(params, 'tp_pct', 1.0, 0.1, 100), minGrossTargetPct(ctx.bot.exchange_id, params));
+      const tpPrice = p.entryPrice * (1 + tpPct / 100);
+      const slPrice = p.entryPrice * (1 - numParam(params, 'sl_pct', 0.8, 0.1, 100) / 100);
+      const trailingPct = numParam(params, 'trailing_pct', 0.8, 0, 50);
       const tradable = p.qty * price >= (ctx.minLot ?? 0);
 
-      // Trailing stop: catat puncak; exit jika turun trailing_pct% dari puncak
       if (trailingPct > 0) {
         if (p.peakPrice === undefined || price > p.peakPrice) p.peakPrice = price;
         const trailPrice = p.peakPrice * (1 - trailingPct / 100);
@@ -71,7 +63,7 @@ const scalper: Strategy = {
       if (tradable && price >= tpPrice) {
         actions.push({
           type: 'sell', qtyBase: p.qty, costBasis: p.cost,
-          reason: `[SCALPER_TP] Take profit +${params.tp_pct}% @ ${Math.round(price)}`,
+          reason: `[SCALPER_TP] Take profit +${tpPct.toFixed(2)}% @ ${Math.round(price)}`,
           tag: 'SCALPER_TP', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
         });
         state.position = null;
@@ -88,8 +80,7 @@ const scalper: Strategy = {
       }
     }
 
-    // === Bagian berbasis candle (entry & exit cross) ===
-    // Cache klines 45 detik; toleran state lama/korup tanpa cache (jangan crash)
+    // === Bagian berbasis candle ===
     const candlesStale = !Array.isArray(state.candles) || state.candles.length === 0
       || ctx.now - (state.candlesTs || 0) > 45000;
     if (candlesStale) {
@@ -103,10 +94,7 @@ const scalper: Strategy = {
     }
     const emaSlow = Math.max(2, Math.min(200, Math.floor(numParam(params, 'ema_slow', 50, 2, 200))));
     const emaFast = Math.max(1, Math.min(emaSlow - 1, Math.floor(numParam(params, 'ema_fast', 20, 1, 200))));
-    // Terima tuple [t,o,h,l,c,v] maupun objek {c}; buang candle korup
-    const closes = (Array.isArray(state.candles) ? state.candles : [])
-      .map((c: any) => (Array.isArray(c) ? c[4] : c?.c))
-      .filter((v: any): v is number => Number.isFinite(v));
+    const closes = closesOf(state.candles);
     if (closes.length < emaSlow + 2) return actions;
 
     const fast = ema(closes.slice(-emaFast - 1), emaFast);
@@ -114,7 +102,7 @@ const scalper: Strategy = {
     const rsiNow = rsi(closes, numParam(params, 'rsi_period', 14, 2, 100));
     const fastAbove = fast > slow;
 
-    // Exit jika EMA cross turun (posisi terbuka & tradable — dust-hold)
+    // Exit jika EMA cross turun (dust-hold)
     if (state.position && state.prevFastAbove === true && !fastAbove && state.position.qty * price >= (ctx.minLot ?? 0)) {
       const p = state.position;
       actions.push({
@@ -127,13 +115,18 @@ const scalper: Strategy = {
       return actions;
     }
 
-    // Entry: cross-up + RSI tidak overbought
-    if (!state.position && state.prevFastAbove === false && fastAbove && rsiNow < numParam(params, 'rsi_overbought', 70, 1, 100)) {
-      actions.push({
-        type: 'buy', amountQuote: ctx.bot.current_budget,
-        reason: `Scalper entry: EMA${params.ema_fast} cross-up EMA${params.ema_slow}, RSI ${rsiNow.toFixed(1)} @ ${Math.round(price)}`,
-        tag: 'TRADE'
-      });
+    // ENTRY longgar: tren naik + RSI adem + cooldown lewat.
+    // (Cross tepat tetap termasuk; pullback sehat juga diambil.)
+    if (!state.position && fastAbove && rsiNow <= numParam(params, 'rsi_entry', 55, 5, 95)) {
+      const regime = detectRegime(state.candles, params);
+      if (ctx.now - (state.lastEntryTs || 0) >= adaptiveCooldownMs(params, regime.mode)) {
+        state.lastEntryTs = ctx.now;
+        actions.push({
+          type: 'buy', amountQuote: ctx.bot.current_budget,
+          reason: `Scalper entry: EMA${params.ema_fast}>EMA${params.ema_slow}, RSI ${rsiNow.toFixed(1)} [${regime.mode}] @ ${Math.round(price)}`,
+          tag: 'TRADE'
+        });
+      }
     }
 
     state.prevFastAbove = fastAbove;
@@ -141,7 +134,7 @@ const scalper: Strategy = {
   },
 
   describe(p: any) {
-    return `EMA${p.ema_fast}/${p.ema_slow} + RSI${p.rsi_period}, TP ${p.tp_pct}% / SL ${p.sl_pct}%, TF ${p.timeframe}`;
+    return `EMA${p.ema_fast}/${p.ema_slow} + RSI≤${p.rsi_entry ?? 55}, TP fee-aware, trailing ${p.trailing_pct ?? 0.8}%, TF ${p.timeframe}`;
   }
 };
 

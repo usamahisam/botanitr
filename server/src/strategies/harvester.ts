@@ -1,4 +1,5 @@
 import { Strategy, StrategyContext, Action, registerStrategy, lotFromBudget, numParam } from './types.js';
+import { minGrossTargetPct } from './fees.js';
 
 /**
  * Inventory Harvester: akumulasi saat turun, saat target tercapai jual cukup
@@ -30,8 +31,11 @@ const harvester: Strategy = {
     const totalQty = state.entries.reduce((s, e) => s + e.qty, 0);
     const avgCost = totalQty > 0 ? totalCost / totalQty : 0;
 
-    // HARVEST: harga ≥ avgCost * (1 + harvest% + fee) → jual secukupnya agar modal cair
-    if (totalQty > 0 && avgCost > 0 && price >= avgCost * (1 + harvestPct + 0.004)) {
+    // HARVEST fee-aware: ambang = harvest% ATAU floor fee+buffer+laba, mana yg besar.
+    // Menjamin tiap panen = cuan bersih di exchange mana pun.
+    const effHarvest = Math.max(harvestPct, minGrossTargetPct(ctx.bot.exchange_id, params) / 100);
+    // HARVEST: harga ≥ avgCost * (1 + effHarvest) → jual secukupnya agar modal cair
+    if (totalQty > 0 && avgCost > 0 && price >= avgCost * (1 + effHarvest)) {
       // qty_sell * price = totalCost * (1 + fee) → modal kembali
       const targetCair = totalCost * 1.003;
       const qtySell = Math.min(targetCair / price, totalQty);
@@ -73,7 +77,7 @@ const harvester: Strategy = {
   },
 
   describe(p: any) {
-    return `Akumulasi tiap turun ${p.drop_pct}% (maks ${p.max_buys}x), panen modal cair saat +${p.harvest_pct}%`;
+    return `Akumulasi tiap turun ${p.drop_pct}% (maks ${p.max_buys}x), panen fee-aware +${p.harvest_pct}%`;
   }
 };
 

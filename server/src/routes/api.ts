@@ -15,6 +15,9 @@ import '../strategies/dca.js';
 import '../strategies/scalper.js';
 import '../strategies/harvester.js';
 import '../strategies/rebalance.js';
+import '../strategies/revert.js';
+import '../strategies/bollinger.js';
+import '../strategies/breakout.js';
 
 export const api = Router();
 

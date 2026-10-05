@@ -2,7 +2,7 @@
  * E2E stop/resume & luncurkan-ulang:
  *  A) Stagger scheduler: tick pertama lolos, tick beruntun ditahan, mandiri per bot, prune bekerja
  *  B) Grid re-anchor: anchor basi + tanpa posisi + harga di luar range -> ikut harga, tanpa aksi
- *  C) Grid TIDAK reset saat ada posisi terbuka (unwind tetap jalan)
+ *  C) Grid TIDAK reset saat ada posisi terbuka (partial-unwind tetap jalan)
  *  D) Grid dalam range: anchor dipertahankan, perilaku beli normal tak berubah
  *
  * Jalankan: npx tsx server/scripts/test-resume.ts
@@ -56,12 +56,12 @@ async function main() {
   await grid.onTick(mkCtx(900), staleLow, params);
   check('re-anchor juga saat jatuh jauh (1000 -> 900)', staleLow.anchor === 900, `got ${staleLow.anchor}`);
 
-  // ===== C) Posisi terbuka: JANGAN reset prematur, unwind tetap jalan =====
+  // ===== C) Posisi terbuka: JANGAN reset prematur, partial-unwind tetap jalan =====
   console.log('\nC) Posisi terbuka dipertahankan');
   const withPos = { anchor: 1000, filledBuys: [{ price: 990, qty: 1, cost: 990 }], levelsHit: [2] as number[] };
   const actsC = await grid.onTick(mkCtx(1100), withPos, params);
-  check('unwind sell tetap teremisi', actsC.some(a => a.tag === 'GRID_UNWIND'), JSON.stringify(actsC.map(a => a.tag)));
-  check('anchor di-reset OLEH unwind (siklus baru)', withPos.anchor === 1100, `got ${withPos.anchor}`);
+  check('partial-unwind sell tetap teremisi', actsC.some(a => a.tag === 'GRID_SELL'), JSON.stringify(actsC.map(a => a.tag)));
+  check('anchor di-reset SETELAH semua level laku (siklus baru)', withPos.anchor === 1100, `got ${withPos.anchor}`);
   const bagHold = { anchor: 1000, filledBuys: [{ price: 990, qty: 1, cost: 990 }], levelsHit: [0, 1, 2] as number[] };
   const actsHold = await grid.onTick(mkCtx(900), bagHold, params);
   check('tanpa unwind di bawah breakeven', actsHold.length === 0, `got ${actsHold.length}`);

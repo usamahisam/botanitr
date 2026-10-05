@@ -3,7 +3,7 @@ import { Kline } from '../exchange/base.js';
 
 /**
  * AI Wizard rule-based: analisis metrik candle + backtest replay sederhana
- * untuk men-skor 4 preset strategi per pasangan.
+ * untuk men-skor 8 preset strategi per pasangan.
  */
 
 export interface PresetDef {
@@ -42,6 +42,24 @@ export const PRESETS: PresetDef[] = [
     deskripsi: 'PALING AMAN. Akumulasi saat turun, panen modal cair + profit saat rebound.',
     params: { drop_pct: 2.5, harvest_pct: 2, max_buys: 8 },
     leverage_label: '1x', tp_sl_label: 'Harvest 2%', timeframe: 'Tick'
+  },
+  {
+    id: 'revert-pantulan', nama: 'Revert Pantulan', strategi: 'revert', gaya: 'Mean-Reversion',
+    deskripsi: 'Beli saat oversold ekstrem (RSI pendek) dalam tren naik, jual saat memantul. Sering ada sinyal di grafik cepat.',
+    params: { timeframe: '5m', rsi_len: 3, oversold: 20, exit_rsi: 65, trend_sma: 100, tp_pct: 1.0, sl_pct: 3.0 },
+    leverage_label: '1x', tp_sl_label: 'TP 1% / SL 3%', timeframe: '5m'
+  },
+  {
+    id: 'bollinger-band', nama: 'Bollinger Reversal', strategi: 'bollinger', gaya: 'Range',
+    deskripsi: 'Beli di lower band, jual di tengah/atas band. Raja pasar sideways berosilasi.',
+    params: { timeframe: '5m', bb_period: 20, bb_mult: 2, entry_b: 0.0, exit_b: 0.5, tp_pct: 1.0, sl_pct: 3.0 },
+    leverage_label: '1x', tp_sl_label: 'Auto %b', timeframe: '5m'
+  },
+  {
+    id: 'breakout-mikro', nama: 'Breakout Mikro', strategi: 'breakout', gaya: 'Momentum',
+    deskripsi: 'Ikut tembusan harga tercepat + TP ketat + trailing ATR. Untuk grafik trending cepat.',
+    params: { timeframe: '5m', donchian_n: 20, tp_pct: 0.8, sl_pct: 1.2, trail_atr_mult: 1.5 },
+    leverage_label: '1x', tp_sl_label: 'TP 0.8% / SL 1.2%', timeframe: '5m'
   },
   {
     id: 'rebalance-portfolio', nama: 'Rebalance Portfolio', strategi: 'rebalance', gaya: 'Alokasi',
@@ -91,6 +109,21 @@ function scorePreset(preset: PresetDef, m: Metrics): number {
       score += 15;                                  // selalu cukup aman
       if (m.trendPct < 0) score += 10;
       if (m.volPct > 0.5 && m.volPct < 5) score += 10;
+      break;
+    case 'revert':
+      score += Math.min(25, m.volPct * 12);         // butuh pantulan (volatilitas)
+      if (m.trendPct > 0) score += 15;              // tren naik = filter SMA lolos
+      else score -= 10;
+      break;
+    case 'bollinger':
+      score += Math.min(25, m.rangePct * 2);        // butuh osilasi lebar
+      if (Math.abs(m.trendPct) < 3) score += 15;     // sideways ideal
+      else score -= Math.min(20, Math.abs(m.trendPct) * 3);
+      break;
+    case 'breakout':
+      if (m.trendPct > 2) score += 25;               // tren naik = tembusan valid
+      else if (m.trendPct < -2) score -= 15;
+      score += Math.min(15, m.volPct * 6);
       break;
   }
   return Math.max(5, Math.min(98, Math.round(score * 10) / 10));

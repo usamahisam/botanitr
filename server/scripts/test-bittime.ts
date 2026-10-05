@@ -171,7 +171,7 @@ async function main() {
   try {
     const { recommend } = await import('../src/engine/wizard.js');
     const recs = await recommend('bittime', 'BTCIDR', 100000);
-    check('5 preset kembali terurut', recs.length === 5, `got ${recs.length}`);
+    check('8 preset kembali terurut', recs.length === 8, `got ${recs.length}`);
     check('backtest terisi (trades>0 di salah satu)', recs.some(r => r.backtest.trades > 0),
       JSON.stringify(recs.map(r => [r.id, r.backtest.trades])));
   } finally {

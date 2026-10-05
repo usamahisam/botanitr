@@ -12,6 +12,9 @@ import '../strategies/dca.js';
 import '../strategies/scalper.js';
 import '../strategies/harvester.js';
 import '../strategies/rebalance.js';
+import '../strategies/revert.js';
+import '../strategies/bollinger.js';
+import '../strategies/breakout.js';
 
 /** Cache ticker in-memory 5 detik per user+exchange+pair */
 const tickerCache = new Map<string, { data: Ticker; ts: number }>();
@@ -113,10 +116,12 @@ async function processBot(bot: BotRow) {
  */
 export function applyFillToState(strategyName: string, state: any, trade: any, action: any) {
   if (action.type === 'buy') {
-    const entry = { price: trade.price, qty: trade.qty, cost: trade.value };
+    const entry: any = { price: trade.price, qty: trade.qty, cost: trade.value };
+    // Level grid (untuk partial-unwind per level); strategi lain abaikan.
+    if (Number.isInteger(action?.meta?.level)) entry.level = action.meta.level;
     if (Array.isArray(state.filledBuys)) state.filledBuys.push(entry);
     else if (Array.isArray(state.entries)) state.entries.push(entry);
-    else if (strategyName === 'scalper') state.position = { entryPrice: trade.price, qty: trade.qty, cost: trade.value };
+    else if ('position' in state && (state.position == null)) state.position = { entryPrice: trade.price, qty: trade.qty, cost: trade.value };
     // Tracker harga terakhir (dipakai penentu buy berikutnya)
     if (typeof state.lastEntryPrice === 'number') state.lastEntryPrice = trade.price;
     if (typeof state.lastBuyPrice === 'number') state.lastBuyPrice = trade.price;

@@ -1,51 +1,112 @@
 import { Strategy, StrategyContext, Action, registerStrategy, lotFromBudget, numParam } from './types.js';
+import { minGrossTargetPct } from './fees.js';
+import { atrPct, closesOf, rsi } from './indicators.js';
 
 /**
- * Grid: level buy/sell merata dalam range %.
- * GRID_UNWIND: saat harga ≥ breakeven VWAP + margin → likuidasi semua → profit.
+ * Grid pintar:
+ * - PARTIAL UNWIND per level: tiap level yang terisi dijual sendiri-sendiri
+ *   saat mencapai target BERSIH (bukan all-or-nothing) → sell jauh lebih sering.
+ * - Fee-aware: target tak boleh di bawah biaya PP + buffer + laba bersih.
+ * - Auto-range ATR: lebar grid mengikuti volatilitas (rapat saat pasar cepat).
+ * - Filter RSI: jangan beli saat longsor tajam (tangkap pisau jatuh).
  */
 interface GridState {
   anchor: number;
-  filledBuys: { price: number; qty: number; cost: number }[];
+  filledBuys: { price: number; qty: number; cost: number; level?: number }[];
   levelsHit: number[];
+  autoRangeTs: number;
+  autoHalfRange: number;
 }
 
 const grid: Strategy = {
   name: 'grid',
   label: 'Grid',
-  defaultParams: { lower_pct: 3, upper_pct: 3, levels: 6 },
-
-  init(params: any): GridState {
-    return { anchor: 0, filledBuys: [], levelsHit: [] };
+  defaultParams: {
+    lower_pct: 3, upper_pct: 3, levels: 6,
+    profit_pct: 0.5,      // laba BERSIH di atas fee per level
+    auto_range: true,      // lebar grid ikut ATR
+    rsi_filter: true,      // lewati buy saat longsor
+    rsi_longslide: 30,
   },
 
-  onTick(ctx: StrategyContext, state: GridState, params: any): Action[] {
+  init(params: any): GridState {
+    return { anchor: 0, filledBuys: [], levelsHit: [], autoRangeTs: 0, autoHalfRange: 0 };
+  },
+
+  async onTick(ctx: StrategyContext, state: GridState, params: any): Promise<Action[]> {
     const price = ctx.ticker.last;
-    const lower = numParam(params, 'lower_pct', 3, 0.1, 50) / 100;
-    const upper = numParam(params, 'upper_pct', 3, 0.1, 50) / 100;
-    const levels = Math.max(2, Math.min(50, Math.floor(numParam(params, 'levels', 6, 2, 50))));
     const actions: Action[] = [];
+    if (!(price > 0)) return actions;
+
+    let lower = numParam(params, 'lower_pct', 3, 0.1, 50) / 100;
+    let upper = numParam(params, 'upper_pct', 3, 0.1, 50) / 100;
+    const levels = Math.max(2, Math.min(50, Math.floor(numParam(params, 'levels', 6, 2, 50))));
+    // Target gross per level: laba bersih diinginkan ATAU floor fee, mana yg besar
+    const grossPct = Math.max(numParam(params, 'profit_pct', 0.5, 0, 50), minGrossTargetPct(ctx.bot.exchange_id, params));
 
     if (!state.anchor) state.anchor = price;
 
-    // Self-healing setelah jeda/restart lama: bila harga sudah keluar jauh dari
-    // grid DAN tak ada posisi terbuka (tak ada modal berisiko), ikut harga
-    // sekarang agar bot kembali aktif. Dengan posisi terbuka, tunggu unwind.
+    // Auto-range ATR (refresh tiap 5 menit): half-range = ATR% × 2.5, clamp 1–12%
+    if (params.auto_range !== false && ctx.now - (state.autoRangeTs || 0) > 300000) {
+      try {
+        const kl = await ctx.getKlines('15m', 60);
+        const a = atrPct(kl, 14);
+        if (a > 0) {
+          state.autoHalfRange = Math.max(1, Math.min(12, a * 2.5));
+          state.autoRangeTs = ctx.now;
+        }
+      } catch { /* pakai range manual */ }
+    }
+    if (params.auto_range !== false && state.autoHalfRange > 0) {
+      lower = upper = state.autoHalfRange / 100;
+    }
+
+    // Self-healing: keluar jauh dari grid & tak ada posisi → ikut harga
     if (state.filledBuys.length === 0 &&
         (price > state.anchor * (1 + upper) || price < state.anchor * (1 - lower))) {
       state.anchor = price;
       state.levelsHit = [];
     }
 
-    // Bangun level harga (merata dari bawah ke atas)
     const levelPrices: number[] = [];
     for (let i = 0; i <= levels; i++) {
       levelPrices.push(state.anchor * (1 - lower + ((lower + upper) * i) / levels));
     }
 
-    // BUY: harga turun menyentuh level di bawah anchor yang belum pernah diisi di siklus ini.
-    // Level ditandai HANYA setelah fill terkonfirmasi (scheduler), agar order
-    // yang gagal tetap dicoba lagi tick berikutnya, bukan hangus selamanya.
+    // PARTIAL UNWIND: tiap fill yang sudah ≥ target bersih → jual sendiri.
+    // Level dibebaskan agar bisa dibeli lagi → siklus buy-sell berulang.
+    const minLot = ctx.minLot ?? 0;
+    const remaining: typeof state.filledBuys = [];
+    for (const b of state.filledBuys) {
+      const target = b.price * (1 + grossPct / 100);
+      if (price >= target && b.qty * price >= minLot) {
+        actions.push({
+          type: 'sell', qtyBase: b.qty, costBasis: b.cost,
+          reason: `[GRID_SELL] Level ${b.level != null ? b.level + 1 : '?'} panen +${((price / b.price - 1) * 100).toFixed(2)}% @ ${Math.round(price)}`,
+          tag: 'GRID_SELL',
+          impactRp: (price * b.qty - b.cost) * ctx.usdtIdr
+        });
+        if (b.level != null) state.levelsHit = state.levelsHit.filter(l => l !== b.level);
+      } else {
+        remaining.push(b);
+      }
+    }
+    state.filledBuys = remaining;
+    if (state.filledBuys.length === 0 && actions.length > 0) {
+      state.anchor = price; // siklus selesai → anchor baru
+      return actions;
+    }
+
+    // Filter RSI: RSI(7) di 5m < longslide → pasar longsor, tunda buy (sell tetap jalan)
+    if (params.rsi_filter !== false) {
+      try {
+        const kl = await ctx.getKlines('5m', 30);
+        const r = rsi(closesOf(kl), 7);
+        if (r < numParam(params, 'rsi_longslide', 30, 5, 50)) return actions;
+      } catch { /* tanpa data → tetap beli */ }
+    }
+
+    // BUY: level di bawah anchor yang tersentuh & belum terisi siklus ini
     for (let i = 0; i < levels; i++) {
       const lp = levelPrices[i];
       if (lp < state.anchor && price <= lp && !state.levelsHit.includes(i)) {
@@ -53,31 +114,10 @@ const grid: Strategy = {
         if (lot > 0) {
           actions.push({
             type: 'buy', amountQuote: lot,
-            reason: `Grid beli level ${i + 1} @ ${Math.round(lp)}`,
+            reason: `Grid beli level ${i + 1} @ ${Math.round(lp)} (target +${grossPct.toFixed(2)}%)`,
             tag: 'TRADE', meta: { level: i }
           });
         }
-      }
-    }
-
-    // GRID_UNWIND: harga kembali ≥ breakeven VWAP semua buy + margin fee.
-    // Dust-hold: nilai posisi di bawah minimum exchange → tahan, jangan emisikan
-    // sell yang pasti ditolak (hindari error-loop; posisi menunggu recovery).
-    if (state.filledBuys.length > 0) {
-      const totalCost = state.filledBuys.reduce((s, b) => s + b.cost, 0);
-      const totalQty = state.filledBuys.reduce((s, b) => s + b.qty, 0);
-      const breakevenVwap = totalQty > 0 ? (totalCost / totalQty) * 1.004 : 0; // +0.4% margin fee
-      if (totalQty > 0 && price >= breakevenVwap && totalQty * price >= (ctx.minLot ?? 0)) {
-        actions.push({
-          type: 'sell', qtyBase: totalQty, costBasis: totalCost,
-          reason: `[GRID_UNWIND] Seluruh ${state.filledBuys.length} level grid dilikuidasi pada titik Breakeven VWAP ${Math.round(breakevenVwap)} @ ${Math.round(price)}`,
-          tag: 'GRID_UNWIND',
-          impactRp: (price * totalQty - totalCost) * ctx.usdtIdr
-        });
-        // Reset siklus: anchor baru di harga sekarang
-        state.filledBuys = [];
-        state.levelsHit = [];
-        state.anchor = price;
       }
     }
 
@@ -85,7 +125,7 @@ const grid: Strategy = {
   },
 
   describe(p: any) {
-    return `Range ±${p.lower_pct}%/${p.upper_pct}%, ${p.levels} level, unwind di breakeven VWAP`;
+    return `Partial-unwind per level +${p.profit_pct ?? 0.5}% bersih, auto-range ${p.auto_range !== false ? 'ON' : 'OFF'}, ${p.levels ?? 6} level`;
   }
 };
 
