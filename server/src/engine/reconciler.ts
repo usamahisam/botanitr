@@ -61,7 +61,7 @@ export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift
       byUser.set(bot?.user_id ?? 0, arr);
     }
     for (const [userId, list] of byUser) {
-      const lines = ['⚠️ DRIFT POSISI TERDETEKSI (state bot ≠ saldo exchange):'];
+      const lines = ['DRIFT POSISI TERDETEKSI (state bot tidak sama dengan saldo exchange):'];
       for (const d of list) {
         lines.push(`• ${d.name} (${d.pair}): tercatat ${d.recorded_qty.toFixed(6)}, aktual ${d.actual_qty.toFixed(6)} (drift ${d.drift_pct.toFixed(1)}%)`);
       }

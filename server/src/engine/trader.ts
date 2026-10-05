@@ -112,7 +112,7 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
     const balErr = await checkBalance(bot, action, paper, usdtIdr);
     if (balErr) {
       const logged = logSkipOnce(bot.id, 'balance', 'warn', 'TRADE', `${balErr} — order dilewati`, { bot_id: bot.id, user_id: bot.user_id });
-      if (logged && !paper) await notify(`⚠️ Order ${bot.name} dilewati:\n${balErr}`, bot.user_id).catch(() => {});
+      if (logged && !paper) await notify(`Order ${bot.name} dilewati:\n${balErr}`, bot.user_id).catch(() => {});
       return null;
     }
     // Guard ledger: jangan belanja melebihi kas milik bot ini (anti double-spend)
@@ -163,7 +163,7 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
     const info = queries.insertTrade.run(row);
     const trade: TradeRow = { id: Number(info.lastInsertRowid), ...row };
 
-    const modeBadge = paper ? '📄' : '💰';
+    const modeBadge = paper ? '[DEMO]' : '[RIIL]';
     const sideLabel = action.type === 'buy' ? 'BELI' : 'JUAL';
     log('info', (action.tag as any) || 'TRADE',
       `${modeBadge} ${sideLabel} ${bot.pair} ${result.qty.toFixed(8)} @ ${Math.round(result.price)} — ${action.reason}`,

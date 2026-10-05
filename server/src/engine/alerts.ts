@@ -27,8 +27,8 @@ async function checkAlerts(): Promise<number> {
       const hit = a.direction === 'above' ? ticker.last >= a.target_price : ticker.last <= a.target_price;
       if (hit) {
         const mult = client.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
-        const arrow = a.direction === 'above' ? '📈 NAIK ke' : '📉 TURUN ke';
-        const msg = `🔔 PRICE ALERT: ${a.pair} ${arrow} target!\nHarga sekarang: ${fmtIDR(ticker.last * mult)}\nTarget: ${fmtIDR(a.target_price * mult)}${a.note ? `\nCatatan: ${a.note}` : ''}`;
+        const arrow = a.direction === 'above' ? 'naik ke' : 'turun ke';
+        const msg = `PRICE ALERT: ${a.pair} ${arrow} target\nHarga sekarang: ${fmtIDR(ticker.last * mult)}\nTarget: ${fmtIDR(a.target_price * mult)}${a.note ? `\nCatatan: ${a.note}` : ''}`;
         db.prepare('UPDATE price_alerts SET active=0, triggered_at=? WHERE id=?').run(now(), a.id);
         log('info', 'SYSTEM', msg, { user_id: a.user_id });
         await notify(msg, a.user_id).catch(() => {});

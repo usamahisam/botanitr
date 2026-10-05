@@ -14,7 +14,8 @@ export function fmtIDR(n: number, decimals = 0): string {
 }
 
 export function fmtSignedIDR(n: number): string {
-  return `${n >= 0 ? '+' : ''}${fmtIDR(n)}`;
+  n = safeNum(n);
+  return `${n > 0 ? '+' : ''}${fmtIDR(n)}`;
 }
 
 export function fmtPct(n: number, decimals = 2): string {
@@ -52,13 +53,13 @@ export function quoteOfPair(pair: string): string {
 export function fmtMoney(n: number, quote = 'IDR', decimals?: number): string {
   if (String(quote).toUpperCase() !== 'USDT') return fmtIDR(n, decimals ?? 0);
   n = safeNum(n);
-  const d = decimals ?? (Math.abs(n) < 10 ? 4 : Math.abs(n) < 1000 ? 2 : 0);
+  const d = decimals ?? (n === 0 ? 2 : Math.abs(n) < 10 ? 4 : Math.abs(n) < 1000 ? 2 : 0);
   return `${fmtNum(n, d)} USDT`;
 }
 
 export function fmtSignedMoney(n: number, quote = 'IDR', decimals?: number): string {
   n = safeNum(n);
-  return `${n >= 0 ? '+' : ''}${fmtMoney(n, quote, decimals)}`;
+  return `${n > 0 ? '+' : ''}${fmtMoney(n, quote, decimals)}`;
 }
 
 /** Jam selalu WIB (Asia/Jakarta) — DB menyimpan UTC, slice mentah = jam UTC. */

@@ -64,7 +64,7 @@ export default function Riwayat() {
             <span className="txt-2">Jual <b className="num txt-down">{summary.sells}</b></span>
             <span className="txt-2">PnL <b className={`num ${summary.realized >= 0 ? 'txt-up' : 'txt-down'}`}>{fmtSignedMoney(summary.realized, quoteOfPair(summary.bot.pair))}</b></span>
             {summary.sellDist && (
-              <span className="txt-2" title="Kenaikan harga yang ditunggu hingga posisi terjual">🎯 <b className="num">{summary.sellDist.pctAway >= 0 ? '+' : ''}{summary.sellDist.pctAway.toFixed(2)}%</b> <span className="txt-3">{summary.sellDist.label}</span></span>
+              <span className="txt-2" title="Kenaikan harga yang ditunggu hingga posisi terjual">Target <b className="num">{summary.sellDist.pctAway >= 0 ? '+' : ''}{summary.sellDist.pctAway.toFixed(2)}%</b> <span className="txt-3">{summary.sellDist.label}</span></span>
             )}
             <Link to="/riwayat" className="btn btn-ghost btn-sm">Semua bot</Link>
           </div>
@@ -73,7 +73,7 @@ export default function Riwayat() {
       {summary?.drift && (
         <div className="rounded-md border border-[rgba(240,185,11,0.4)] bg-[rgba(240,185,11,0.07)] px-4 py-3 mb-3 text-[12px] flex items-center gap-3 flex-wrap">
           <span className="txt-2">
-            ⚠️ Catatan bot ({summary.drift.recorded.toFixed(6)}) ≠ saldo exchange ({summary.drift.actual.toFixed(6)}) — drift {summary.drift.pct.toFixed(1)}%.
+            Catatan bot ({summary.drift.recorded.toFixed(6)}) ≠ saldo exchange ({summary.drift.actual.toFixed(6)}) — drift {summary.drift.pct.toFixed(1)}%.
             Kemungkinan order manual/partial fill.
           </span>
           <button

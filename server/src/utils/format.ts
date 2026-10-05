@@ -40,13 +40,13 @@ export function quoteOfPair(pair: string): string {
 export function fmtMoney(n: number, quote = 'IDR', decimals?: number): string {
   if (String(quote).toUpperCase() !== 'USDT') return fmtIDR(n, decimals ?? 0);
   const v = typeof n === 'number' && Number.isFinite(n) ? n : 0;
-  const d = decimals ?? (Math.abs(v) < 10 ? 4 : Math.abs(v) < 1000 ? 2 : 0);
+  const d = decimals ?? (v === 0 ? 2 : Math.abs(v) < 10 ? 4 : Math.abs(v) < 1000 ? 2 : 0);
   return `${fmtNum(v, d)} USDT`;
 }
 
 export function fmtSignedMoney(n: number, quote = 'IDR', decimals?: number): string {
   const v = typeof n === 'number' && Number.isFinite(n) ? n : 0;
-  return `${v >= 0 ? '+' : ''}${fmtMoney(v, quote, decimals)}`;
+  return `${v > 0 ? '+' : ''}${fmtMoney(v, quote, decimals)}`;
 }
 
 /** Jam lokal WIB (Asia/Jakarta) dari ISO UTC — DB menyimpan UTC. */

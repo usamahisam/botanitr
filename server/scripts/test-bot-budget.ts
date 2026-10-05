@@ -88,6 +88,17 @@ async function main() {
   const claimAfterBuy = await validateBudget(0, 'indodax', 5000, 'paper');
   check('klaim tersisa kecil -> bot baru lolos', claimAfterBuy.ok === true, claimAfterBuy.message.slice(0, 120));
 
+  // ===== G0) Resume pakai sisa klaim: beli -> stop -> lanjut tanpa warning =====
+  console.log('\nG0) Resume sisa klaim');
+  const { healDriftQty } = await import('../src/engine/scheduler.js');
+  const driftState: any = { entries: [{ price: 1000, qty: 19.39115, cost: 32868 }] };
+  const healed = healDriftQty(driftState, () => 15.812389);
+  check('drift 19,39 vs 15,81 diselaraskan', healed !== null && Math.abs(driftState.entries[0].qty - 15.812389) < 1e-6, JSON.stringify(healed));
+  check('cost ikut proporsional', Math.abs(driftState.entries[0].cost - 32868 * (15.812389 / 19.39115)) < 1, JSON.stringify(driftState.entries[0]));
+  const noDrift: any = { entries: [{ price: 1000, qty: 10, cost: 10000 }] };
+  check('selisih <10% dibiarkan', healDriftQty(noDrift, () => 9.5) === null);
+  check('aset tak ada -> lewati', healDriftQty({ entries: [{ qty: 5, cost: 5 }] }, () => null) === null);
+
   // ===== G) Guard ledger kas bot =====
   console.log('\nG) checkLedgerCash');
   const { checkLedgerCash } = await import('../src/engine/trader.js');

@@ -1,6 +1,6 @@
 import { db, queries, now, BotRow } from '../db/index.js';
 import { registry } from '../exchange/registry.js';
-import { Ticker } from '../exchange/base.js';
+import { Ticker, parsePair } from '../exchange/base.js';
 import { log } from '../log.js';
 import { getStrategy, StrategyContext } from '../strategies/types.js';
 import { executeAction } from './trader.js';
@@ -59,7 +59,7 @@ async function processBot(bot: BotRow) {
     const lossLimit = (bot.max_daily_loss_pct / 100) * bot.current_budget;
     if (realizedToday < 0 && Math.abs(realizedToday) >= lossLimit) {
       queries.setBotStatus.run('paused', now(), bot.id);
-      const msg = `🛑 MAX DAILY LOSS tercapai untuk "${bot.name}": rugi hari ini ${Math.round(realizedToday * mult).toLocaleString('id-ID')} ≥ batas ${Math.round(lossLimit * mult).toLocaleString('id-ID')} (${bot.max_daily_loss_pct}%). Bot di-pause otomatis.`;
+      const msg = `MAX DAILY LOSS tercapai untuk "${bot.name}": rugi hari ini ${Math.round(realizedToday * mult).toLocaleString('id-ID')} ≥ batas ${Math.round(lossLimit * mult).toLocaleString('id-ID')} (${bot.max_daily_loss_pct}%). Bot di-pause otomatis.`;
       log('warn', 'ENGINE', msg, { bot_id: bot.id, user_id: bot.user_id });
       await notify(msg, bot.user_id).catch(() => {});
       return;
@@ -85,6 +85,20 @@ async function processBot(bot: BotRow) {
       : await client.getBalances();
     balEntry = { data: balances, ts: Date.now() };
     balanceCache.set(balKey, balEntry);
+  }
+
+  // Auto-heal drift (live saja): catatan melebihi saldo exchange (partial fill
+  // / jual manual) → selaraskan ke bawah + catat. Tak pernah menaikkan; baris
+  // aset tak ada di respons = lewati (bukan dianggap nol).
+  if (bot.mode === 'live' && balEntry) {
+    const healed = healDriftQty(state, () => {
+      const { base } = parsePair(bot.pair, client.quoteAsset);
+      const bal = balEntry.data.find((b: any) => String(b.asset).toUpperCase() === base.toUpperCase());
+      return bal ? (Number(bal.free) || 0) + (Number(bal.locked) || 0) : null;
+    });
+    if (healed) {
+      log('warn', 'ENGINE', `Drift ${bot.name} diselaraskan otomatis: catatan ${healed.recorded.toFixed(6)} → saldo ${healed.actual.toFixed(6)}`, { bot_id: bot.id, user_id: bot.user_id });
+    }
   }
 
   const minLot = (db.prepare('SELECT min_lot_idr FROM exchanges WHERE id=? AND user_id=?').get(bot.exchange_id, bot.user_id) as any)?.min_lot_idr ?? 10000;
@@ -134,6 +148,30 @@ export function initCashLedger(state: any, currentBudget: number): void {
   const open: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
   const openCost = open.reduce((s: number, e: any) => s + (Number(e.cost) || 0), 0);
   state.cash = currentBudget - openCost;
+}
+
+/**
+ * Selaraskan qty catatan ke saldo aktual (hanya mengecilkan).
+ * Mengembalikan { recorded, actual } bila penyesuaian terjadi, else null.
+ * Dipakai auto-heal scheduler (live) — baris aset tak ada (null) = lewati.
+ */
+export function healDriftQty(state: any, actualOf: (pair: string) => number | null): { recorded: number; actual: number } | null {
+  try {
+    const open: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
+    const recorded = open.reduce((s: number, e: any) => s + (Number(e.qty) || 0), 0);
+    if (!(recorded > 0)) return null;
+    const actual = actualOf('');
+    if (actual === null || !(actual >= 0)) return null;
+    if (actual >= recorded * 0.9) return null; // dalam toleransi 10%
+    const ratio = actual / recorded;
+    for (const e of open) {
+      e.qty = (Number(e.qty) || 0) * ratio;
+      e.cost = (Number(e.cost) || 0) * ratio;
+    }
+    return { recorded, actual };
+  } catch {
+    return null;
+  }
 }
 
 export function applyFillToState(strategyName: string, state: any, trade: any, action: any) {

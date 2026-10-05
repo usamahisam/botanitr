@@ -346,11 +346,17 @@ api.post('/bots/:id/resume', asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   const bot = getUserBot(userId, req.params.id);
   if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
-  // Resume = klaim kas lagi: tolak bila kas sudah diklaim bot lain (anti double-spend).
+  // Resume = klaim kas lagi: validasi SISA klaim (kas ledger), bukan full budget.
+  // Uang yang sudah jadi barang sudah keluar dari kas — menagih full budget
+  // setelah beli = alarm palsu (kasus: beli → stop → lanjut → warning).
   if (bot.status !== 'running') {
-    const { validateBudget } = await import('../engine/budget.js');
-    const check = await validateBudget(userId, bot.exchange_id, bot.current_budget, bot.mode as 'paper' | 'live');
-    if (!check.ok) return res.status(400).json({ error: check.message, free_quote: check.freeQuote, quote: check.quote });
+    const { validateBudget, unspentClaim } = await import('../engine/budget.js');
+    const need = unspentClaim(bot);
+    // Kas sudah habis jadi barang (need=0) = tak ada yang diklaim → lolos
+    if (need > 0) {
+      const check = await validateBudget(userId, bot.exchange_id, need, bot.mode as 'paper' | 'live');
+      if (!check.ok) return res.status(400).json({ error: check.message, free_quote: check.freeQuote, quote: check.quote });
+    }
   }
   queries.setBotStatus.run('running', now(), req.params.id);
   res.json({ ok: true });

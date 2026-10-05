@@ -34,28 +34,28 @@ export function allChats(): string[] {
 }
 
 const TAG_TITLES: Record<string, string> = {
-  INVENTORY_HARVEST_RECYCLE: '🌾 INVENTORY HARVESTER: MODAL KEMBALI CAIR',
-  GRID_SELL: '📊 GRID: LEVEL PANEN',
-  GRID_UNWIND: '📊 GRID UNWIND: LIKUIDASI BREAKEVEN',
-  DCA_TP: '🎯 DCA: TARGET PROFIT TERCAPAI',
-  DCA_TP1: '🎯 DCA: PANEN PARSIAL',
-  DCA_SL: '🛑 DCA: STOP-RUGI',
-  SCALPER_TP: '⚡ SCALPER: TAKE PROFIT',
-  SCALPER_SL: '🛑 SCALPER: STOP LOSS',
-  SCALPER_EXIT: '↩️ SCALPER: EXIT SIGNAL',
-  REVERT_TP: '🔄 REVERT: PANTULAN DIKUNCI',
-  REVERT_SL: '🛑 REVERT: STOP DARURAT',
-  REVERT_EXIT: '🔄 REVERT: EXIT MOMENTUM',
-  BB_EXIT: '📉 BOLLINGER: EXIT BAND',
-  BB_SL: '🛑 BOLLINGER: STOP DARURAT',
-  BRK_TP: '🚀 BREAKOUT: TAKE PROFIT',
-  BRK_SL: '🛑 BREAKOUT: STOP DARURAT',
-  BRK_EXIT: '🚀 BREAKOUT: MOMENTUM HABIS',
-  DYN_SELL: '🔄 DYNAMIC: LEVEL PANEN',
-  DYN_SL: '🛑 DYNAMIC: STOP DARURAT',
-  STOP_LIQUIDATE: '🛑 STOP: LIKUIDASI KE SALDO',
-  REBALANCE: '⚖️ REBALANCE PORTFOLIO',
-  AUTO_COMPOUND: '📈 AUTO-COMPOUND'
+  INVENTORY_HARVEST_RECYCLE: 'HARVESTER: MODAL KEMBALI CAIR',
+  GRID_SELL: 'GRID: LEVEL PANEN',
+  GRID_UNWIND: 'GRID UNWIND: LIKUIDASI BREAKEVEN',
+  DCA_TP: 'DCA: TARGET PROFIT TERCAPAI',
+  DCA_TP1: 'DCA: PANEN PARSIAL',
+  DCA_SL: 'DCA: STOP-RUGI',
+  SCALPER_TP: 'SCALPER: TAKE PROFIT',
+  SCALPER_SL: 'SCALPER: STOP LOSS',
+  SCALPER_EXIT: 'SCALPER: EXIT SIGNAL',
+  REVERT_TP: 'REVERT: PANTULAN DIKUNCI',
+  REVERT_SL: 'REVERT: STOP DARURAT',
+  REVERT_EXIT: 'REVERT: EXIT MOMENTUM',
+  BB_EXIT: 'BOLLINGER: EXIT BAND',
+  BB_SL: 'BOLLINGER: STOP DARURAT',
+  BRK_TP: 'BREAKOUT: TAKE PROFIT',
+  BRK_SL: 'BREAKOUT: STOP DARURAT',
+  BRK_EXIT: 'BREAKOUT: MOMENTUM HABIS',
+  DYN_SELL: 'DYNAMIC: LEVEL PANEN',
+  DYN_SL: 'DYNAMIC: STOP DARURAT',
+  STOP_LIQUIDATE: 'STOP: LIKUIDASI KE SALDO',
+  REBALANCE: 'REBALANCE PORTFOLIO',
+  AUTO_COMPOUND: 'AUTO-COMPOUND'
 };
 
 /**
@@ -63,11 +63,11 @@ const TAG_TITLES: Record<string, string> = {
  * (USDT untuk pair *USDT, IDR untuk *IDR) — bukan semuanya di-Rp-kan.
  */
 export async function notifyTrade(trade: any, action: Action, _usdtIdr: number) {
-  const title = TAG_TITLES[action.tag] || (trade.side === 'buy' ? '🟢 BELI' : '🔴 JUAL');
+  const title = TAG_TITLES[action.tag] || (trade.side === 'buy' ? 'BELI' : 'JUAL');
   const exchange = trade.exchange_id.toUpperCase();
   const base = trade.pair.replace(/IDR$|USDT$/, '');
   const quote = quoteOfPair(trade.pair);
-  const modeBadge = trade.mode === 'paper' ? '📄 DEMO' : '💰 RIIL';
+  const modeBadge = trade.mode === 'paper' ? '[DEMO]' : '[RIIL]';
   const lines = [
     `${title}`,
     `Bursa: ${exchange} ${modeBadge}`,
@@ -87,7 +87,7 @@ export async function notifyTrade(trade: any, action: Action, _usdtIdr: number) 
 }
 
 export async function notifyDailySummary(summary: string, userId?: number | null) {
-  await notify(`📅 RINGKASAN HARIAN\n${summary}`, userId ?? null);
+  await notify(`RINGKASAN HARIAN\n${summary}`, userId ?? null);
 }
 
 export function telegramConfigured(userId = 0): boolean {

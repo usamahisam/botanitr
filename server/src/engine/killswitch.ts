@@ -36,7 +36,7 @@ export async function activateKillSwitch(triggeredBy: string, userId: number): P
   }
 
   const totalCancelled = Object.values(result.orders_cancelled).reduce((s, n) => s + n, 0);
-  const msg = `🚨 KILL SWITCH AKTIF (${triggeredBy}) — ${result.bots_paused} bot di-pause, ${totalCancelled} open order dibatalkan${result.errors.length ? `. Error: ${result.errors.join('; ')}` : ''}`;
+  const msg = `KILL SWITCH AKTIF (${triggeredBy}) — ${result.bots_paused} bot di-pause, ${totalCancelled} open order dibatalkan${result.errors.length ? `. Error: ${result.errors.join('; ')}` : ''}`;
 
   log('warn', 'SYSTEM', msg, { user_id: userId });
   await notify(msg, userId).catch(() => {});

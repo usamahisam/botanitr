@@ -75,7 +75,7 @@ function maskChat(ctx: any): number | null {
   const id = String(ctx.chat?.id ?? '');
   const userId = userIdForChat(id);
   if (userId === null) {
-    ctx.reply('⛔ Akses ditolak. Chat ID Anda: ' + id + '\nTambahkan Chat ID ini di Pengaturan → Telegram.').catch(() => {});
+    ctx.reply('Akses ditolak. Chat ID Anda: ' + id + '\nTambahkan Chat ID ini di Pengaturan → Telegram.').catch(() => {});
     return null;
   }
   ctx.state.userId = userId;
@@ -109,23 +109,23 @@ export const BOT_COMMANDS = [
   { command: 'resume', description: 'Lanjutkan bot — /resume [id] (kosong = semua)' },
   { command: 'stop', description: 'Hapus bot — /stop <id>' },
   { command: 'logs', description: 'Log terakhir — /logs [jumlah]' },
-  { command: 'panic', description: '🚨 Kill switch darurat' },
+  { command: 'panic', description: 'Kill switch darurat' },
   { command: 'help', description: 'Panduan lengkap semua perintah' },
 ];
 
 /** Keyboard menu persisten (tombol di bawah kolom chat) */
 function mainMenuKeyboard() {
   return Markup.keyboard([
-    ['📊 Status', '💰 Saldo'],
-    ['📌 Posisi', '🤖 Bot Saya'],
-    ['📈 PnL', '📜 Log'],
-    ['❓ Bantuan'],
+    ['Status', 'Saldo'],
+    ['Posisi', 'Bot Saya'],
+    ['PnL', 'Log'],
+    ['Bantuan'],
   ]).resize().reply_markup;
 }
 
 const HELP_TEXT =
-  `<b>🌱 PANDUAN TRADING BOTANI</b>\n\n` +
-  `<b>📊 Pantau</b>\n` +
+  `<b>PANDUAN TRADING BOTANI</b>\n\n` +
+  `<b>Pantau</b>\n` +
   `/status — ringkasan bot &amp; total portfolio\n` +
   `/balance — saldo &amp; koin per exchange\n` +
   `/positions — posisi terbuka tiap bot\n` +
@@ -133,25 +133,25 @@ const HELP_TEXT =
   `/price <code>PAIR</code> — harga, mis. <code>/price XRPIDR</code>\n` +
   `/pnl — profit, rugi/laba hari ini &amp; win rate\n` +
   `/logs <code>[n]</code> — log terakhir (maks 15)\n\n` +
-  `<b>🎛 Kontrol</b>\n` +
+  `<b>Kontrol</b>\n` +
   `/pause <code>[id]</code> — pause satu bot / semua bila kosong\n` +
   `/resume <code>[id]</code> — lanjutkan satu bot / semua\n` +
   `/stop <code>&lt;id&gt;</code> — hapus bot (dengan konfirmasi)\n` +
-  `/panic — 🚨 kill switch: pause SEMUA + batalkan order live\n\n` +
-  `<b>💡 Tips</b>\n` +
+  `/panic — kill switch: pause SEMUA + batalkan order live\n\n` +
+  `<b>Tips</b>\n` +
   `• Ketik <code>/</code> untuk melihat semua perintah\n` +
   `• Gunakan tombol menu di bawah untuk akses cepat\n` +
   `• ID bot bisa dilihat di /bots atau /positions\n` +
   `• Pengaturan lengkap (exchange, budget, strategi) di dashboard web`;
 
 const WELCOME_TEXT =
-  `<b>🌱 Trading Botani siap!</b>\n\n` +
+  `<b>Trading Botani siap.</b>\n\n` +
   `Pantau &amp; kendalikan bot trading Anda langsung dari sini.\n` +
   `Ketik <code>/</code> untuk daftar perintah, atau pakai tombol menu di bawah.\n\n` +
-  `<b>🚀 Mulai cepat:</b> /status · /balance · /bots · /help`;
+  `<b>Mulai cepat:</b> /status · /balance · /bots · /help`;
 
 function statusIcon(s: string): string {
-  return s === 'running' ? '🟢' : s === 'paused' ? '⏸' : '⚪';
+  return s === 'running' ? '[ON]' : s === 'paused' ? '[OFF]' : '[--]';
 }
 
 async function buildStatus(userId: number): Promise<string> {
@@ -160,39 +160,39 @@ async function buildStatus(userId: number): Promise<string> {
   const paused = bots.filter(b => b.status === 'paused').length;
   let totalIdr = 0;
   const lines = [
-    `<b>🤖 STATUS BOTANI</b>`,
-    `🟢 Aktif: <b>${running}</b> · ⏸ Pause: <b>${paused}</b> · Total: <b>${bots.length}</b>`,
+    `<b>STATUS BOTANI</b>`,
+    `Aktif: <b>${running}</b> · Pause: <b>${paused}</b> · Total: <b>${bots.length}</b>`,
     `────────────────`,
   ];
   for (const id of userExchangeIds(userId)) {
     try {
       const v = await fetchExchangeBalance(id, userId);
       totalIdr += v.saldo_total_idr;
-      const badge = v.mode === 'paper' ? '📄 DEMO' : '💰 RIIL';
-      lines.push(`<b>${esc(v.name)}</b> ${badge}${v.error ? ' ⚠️' : ''}`);
+      const badge = v.mode === 'paper' ? '[DEMO]' : '[RIIL]';
+      lines.push(`<b>${esc(v.name)}</b> ${badge}${v.error ? ' [error]' : ''}`);
       if (v.error) lines.push(`  <i>${esc(v.error)}</i>`);
       else lines.push(`  Saldo <b>${fmtIDR(v.saldo_total_idr)}</b> · Kas ${fmtIDR(v.kas_bebas_idr)}`);
     } catch (e: any) {
-      lines.push(`<b>${esc(id)}</b> ⚠️ <i>${esc(e.message)}</i>`);
+      lines.push(`<b>${esc(id)}</b> [error] <i>${esc(e.message)}</i>`);
     }
   }
-  lines.push(`────────────────`, `💼 <b>Total Portfolio: ${fmtIDR(totalIdr)}</b>`);
+  lines.push(`────────────────`, `<b>Total Portfolio: ${fmtIDR(totalIdr)}</b>`);
   return lines.join('\n');
 }
 
 async function buildBalance(userId: number): Promise<string> {
-  const lines = [`<b>💰 SALDO PER EXCHANGE</b>`, ''];
+  const lines = [`<b>SALDO PER EXCHANGE</b>`, ''];
   for (const id of userExchangeIds(userId)) {
     try {
       const v = await fetchExchangeBalance(id, userId);
       lines.push(`── <b>${esc(v.name)}</b> ──`);
-      if (v.error) { lines.push(`⚠️ <i>${esc(v.error)}</i>`, ''); continue; }
+      if (v.error) { lines.push(`[error] <i>${esc(v.error)}</i>`, ''); continue; }
       lines.push(`Kas Bebas: <b>${fmtIDR(v.kas_bebas_idr)}</b>`);
       const top = v.coins.filter(c => c.symbol !== v.quote_asset).slice(0, 6);
       for (const c of top) lines.push(`  <code>${esc(c.symbol)}</code> ${c.qty.toFixed(6)} ≈ ${fmtIDR(c.value_idr)}`);
       lines.push(`Total: <b>${fmtIDR(v.saldo_total_idr)}</b>`, '');
     } catch (e: any) {
-      lines.push(`── <b>${esc(id)}</b> ──`, `⚠️ <i>${esc(e.message)}</i>`, '');
+      lines.push(`── <b>${esc(id)}</b> ──`, `[error] <i>${esc(e.message)}</i>`, '');
     }
   }
   return lines.join('\n');
@@ -200,8 +200,8 @@ async function buildBalance(userId: number): Promise<string> {
 
 async function buildPositions(userId: number): Promise<string> {
   const bots = (db.prepare('SELECT * FROM bots WHERE user_id=?').all(userId) as any[]).filter(b => b.status !== 'stopped');
-  if (bots.length === 0) return '📭 Tidak ada posisi/bot aktif.\nBuat bot baru di dashboard web atau /help.';
-  const lines = [`<b>📌 POSISI BOT</b>`, ''];
+  if (bots.length === 0) return 'Tidak ada posisi/bot aktif.\nBuat bot baru di dashboard web atau /help.';
+  const lines = [`<b>POSISI BOT</b>`, ''];
   for (const b of bots) {
     let entries: any[] = [];
     try {
@@ -216,7 +216,7 @@ async function buildPositions(userId: number): Promise<string> {
     lines.push(`${statusIcon(b.status)} <b>#${b.id} ${esc(b.name)}</b>`);
     lines.push(`  <code>${esc(b.pair)}</code> · ${esc(b.strategy)} · ${esc(b.status)}`);
     lines.push(`  Budget ${fmtMoney(b.current_budget, quote)}`);
-    if (qty > 0) lines.push(`  📦 Posisi <code>${qty.toFixed(8)}</code> (modal ${fmtMoney(cost, quote)})`);
+    if (qty > 0) lines.push(`  Posisi <code>${qty.toFixed(8)}</code> (modal ${fmtMoney(cost, quote)})`);
     lines.push('');
   }
   return lines.join('\n');
@@ -228,9 +228,9 @@ function buildBotsKeyboard(userId: number) {
   if (bots.length === 0) return null;
   const rows = bots.map(b => {
     const btn = b.status === 'running'
-      ? { text: `⏸ #${b.id}`, callback_data: `bot_p_${b.id}` }
-      : { text: `▶️ #${b.id}`, callback_data: `bot_r_${b.id}` };
-    return [btn, { text: `🗑 #${b.id}`, callback_data: `bot_s_${b.id}` }];
+      ? { text: `Pause #${b.id}`, callback_data: `bot_p_${b.id}` }
+      : { text: `Jalan #${b.id}`, callback_data: `bot_r_${b.id}` };
+    return [btn, { text: `Hapus #${b.id}`, callback_data: `bot_s_${b.id}` }];
   });
   return { inline_keyboard: rows };
 }
@@ -238,7 +238,7 @@ function buildBotsKeyboard(userId: number) {
 async function buildPnl(userId: number): Promise<string> {
   const usdtIdr = await getUsdtIdr();
   const wr = pnl.winRate(undefined, userId);
-  const lines = [`<b>📊 PROFIT &amp; WIN RATE</b>`, ''];
+  const lines = [`<b>PROFIT &amp; WIN RATE</b>`, ''];
   let totalRealizedIdr = 0;
   for (const id of userExchangeIds(userId)) {
     try {
@@ -251,15 +251,15 @@ async function buildPnl(userId: number): Promise<string> {
       const mult = quote === 'IDR' ? 1 : usdtIdr;
       totalRealizedIdr += r * mult;
       const label = id === 'indodax' ? 'Indodax' : id === 'tokocrypto' ? 'Tokocrypto' : id === 'binance' ? 'Binance' : id;
-      const emo = r >= 0 ? '🟢' : '🔴';
+      const emo = r >= 0 ? '[+]' : '[-]';
       lines.push(`${emo} <b>${esc(label)}</b>`);
       lines.push(`  Total <b>${fmtMoney(r, quote)}</b> · Hari ini ${fmtMoney(today, quote)}`);
     } catch (e: any) {
-      lines.push(`⚠️ <b>${esc(id)}</b> <i>${esc(e.message)}</i>`);
+      lines.push(`[error] <b>${esc(id)}</b> <i>${esc(e.message)}</i>`);
     }
   }
-  lines.push('', `💰 <b>Total Realized: ${fmtIDR(totalRealizedIdr)}</b>`);
-  lines.push(`🎯 Win Rate: <b>${wr.wins}/${wr.total}</b> (${fmtPct(wr.rate * 100)})`);
+  lines.push('', `<b>Total Realized: ${fmtIDR(totalRealizedIdr)}</b>`);
+  lines.push(`Win Rate: <b>${wr.wins}/${wr.total}</b> (${fmtPct(wr.rate * 100)})`);
   return lines.join('\n');
 }
 
@@ -267,7 +267,7 @@ async function buildPnl(userId: number): Promise<string> {
 export function formatLogs(rows: any[]): string {
   return rows.map(r => {
     const t = fmtTimeWib(String(r.created_at || ''));
-    const icon = r.level === 'error' ? '❌' : r.level === 'warn' ? '⚠️' : 'ℹ️';
+    const icon = r.level === 'error' ? '[ERR]' : r.level === 'warn' ? '[WARN]' : '[INFO]';
     return `<code>${esc(t)}</code> ${icon} [${esc(r.tag)}] ${esc(String(r.message || '').slice(0, 120))}`;
   }).join('\n');
 }
@@ -300,7 +300,7 @@ function setupHandlers(inst: Telegraf) {
 
   inst.start(ctx => ctx.reply(WELCOME_TEXT, { ...html, reply_markup: mainMenuKeyboard() }));
   inst.help(ctx => ctx.reply(HELP_TEXT, html));
-  inst.command('menu', ctx => ctx.reply('📋 <b>Menu utama</b> — pilih tombol di bawah:', { ...html, reply_markup: mainMenuKeyboard() }));
+  inst.command('menu', ctx => ctx.reply('<b>Menu utama</b> — pilih tombol di bawah:', { ...html, reply_markup: mainMenuKeyboard() }));
 
   inst.command('status', async ctx => ctx.reply(await buildStatus(ctx.state.userId), html));
   inst.command('balance', async ctx => ctx.reply(await buildBalance(ctx.state.userId), html));
@@ -308,25 +308,25 @@ function setupHandlers(inst: Telegraf) {
   inst.command('pnl', async ctx => ctx.reply(await buildPnl(ctx.state.userId), html));
 
   // Tombol keyboard menu → handler yang sama dengan perintah slash
-  inst.hears('📊 Status', async ctx => ctx.reply(await buildStatus(ctx.state.userId), html));
-  inst.hears('💰 Saldo', async ctx => ctx.reply(await buildBalance(ctx.state.userId), html));
-  inst.hears('📌 Posisi', async ctx => ctx.reply(await buildPositions(ctx.state.userId), html));
-  inst.hears('📈 PnL', async ctx => ctx.reply(await buildPnl(ctx.state.userId), html));
-  inst.hears('🤖 Bot Saya', async ctx => {
+  inst.hears('Status', async ctx => ctx.reply(await buildStatus(ctx.state.userId), html));
+  inst.hears('Saldo', async ctx => ctx.reply(await buildBalance(ctx.state.userId), html));
+  inst.hears('Posisi', async ctx => ctx.reply(await buildPositions(ctx.state.userId), html));
+  inst.hears('PnL', async ctx => ctx.reply(await buildPnl(ctx.state.userId), html));
+  inst.hears('Bot Saya', async ctx => {
     const kb = buildBotsKeyboard(ctx.state.userId);
-    if (!kb) return ctx.reply('📭 Belum ada bot.\nBuat bot baru di dashboard web atau /help.', html);
+    if (!kb) return ctx.reply('Belum ada bot.\nBuat bot baru di dashboard web atau /help.', html);
     await ctx.reply(await buildPositions(ctx.state.userId), { ...html, reply_markup: kb });
   });
-  inst.hears('📜 Log', async ctx => {
+  inst.hears('Log', async ctx => {
     const rows = db.prepare('SELECT * FROM logs WHERE (user_id=? OR user_id=0) ORDER BY id DESC LIMIT 5').all(ctx.state.userId) as any[];
-    if (rows.length === 0) return ctx.reply('📭 Belum ada log.');
-    await ctx.reply(`📜 <b>5 LOG TERAKHIR</b>\n\n${formatLogs(rows)}`, html);
+    if (rows.length === 0) return ctx.reply('Belum ada log.');
+    await ctx.reply(`<b>5 LOG TERAKHIR</b>\n\n${formatLogs(rows)}`, html);
   });
-  inst.hears('❓ Bantuan', ctx => ctx.reply(HELP_TEXT, html));
+  inst.hears('Bantuan', ctx => ctx.reply(HELP_TEXT, html));
 
   inst.command('bots', async ctx => {
     const kb = buildBotsKeyboard(ctx.state.userId);
-    if (!kb) return ctx.reply('📭 Belum ada bot.\nBuat bot baru di dashboard web atau /help.', html);
+    if (!kb) return ctx.reply('Belum ada bot.\nBuat bot baru di dashboard web atau /help.', html);
     await ctx.reply(await buildPositions(ctx.state.userId), { ...html, reply_markup: kb });
   });
 
@@ -352,7 +352,7 @@ function setupHandlers(inst: Telegraf) {
     queries.deleteBot.run(id);
     log('info', 'TELEGRAM', `Bot #${id} "${botRow.name}" dihapus via Telegram oleh @${(ctx as any).from?.username || (ctx as any).from?.id}`, { user_id: userId });
     try {
-      await ctx.editMessageText(`🗑 Bot #${id} "${esc(botRow.name)}" dihapus.`, html);
+      await ctx.editMessageText(`Bot #${id} "${esc(botRow.name)}" dihapus.`, html);
     } catch { /* abaikan */ }
   });
 
@@ -375,7 +375,7 @@ function setupHandlers(inst: Telegraf) {
         const t = await client.getTicker(pair);
         const quote = quoteOfPair(pair);
         return ctx.reply(
-          `💹 <b>${esc(pair)}</b> <i>via ${esc(exchangeId)}</i>\n` +
+          `Harga <b>${esc(pair)}</b> <i>via ${esc(exchangeId)}</i>\n` +
           `Last: <b>${fmtMoney(t.last, quote)}</b>\n` +
           `Bid: ${fmtMoney(t.bid, quote)} · Ask: ${fmtMoney(t.ask, quote)}\n` +
           `24J: ${fmtMoney(t.low24, quote)} – ${fmtMoney(t.high24, quote)}`,
@@ -385,7 +385,7 @@ function setupHandlers(inst: Telegraf) {
         errors.push(`${exchangeId}: ${e.message}`);
       }
     }
-    ctx.reply(`⚠️ Gagal ambil harga <b>${esc(pair)}</b> di semua exchange:\n<i>${esc(errors.slice(0, 3).join('; '))}</i>`, html);
+    ctx.reply(`Gagal ambil harga <b>${esc(pair)}</b> di semua exchange:\n<i>${esc(errors.slice(0, 3).join('; '))}</i>`, html);
   });
 
   inst.command('pause', ctx => {
@@ -395,10 +395,10 @@ function setupHandlers(inst: Telegraf) {
       const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
       if (!botRow) return ctx.reply('Bot tidak ditemukan. Lihat ID di /bots.', html);
       queries.setBotStatus.run('paused', now(), id);
-      ctx.reply(`⏸ <b>#${id} ${esc(botRow.name)}</b> di-pause.`, html);
+      ctx.reply(`<b>#${id} ${esc(botRow.name)}</b> di-pause.`, html);
     } else {
       const info = db.prepare(`UPDATE bots SET status='paused' WHERE status='running' AND user_id=?`).run(userId);
-      ctx.reply(`⏸ <b>${info.changes} bot</b> di-pause.`, html);
+      ctx.reply(`<b>${info.changes} bot</b> di-pause.`, html);
     }
     log('info', 'TELEGRAM', `Pause via Telegram ${id ? '#' + id : '(semua)'} oleh chat ${ctx.chat.id}`, { user_id: userId });
   });
@@ -410,10 +410,10 @@ function setupHandlers(inst: Telegraf) {
       const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
       if (!botRow) return ctx.reply('Bot tidak ditemukan. Lihat ID di /bots.', html);
       queries.setBotStatus.run('running', now(), id);
-      ctx.reply(`▶️ <b>#${id} ${esc(botRow.name)}</b> dilanjutkan.`, html);
+      ctx.reply(`<b>#${id} ${esc(botRow.name)}</b> dilanjutkan.`, html);
     } else {
       const info = db.prepare(`UPDATE bots SET status='running' WHERE status='paused' AND user_id=?`).run(userId);
-      ctx.reply(`▶️ <b>${info.changes} bot</b> dilanjutkan.`, html);
+      ctx.reply(`<b>${info.changes} bot</b> dilanjutkan.`, html);
     }
   });
 
@@ -428,17 +428,17 @@ function setupHandlers(inst: Telegraf) {
       const st = JSON.parse(botRow.state || '{}');
       const entries: any[] = st.entries || st.filledBuys || (st.position ? [st.position] : []);
       const qty = entries.reduce((s: number, e: any) => s + (Number(e.qty) || 0), 0);
-      if (qty > 0) warn = `\n\n⚠️ Masih ada posisi <code>±${qty.toFixed(8)}</code> — aset tetap di exchange, hanya berhenti dipantau.`;
+      if (qty > 0) warn = `\n\nCatatan: masih ada posisi <code>±${qty.toFixed(8)}</code> — aset tetap di exchange, hanya berhenti dipantau.`;
     } catch { /* abaikan */ }
     await ctx.reply(
       `Hapus bot <b>#${id} "${esc(botRow.name)}"</b> (<code>${esc(botRow.pair)}</code>)?${warn}`,
-      { ...html, reply_markup: { inline_keyboard: [[{ text: '✅ Ya, hapus', callback_data: `stop_yes_${id}` }, { text: '❌ Batal', callback_data: 'stop_no' }]] } }
+      { ...html, reply_markup: { inline_keyboard: [[{ text: 'Ya, hapus', callback_data: `stop_yes_${id}` }, { text: 'Batal', callback_data: 'stop_no' }]] } }
     );
   });
 
   inst.action('stop_no', async ctx => {
     await ctx.answerCbQuery('Dibatalkan');
-    await ctx.editMessageText('✅ Penghapusan dibatalkan.');
+    await ctx.editMessageText('Penghapusan dibatalkan.');
   });
   inst.action(/^stop_yes_(\d+)$/, async ctx => {
     const userId = (ctx as any).state?.userId;
@@ -457,21 +457,21 @@ function setupHandlers(inst: Telegraf) {
     await ctx.answerCbQuery('Menghapus…');
     queries.deleteBot.run(id);
     log('info', 'TELEGRAM', `Bot #${id} "${botRow.name}" dihapus via Telegram oleh @${(ctx as any).from?.username || (ctx as any).from?.id}`, { user_id: userId });
-    await ctx.editMessageText(`🗑 Bot <b>#${id} "${esc(botRow.name)}"</b> dihapus.`, { parse_mode: 'HTML' });
+    await ctx.editMessageText(`Bot <b>#${id} "${esc(botRow.name)}"</b> dihapus.`, { parse_mode: 'HTML' });
   });
 
   inst.command('panic', async ctx => {
     await ctx.reply(
-      '🚨 <b>KILL SWITCH</b> akan:\n' +
-      '• ME-PAUSE <b>semua bot</b>\n' +
-      '• MEMBATALKAN <b>semua open order live</b>\n\nLanjutkan?',
-      { ...html, reply_markup: { inline_keyboard: [[{ text: '✅ Ya, AKTIFKAN', callback_data: 'panic_confirm' }, { text: '❌ Batal', callback_data: 'panic_cancel' }]] } }
+      '<b>KILL SWITCH</b> akan:\n' +
+      '• Pause <b>semua bot</b>\n' +
+      '• Batalkan <b>semua open order live</b>\n\nLanjutkan?',
+      { ...html, reply_markup: { inline_keyboard: [[{ text: 'Ya, aktifkan', callback_data: 'panic_confirm' }, { text: 'Batal', callback_data: 'panic_cancel' }]] } }
     );
   });
 
   inst.action('panic_cancel', async ctx => {
     await ctx.answerCbQuery('Dibatalkan');
-    await ctx.editMessageText('✅ Kill switch dibatalkan. Bot tetap berjalan.');
+    await ctx.editMessageText('Kill switch dibatalkan. Bot tetap berjalan.');
   });
   inst.action('panic_confirm', async ctx => {
     const userId = (ctx as any).state?.userId;
@@ -484,10 +484,10 @@ function setupHandlers(inst: Telegraf) {
     const r = await activateKillSwitch(`Telegram @${ctx.from?.username || ctx.from?.id}`, userId);
     const total = Object.values(r.orders_cancelled).reduce((s, n) => s + n, 0);
     await ctx.editMessageText(
-      `🚨 <b>KILL SWITCH AKTIF</b>\n` +
-      `⏸ <b>${r.bots_paused} bot</b> di-pause\n` +
-      `❌ <b>${total} open order</b> dibatalkan` +
-      `${r.errors.length ? `\n⚠️ <i>${esc(r.errors.join('; '))}</i>` : ''}\n\n` +
+      `<b>KILL SWITCH AKTIF</b>\n` +
+      `<b>${r.bots_paused} bot</b> di-pause\n` +
+      `<b>${total} open order</b> dibatalkan` +
+      `${r.errors.length ? `\n<i>${esc(r.errors.join('; '))}</i>` : ''}\n\n` +
       `Gunakan /resume untuk menjalankan lagi.`,
       html
     );
@@ -496,8 +496,8 @@ function setupHandlers(inst: Telegraf) {
   inst.command('logs', ctx => {
     const n = Math.min(parseInt(ctx.payload || '5', 10) || 5, 15);
     const rows = db.prepare('SELECT * FROM logs WHERE (user_id=? OR user_id=0) ORDER BY id DESC LIMIT ?').all(ctx.state.userId, n) as any[];
-    if (rows.length === 0) return ctx.reply('📭 Belum ada log.');
-    ctx.reply(`📜 <b>${n} LOG TERAKHIR</b>\n\n${formatLogs(rows)}`, html);
+    if (rows.length === 0) return ctx.reply('Belum ada log.');
+    ctx.reply(`<b>${n} LOG TERAKHIR</b>\n\n${formatLogs(rows)}`, html);
   });
 } // end setupHandlers
 
@@ -613,7 +613,7 @@ export async function sendTestMessage(userId = 0): Promise<{ ok: boolean; error?
   try {
     let n = 0;
     for (const chatId of chats) {
-      await inst.telegram.sendMessage(chatId, '✅ Tes koneksi Trading Botani berhasil!');
+      await inst.telegram.sendMessage(chatId, 'Tes koneksi Trading Botani berhasil.');
       n++;
     }
     return { ok: true, sent_to: n };

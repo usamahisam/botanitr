@@ -91,7 +91,7 @@ function BacktestPanel({ exchange, pair, strategy, params, budget, onParams }: {
             {loading ? 'Menguji…' : 'Jalankan uji'}
           </button>
           <button onClick={optimize} disabled={optLoading} className="btn btn-ghost btn-sm" title="Cari parameter terbaik otomatis (walk-forward 30 hari, anti overfitting)">
-            {optLoading ? 'Mencari…' : '✨ Optimasi otomatis'}
+            {optLoading ? 'Mencari…' : 'Optimasi otomatis'}
           </button>
         </div>
       </div>
@@ -211,7 +211,7 @@ function LiveReadiness({ exchange, exList }: { exchange: string; exList: Exchang
       <div className="font-semibold mb-1">Syarat bot Riil di {row.name}:</div>
       {items.map(([v, t], i) => (
         <div key={i} className={`flex items-center gap-2 ${v ? 'txt-up' : 'text-[#f0b90b]'}`}>
-          <span className="num">{v ? '✓' : '!'}</span><span>{t}</span>
+          <span className="num font-bold">{v ? 'OK' : '!!'}</span><span>{t}</span>
         </div>
       ))}
       {!ok && <div className="txt-2 mt-1">Lengkapi dulu — tombol lanjut terkunci sampai syarat terpenuhi.</div>}
@@ -385,7 +385,7 @@ export default function Wizard() {
             <div>
               {presets[0].market && (
                 <div className="rounded-md border border-[#4f7cff]/30 bg-[#4f7cff]/[0.06] px-3 py-2.5 mb-3 text-[12px] leading-relaxed">
-                  <div className="font-semibold">📊 Grafik {pair}: {presets[0].market.label}</div>
+                  <div className="font-semibold">Grafik {pair}: {presets[0].market.label}</div>
                   <div className="txt-2 mt-0.5">
                     Peringkat di bawah sudah disesuaikan — peringkat 1 paling cocok untuk kondisi ini
                     <span className="txt-3 num"> · data {presets[0].market.interval}, {presets[0].market.candles} candle</span>

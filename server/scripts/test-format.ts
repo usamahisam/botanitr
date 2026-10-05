@@ -20,6 +20,7 @@ async function main() {
   check('harga kecil presisi 4', fmtMoney(0.5321, 'USDT') === '0,5321 USDT', fmtMoney(0.5321, 'USDT'));
   check('signed USDT', fmtSignedMoney(12.5, 'USDT') === '+12,50 USDT', fmtSignedMoney(12.5, 'USDT'));
   check('signed IDR', fmtSignedMoney(-2000, 'IDR') === '-Rp 2.000', fmtSignedMoney(-2000, 'IDR'));
+  check('nol tanpa tanda plus', fmtSignedMoney(0, 'IDR') === 'Rp 0' && fmtSignedMoney(0, 'USDT') === '0,00 USDT', fmtSignedMoney(0, 'IDR'));
 
   console.log('\nC) Jam WIB');
   check('10:00 UTC → 17:00 WIB', fmtTimeWib('2026-10-05T10:00:01.000Z') === '17.00.01', fmtTimeWib('2026-10-05T10:00:01.000Z'));

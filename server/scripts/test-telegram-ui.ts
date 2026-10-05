@@ -32,7 +32,7 @@ async function main() {
     { created_at: '2026-10-05T10:00:01.000Z', level: 'error', tag: 'T', message: '<hack>' },
     { created_at: '2026-10-05T10:00:02.000Z', level: 'info', tag: 'S', message: 'ok' },
   ]);
-  check('ikon error + info', out.includes('❌') && out.includes('ℹ️'), out);
+  check('penanda [ERR] + [INFO]', out.includes('[ERR]') && out.includes('[INFO]'), out);
   check('pesan di-escape', out.includes('&lt;hack&gt;') && !out.includes('<hack>'));
   check('jam WIB (10 UTC → 17 WIB)', out.includes('17.00.01'), out);
 
