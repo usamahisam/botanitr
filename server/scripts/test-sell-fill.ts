@@ -64,6 +64,11 @@ async function main() {
   check('posisi pulih dari buy terakhir (dibatasi saldo)', rec === true && lost.position.qty === 9.5 && lost.position.entryPrice === 100, JSON.stringify(lost.position));
   const noRec = await recoverPosition({ id: botId } as any, { position: null }, async () => 0);
   check('saldo nol -> tak pulih', noRec === false);
+  // Skenario over-recovery VPS: sell sukses lalu balance lag -> JANGAN bangkitkan
+  db.prepare(`INSERT INTO trades (user_id, bot_id, exchange_id, pair, side, price, qty, fee, value, realized_pnl, cost_basis, mode, created_at)
+    VALUES (0, ?, 'indodax','XRPIDR','sell',110,9.5,0,1045,45,1000,'paper',?)`).run(botId, now());
+  const ghost: any = { position: null };
+  check('trade terakhir sell -> tak pulih (balance lag)', (await recoverPosition({ id: botId } as any, ghost, async () => 9.5)) === false && ghost.position === null);
 
   console.log('\nD) trimSellQty');
   const { trimSellQty } = await import('../src/engine/trader.js');

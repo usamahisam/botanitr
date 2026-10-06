@@ -178,6 +178,13 @@ export function healDriftQty(state: any, actualOf: (pair: string) => number | nu
       e.qty = (Number(e.qty) || 0) * ratio;
       e.cost = (Number(e.cost) || 0) * ratio;
     }
+    // Bersihkan sisa nol agar tak menumpuk jadi phantom abadi
+    for (const key of ['entries', 'filledBuys'] as const) {
+      if (Array.isArray((state as any)[key])) {
+        (state as any)[key] = (state as any)[key].filter((e: any) => (Number(e.qty) || 0) > 0);
+      }
+    }
+    if (state.position && !((Number(state.position.qty) || 0) > 0)) state.position = null;
     return { recorded, actual };
   } catch {
     return null;
@@ -301,6 +308,10 @@ export function applyFillToState(strategyName: string, state: any, trade: any, a
 export async function recoverPosition(bot: BotRow, state: any, getBaseFree: () => Promise<number | null>): Promise<boolean> {
   if (!('position' in state) || state.position != null) return false;
   try {
+    // Jangan bangkitkan posisi yang SUDAH terjual: bila trade terakhir adalah
+    // sell, state kosong itu benar (balance yang masih tampil hanya lag).
+    const last = db.prepare(`SELECT side FROM trades WHERE bot_id=? ORDER BY id DESC LIMIT 1`).get(bot.id) as any;
+    if (last && last.side === 'sell') return false;
     const free = await getBaseFree();
     if (!(free !== null && free > 0)) return false;
     const row = db.prepare(`SELECT price, qty, value FROM trades WHERE bot_id=? AND side='buy' ORDER BY id DESC LIMIT 1`).get(bot.id) as any;
