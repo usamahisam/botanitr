@@ -62,6 +62,7 @@ export default function Dashboard({ admin = false }: { admin?: boolean }) {
   const load = useCallback(() => {
     api.get<DashboardData>('/dashboard').then(d => { setData(d); setErr(''); }).catch(e => setErr(e.message));
     loadCorr();
+    if (admin) api.get<any[]>('/bots?all=1').then(b => setLiveBots(b.filter(x => x.status === 'running'))).catch(() => {});
     api.get<any[]>('/balances/check').then(rows => {
       setIssues(rows.flatMap(r => [
         ...((r.bots || []).filter((b: any) => !b.ok).map((b: any) => ({
@@ -75,7 +76,7 @@ export default function Dashboard({ admin = false }: { admin?: boolean }) {
         }] : [])
       ]));
     }).catch(() => {});
-  }, []);
+  }, [admin]);
 
   useEffect(() => {
     load();
@@ -103,9 +104,31 @@ export default function Dashboard({ admin = false }: { admin?: boolean }) {
     } catch (e: any) { alert(e.message); }
   };
 
+  const [liveBots, setLiveBots] = useState<any[]>([]);
+
   return (
     <div className="space-y-4">
       <Tape />
+
+      {admin && (
+        <section className="panel px-4 py-3">
+          <div className="text-[13px] font-semibold mb-2">Bot user berjalan <span className="num txt-3">· {liveBots.length}</span></div>
+          {liveBots.length === 0 ? (
+            <div className="text-xs txt-3">Tidak ada bot berjalan milik user mana pun.</div>
+          ) : (
+            <div className="space-y-1">
+              {liveBots.map(b => (
+                <div key={b.id} className="flex items-center gap-2 text-xs flex-wrap">
+                  <span className="txt-up"><Icon.dot size={6} /></span>
+                  <span className="font-semibold">{b.name}</span>
+                  <span className="txt-3 num">{b.pair} · {b.strategy} · {b.exchange_id}/{b.mode === 'live' ? 'Riil' : 'Demo'}</span>
+                  <span className="txt-3">· {b.username || `#${b.user_id}`}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {corr && corr.high.length > 0 && (
         <div className="panel p-4 border-l-2 !border-l-[#f0b90b]">

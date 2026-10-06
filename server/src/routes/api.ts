@@ -247,6 +247,19 @@ api.post('/pairs', requireAdmin, asyncH(async (req: any, res: any) => {
   }
 }));
 
+// Cek apakah pair benar-benar ada di market (admin saja)
+api.post('/pairs/check', requireAdmin, asyncH(async (req: any, res: any) => {
+  const { exchange_id, symbol } = req.body || {};
+  if (!exchange_id || !symbol) return res.status(400).json({ error: 'Field wajib: exchange_id, symbol' });
+  try {
+    const client = registry.get(String(exchange_id));
+    const t = await client.getTicker(String(symbol).toUpperCase());
+    res.json({ ok: true, price: t.last });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || 'Tidak ditemukan di market' });
+  }
+}));
+
 api.delete('/pairs/:id', requireAdmin, asyncH(async (req: any, res: any) => {
   const info = db.prepare('DELETE FROM default_pairs WHERE id=?').run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Pair tidak ditemukan' });

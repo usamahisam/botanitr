@@ -136,6 +136,18 @@ function PairsManager() {
     try { await api.del(`/pairs/${p.id}`); load(); }
     catch (e: any) { setMsg(e.message || 'Gagal menghapus'); }
   };
+  const [checking, setChecking] = useState<number | null>(null);
+  const [checked, setChecked] = useState<Record<number, string>>({});
+  const checkPair = async (p: PairRowAdmin) => {
+    setChecking(p.id);
+    try {
+      const r: any = await api.post('/pairs/check', { exchange_id: p.exchange_id, symbol: p.symbol });
+      setChecked(c => ({ ...c, [p.id]: `ADA · ${r.price}` }));
+    } catch (e: any) {
+      setChecked(c => ({ ...c, [p.id]: `TIDAK ADA · ${e.message || 'gagal'}` }));
+    }
+    finally { setChecking(null); }
+  };
   return (
     <section className="panel p-4">
       <div className="text-[14px] font-semibold mb-1">Koin trade per market</div>
@@ -163,7 +175,10 @@ function PairsManager() {
         {pairs.map(p => (
           <div key={p.id} className="flex items-center gap-2 text-xs py-1 border-b border-white/[0.04]">
             <span className="num txt-2 w-24 shrink-0">{p.exchange_id}</span>
-            <span className="font-semibold flex-1">{p.symbol}</span>
+            <span className="font-semibold flex-1">{p.symbol}
+              {checked[p.id] && <span className={`ml-2 text-[11px] ${checked[p.id].startsWith('ADA') ? 'txt-up' : 'txt-down'}`}>{checked[p.id]}</span>}
+            </span>
+            <button onClick={() => checkPair(p)} disabled={checking === p.id} className="btn btn-ghost btn-sm !py-0.5 !px-2 !text-[11px]">{checking === p.id ? '…' : 'Cek'}</button>
             <button onClick={() => remove(p)} className="btn btn-ghost btn-sm !py-0.5 !px-2 !text-[11px] !text-[#ff7a8c]">Hapus</button>
           </div>
         ))}
@@ -173,7 +188,7 @@ function PairsManager() {
   );
 }
 
-function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: () => void }) {
+function ExchangeSettingsCard({ ex, onSaved, admin = false }: { ex: ExchangeSettings; onSaved: () => void; admin?: boolean }) {
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [proxy, setProxy] = useState(ex.proxy_url || '');
@@ -225,14 +240,18 @@ function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: 
         </span>
       </div>
       <div className="space-y-3">
-        <div>
-          <div className="lbl mb-1.5">API key {ex.has_credentials && <span className="normal-case font-normal">· tersimpan {ex.api_key_masked}</span>}</div>
-          <input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Isi untuk mengganti" className="input num" autoComplete="off" />
-        </div>
-        <div>
-          <div className="lbl mb-1.5">API secret</div>
-          <input value={apiSecret} onChange={e => setApiSecret(e.target.value)} type="password" placeholder="Isi untuk mengganti" className="input num" autoComplete="new-password" />
-        </div>
+        {!admin && (
+          <>
+            <div>
+              <div className="lbl mb-1.5">API key {ex.has_credentials && <span className="normal-case font-normal">· tersimpan {ex.api_key_masked}</span>}</div>
+              <input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Isi untuk mengganti" className="input num" autoComplete="off" />
+            </div>
+            <div>
+              <div className="lbl mb-1.5">API secret</div>
+              <input value={apiSecret} onChange={e => setApiSecret(e.target.value)} type="password" placeholder="Isi untuk mengganti" className="input num" autoComplete="new-password" />
+            </div>
+          </>
+        )}
         <div>
           <div className="lbl mb-1.5">Proxy <span className="normal-case font-normal">· opsional</span></div>
           <input value={proxy} onChange={e => setProxy(e.target.value)} placeholder="http://user:pass@host:port atau socks5://host:port" className="input num" />
@@ -382,6 +401,7 @@ export default function Pengaturan({ me }: { me: AuthUser }) {
       <UserManager me={me} />
       <PasswordChanger />
 
+      {me.role !== 'admin' && (
       <section className="panel p-4">
         <div className="text-[14px] font-semibold mb-1">Telegram</div>
         <p className="text-xs txt-3 mb-3">Perintah dan notifikasi hanya dilayani untuk chat ID yang terdaftar.</p>
@@ -408,9 +428,10 @@ export default function Pengaturan({ me }: { me: AuthUser }) {
         <button onClick={saveTelegram} className="btn btn-primary btn-sm mt-3">Simpan dan uji kirim</button>
         <p className="text-[11px] txt-3 mt-2">Cara mendapatkan Chat ID: kirim pesan ke bot, lalu buka <span className="num">api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</span></p>
       </section>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {exchanges.map(ex => <ExchangeSettingsCard key={ex.id} ex={ex} onSaved={load} />)}
+        {exchanges.map(ex => <ExchangeSettingsCard key={ex.id} ex={ex} onSaved={load} admin={me.role === 'admin'} />)}
       </div>
 
       {me.role === 'admin' && <MarketManager />}
