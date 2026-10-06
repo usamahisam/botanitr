@@ -1,6 +1,6 @@
 /* Botani Terminal service worker: app-shell agar bisa di-install & dibuka cepat di Android.
  * Navigasi = network-first (HTML tak boleh basi — menu lama nyangkut), aset = cache-first. */
-const VERSION = 'botani-v2';
+const VERSION = 'botani-v3';
 const CORE = ['/', '/index.html', '/manifest.webmanifest', '/logo.svg'];
 
 self.addEventListener('install', (e) => {

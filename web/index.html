@@ -18,5 +18,13 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Probe boot: bila bundle gagal dimuat (cache basi), tampilkan tombol pulih
+      setTimeout(function () {
+        if (!document.getElementById('root').hasChildNodes()) {
+          document.body.innerHTML = '<div style="padding:24px;font:14px sans-serif;color:#f0b90b">Aplikasi gagal dimuat (kemungkinan cache lama).<br><br><button onclick="fetch(location.href,{cache:\'reload\'}).then(()=>location.reload(true))" style="padding:8px 16px;border-radius:6px;border:1px solid #4f7cff;background:transparent;color:#fff">Muat ulang bersih</button></div>';
+        }
+      }, 8000);
+    </script>
   </body>
 </html>
