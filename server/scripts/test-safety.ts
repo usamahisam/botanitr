@@ -154,6 +154,29 @@ async function main() {
   check('drift bot yang benar terdeteksi', !!d, JSON.stringify(drifts));
   if (d) check('drift_pct besar (100%)', d.drift_pct > 50, `got ${d.drift_pct}`);
 
+  // ===== C2) Stopped + debu dibisukan =====
+  console.log('\nC2) Stopped & debu tak dilaporkan');
+  const infoStop = queries.insertBot.run({
+    name: 'StoppedDust', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca',
+    params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000,
+    mode: 'live', auto_compound_pct: 100, status: 'stopped',
+    state: JSON.stringify({ entries: [{ price: 26600, qty: 0.1, cost: 2660 }] }),
+    max_daily_loss_pct: 0, market_preset_id: null, user_id: 0, created_at: now(), updated_at: now()
+  });
+  const drifts2 = await reconcileOnce({ tolerancePct: 5, notifyOnDrift: false });
+  check('bot stopped berdebu tak dilaporkan', !drifts2.some(x => x.bot_id === Number(infoStop.lastInsertRowid)),
+    JSON.stringify(drifts2.map(x => x.bot_id)));
+  const infoDust = queries.insertBot.run({
+    name: 'RunningDust', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'dca',
+    params: '{}', budget_idr: 100000, current_budget: 100000, lot: 20000,
+    mode: 'live', auto_compound_pct: 100, status: 'running',
+    state: JSON.stringify({ entries: [{ price: 26600, qty: 0.1, cost: 2660 }] }),
+    max_daily_loss_pct: 0, market_preset_id: null, user_id: 0, created_at: now(), updated_at: now()
+  });
+  const drifts3 = await reconcileOnce({ tolerancePct: 5, notifyOnDrift: false });
+  check('debu running (0,1 XRP ~Rp2,6rb < lot min) dibisukan', !drifts3.some(x => x.bot_id === Number(infoDust.lastInsertRowid)),
+    JSON.stringify(drifts3.map(x => [x.bot_id, x.drift_pct])));
+
   server.close();
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);

@@ -29,9 +29,10 @@ export interface DriftReport {
 export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift?: boolean } = {}): Promise<DriftReport[]> {
   const tolerance = opts.tolerancePct ?? 5; // toleransi drift 5%
   const drifts: DriftReport[] = [];
-  // Termasuk bot stopped yang masih mencatat posisi: justru saat stop/likuidasi
-  // drift paling berbahaya (Stop & Jual gagal tanpa penjelasan).
-  const bots = (db.prepare(`SELECT * FROM bots WHERE mode='live'`).all() as BotRow[]);
+  // Hanya bot aktif (running/paused): bot stopped adalah arsip — tak ada yang
+  // bertindak atas warning-nya, jadi hanya jadi spam (kasus DCA DOGE yang
+  // sudah stop tapi masih diperingatkan).
+  const bots = (db.prepare(`SELECT * FROM bots WHERE mode='live' AND status != 'stopped'`).all() as BotRow[]);
 
   for (const bot of bots) {
     const client = registry.getForUser(bot.exchange_id, bot.user_id);
@@ -45,9 +46,15 @@ export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift
       const actual = balances.find(b => b.asset === base.toUpperCase());
       const actualQty = (actual?.free ?? 0) + (actual?.locked ?? 0);
       const driftPct = recorded > 0 ? Math.abs(actualQty - recorded) / recorded * 100 : 0;
-      if (driftPct > tolerance) {
-        drifts.push({ bot_id: bot.id, name: bot.name, pair: bot.pair, recorded_qty: recorded, actual_qty: actualQty, drift_pct: driftPct });
-      }
+      if (driftPct <= tolerance) continue;
+      // Debu di bawah lot minimum tak bisa dijual/diperbaiki — bisukan saja
+      // (kasus 0,10 DOGE). Hitung nilainya via ticker terakhir.
+      try {
+        const ticker = await client.getTicker(bot.pair);
+        const minLot = (db.prepare('SELECT min_lot_idr FROM exchanges WHERE id=? AND user_id=?').get(bot.exchange_id, bot.user_id) as any)?.min_lot_idr ?? 0;
+        if (minLot > 0 && recorded * ticker.last < minLot) continue;
+      } catch { /* ticker gagal → tetap laporkan */ }
+      drifts.push({ bot_id: bot.id, name: bot.name, pair: bot.pair, recorded_qty: recorded, actual_qty: actualQty, drift_pct: driftPct });
     } catch { /* gagal ambil saldo → lewati */ }
   }
 
