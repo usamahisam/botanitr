@@ -57,6 +57,20 @@ async function main() {
   check('error tak dikenal diteruskan apa adanya',
     friendlyTelegramError('timeout of 15000ms exceeded') === 'timeout of 15000ms exceeded');
 
+  // Guard admin: akun admin diblokir dari aksi trading via Telegram
+  console.log('\nGuard admin Telegram');
+  const { guardTrader } = await import('../src/telegram/bot.js');
+  const fakeCtx = (userId: number) => ({
+    state: { userId },
+    answered: '', replied: '',
+    answerCbQuery: async function (this: any, t: string) { this.answered = t; },
+    reply: async function (this: any, t: string) { this.replied = t; },
+  });
+  const cAdmin: any = fakeCtx(adminId);
+  check('admin diblokir', (await guardTrader(cAdmin)) === false && /hanya pantau/i.test(cAdmin.answered || cAdmin.replied), cAdmin.answered || cAdmin.replied);
+  const cUser: any = fakeCtx(userId);
+  check('user lolos', (await guardTrader(cUser)) === true);
+
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);
   process.exit(failed > 0 ? 1 : 0);

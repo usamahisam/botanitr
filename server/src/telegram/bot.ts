@@ -82,6 +82,32 @@ function maskChat(ctx: any): number | null {
   return userId;
 }
 
+/** True bila chat ini milik akun admin (hanya pantau, tanpa aksi trading). */
+function isAdminChat(ctx: any): boolean {
+  const userId = ctx.state?.userId;
+  if (userId == null) return false;
+  try {
+    const row = db.prepare('SELECT role FROM users WHERE id=?').get(userId) as any;
+    return row?.role === 'admin';
+  } catch {
+    return false;
+  }
+}
+
+const ADMIN_READONLY = 'Akun admin hanya pantau — aksi trading (pause/resume/hapus/kill switch) khusus akun user.';
+
+/** Guard handler aksi trading via Telegram untuk akun admin. True = lolos. */
+export async function guardTrader(ctx: any): Promise<boolean> {
+  if (isAdminChat(ctx)) {
+    try {
+      if (typeof ctx.answerCbQuery === 'function') await ctx.answerCbQuery(ADMIN_READONLY);
+      else await ctx.reply(ADMIN_READONLY);
+    } catch { /* abaikan */ }
+    return false;
+  }
+  return true;
+}
+
 function userExchangeIds(userId: number): string[] {
   const rows = db.prepare('SELECT id FROM exchanges WHERE user_id=?').all(userId) as any[];
   return rows.length > 0 ? rows.map(r => r.id) : [...KNOWN_EXCHANGES];
@@ -142,7 +168,8 @@ const HELP_TEXT =
   `• Ketik <code>/</code> untuk melihat semua perintah\n` +
   `• Gunakan tombol menu di bawah untuk akses cepat\n` +
   `• ID bot bisa dilihat di /bots atau /positions\n` +
-  `• Pengaturan lengkap (exchange, budget, strategi) di dashboard web`;
+  `• Pengaturan lengkap (exchange, budget, strategi) di dashboard web\n` +
+  `• Akun admin hanya pantau: pause/resume/hapus/kill switch khusus akun user`;
 
 const WELCOME_TEXT =
   `<b>Trading Botani siap.</b>\n\n` +
@@ -332,6 +359,7 @@ function setupHandlers(inst: Telegraf) {
 
   // Aksi inline per bot dari /bots (pause / resume / hapus)
   const botToggle = async (ctx: any, id: number, to: 'paused' | 'running') => {
+    if (!(await guardTrader(ctx))) return;
     const userId = ctx.state?.userId;
     if (!userId || !id) { await ctx.answerCbQuery('Sesi kedaluwarsa, ulangi /bots.'); return; }
     const botRow = db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as any;
@@ -343,6 +371,7 @@ function setupHandlers(inst: Telegraf) {
   inst.action(/^bot_p_(\d+)$/, async ctx => botToggle(ctx, Number((ctx as any).match?.[1]), 'paused'));
   inst.action(/^bot_r_(\d+)$/, async ctx => botToggle(ctx, Number((ctx as any).match?.[1]), 'running'));
   inst.action(/^bot_s_(\d+)$/, async ctx => {
+    if (!(await guardTrader(ctx))) return;
     const userId = (ctx as any).state?.userId;
     const id = Number((ctx as any).match?.[1]);
     if (!userId || !id) { await ctx.answerCbQuery('Sesi kedaluwarsa, ulangi /bots.'); return; }
@@ -388,7 +417,8 @@ function setupHandlers(inst: Telegraf) {
     ctx.reply(`Gagal ambil harga <b>${esc(pair)}</b> di semua exchange:\n<i>${esc(errors.slice(0, 3).join('; '))}</i>`, html);
   });
 
-  inst.command('pause', ctx => {
+  inst.command('pause', async ctx => {
+    if (!(await guardTrader(ctx))) return;
     const userId = ctx.state.userId;
     const id = parseInt(ctx.payload || '', 10);
     if (id) {
@@ -403,7 +433,8 @@ function setupHandlers(inst: Telegraf) {
     log('info', 'TELEGRAM', `Pause via Telegram ${id ? '#' + id : '(semua)'} oleh chat ${ctx.chat.id}`, { user_id: userId });
   });
 
-  inst.command('resume', ctx => {
+  inst.command('resume', async ctx => {
+    if (!(await guardTrader(ctx))) return;
     const userId = ctx.state.userId;
     const id = parseInt(ctx.payload || '', 10);
     if (id) {
@@ -418,6 +449,7 @@ function setupHandlers(inst: Telegraf) {
   });
 
   inst.command('stop', async ctx => {
+    if (!(await guardTrader(ctx))) return;
     const userId = ctx.state.userId;
     const id = parseInt(ctx.payload || '', 10);
     if (!id) return ctx.reply('Format: <code>/stop &lt;id&gt;</code> — lihat ID di /bots.', html);
@@ -441,6 +473,7 @@ function setupHandlers(inst: Telegraf) {
     await ctx.editMessageText('Penghapusan dibatalkan.');
   });
   inst.action(/^stop_yes_(\d+)$/, async ctx => {
+    if (!(await guardTrader(ctx))) return;
     const userId = (ctx as any).state?.userId;
     const m = (ctx as any).match as RegExpMatchArray | undefined;
     const id = Number(m?.[1]);
@@ -461,6 +494,7 @@ function setupHandlers(inst: Telegraf) {
   });
 
   inst.command('panic', async ctx => {
+    if (!(await guardTrader(ctx))) return;
     await ctx.reply(
       '<b>KILL SWITCH</b> akan:\n' +
       '• Pause <b>semua bot</b>\n' +
@@ -474,6 +508,7 @@ function setupHandlers(inst: Telegraf) {
     await ctx.editMessageText('Kill switch dibatalkan. Bot tetap berjalan.');
   });
   inst.action('panic_confirm', async ctx => {
+    if (!(await guardTrader(ctx))) return;
     const userId = (ctx as any).state?.userId;
     if (!userId) {
       await ctx.answerCbQuery('Sesi kedaluwarsa, ulangi /panic.');
