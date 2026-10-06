@@ -221,11 +221,18 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
       }
     }
 
-    const realized = action.type === 'sell' ? value - result.fee - (action.costBasis ?? 0) : 0;
+    // Fill parsial (truncation LOT_SIZE): cost basis ikut porsi yang TERJUAL,
+    // bukan seluruh posisi — kalau tidak PnL tercatat janggal.
+    let effCostBasis = action.costBasis ?? 0;
+    const reqQty = action.qtyBase ?? 0;
+    if (action.type === 'sell' && reqQty > 0 && result.qty < reqQty * 0.995) {
+      effCostBasis = effCostBasis * (result.qty / reqQty);
+    }
+    const realized = action.type === 'sell' ? value - result.fee - effCostBasis : 0;
     const row: Omit<TradeRow, 'id'> = {
       user_id: bot.user_id, bot_id: bot.id, exchange_id: bot.exchange_id, pair: bot.pair,
       side: action.type, price: result.price, qty: result.qty, fee: result.fee,
-      value, realized_pnl: realized, cost_basis: action.costBasis ?? 0,
+      value, realized_pnl: realized, cost_basis: effCostBasis,
       mode: bot.mode, order_id: result.order_id, client_order_id: clientOrderId,
       strategy_tag: action.tag, note: action.reason, created_at: now()
     };

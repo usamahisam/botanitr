@@ -172,9 +172,11 @@ export class TokocryptoClient implements ExchangeClient {
   async sellMarket(pair: string, qtyBase: number, clientOrderId?: string): Promise<OrderResult> {
     const symbol = pair.toUpperCase();
     const filters = await this.getFilters(symbol);
-    let reqQty = this.roundDown(qtyBase, filters.stepSize);
-    if (reqQty < filters.minQty) reqQty = filters.minQty;
-    if (reqQty <= 0) throw new ExchangeError(`Qty ${qtyBase} di bawah stepSize ${filters.stepSize}`);
+    const reqQty = this.roundDown(qtyBase, filters.stepSize);
+    // Jangan bump ke minQty: melebihi saldo pasti ditolak exchange.
+    // Di bawah minQty = debu tak terjual → error jelas (bukan fill misterius).
+    if (reqQty <= 0) throw new ExchangeError(`Qty ${qtyBase} di bawah stepSize ${filters.stepSize} — debu tak bisa dijual`);
+    if (reqQty < filters.minQty) throw new ExchangeError(`Qty ${reqQty} di bawah minimum order ${filters.minQty} (${symbol})`);
     const data = await this.signed('POST', '/api/v3/order', {
       symbol, side: 'SELL', type: 'MARKET', quantity: String(reqQty),
       ...(clientOrderId ? { newClientOrderId: clientOrderId } : {})

@@ -358,8 +358,24 @@ export function applyFillToState(strategyName: string, state: any, trade: any, a
     return;
   }
   // Strategi posisi tunggal (scalper/revert/bollinger/breakout):
-  // bersihkan HANYA saat fill terkonfirmasi.
-  if ('position' in state) state.position = null;
+  // bersihkan HANYA saat fill terkonfirmasi. Bila exchange mengisi SEBAGIAN
+  // (truncation LOT_SIZE → sisa debu), posisi dikecilkan proporsional, bukan
+  // dihapus — kalau tidak, sisa koin jadi yatim + PnL tercatat janggal.
+  if ('position' in state && state.position) {
+    const posQty = Number(state.position.qty) || 0;
+    if (posQty > 0 && trade.qty < posQty * 0.995) {
+      const keep = 1 - trade.qty / posQty;
+      state.position = {
+        ...state.position,
+        qty: posQty - trade.qty,
+        cost: (Number(state.position.cost) || 0) * keep,
+      };
+    } else {
+      state.position = null;
+    }
+  } else if ('position' in state) {
+    state.position = null;
+  }
 }
 
 /**
