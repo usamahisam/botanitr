@@ -63,8 +63,10 @@ export async function replay(
     const k = klines[i];
     const price = k[4];
     if (!(price > 0)) continue;
+    // Sama seperti live: strategi menyusun lot dari sisa kas, bukan modal awal
+    const effBudget = Math.min(budget, Math.max(0, cash));
     const ctx: any = {
-      bot: { current_budget: budget, exchange_id: opts.exchangeId ?? 'indodax' },
+      bot: { current_budget: effBudget, exchange_id: opts.exchangeId ?? 'indodax' },
       ticker: { last: price },
       quote: 'IDR',
       minLot: opts.minLot ?? 0,

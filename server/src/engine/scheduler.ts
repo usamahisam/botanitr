@@ -117,9 +117,16 @@ async function processBot(bot: BotRow) {
     }
   }
 
+  // Budget efektif = sisa kas ledger (tak pernah melebihi modal acuan).
+  // Setelah rugi, lot menyusut mengikuti kas yang benar-benar ada — bukan
+  // terus memesan sebesar modal awal lalu diblokir guard (bot macet selamanya).
+  const effBudget = Number.isFinite(state.cash)
+    ? Math.min(bot.current_budget, Math.max(0, state.cash))
+    : bot.current_budget;
+
   const minLot = (db.prepare('SELECT min_lot_idr FROM exchanges WHERE id=? AND user_id=?').get(bot.exchange_id, bot.user_id) as any)?.min_lot_idr ?? 10000;
   const ctx: StrategyContext = {
-    bot, ticker, quote: client.quoteAsset, minLot, usdtIdr, now: Date.now(),
+    bot: { ...bot, current_budget: effBudget }, ticker, quote: client.quoteAsset, minLot, usdtIdr, now: Date.now(),
     getKlines: (interval, limit) => client.getKlines(bot.pair, interval, limit),
     getBalances: async () => balEntry!.data,
     getPrice: async (pair: string) => (await getTickerCached(bot.exchange_id, pair, bot.user_id)).last
