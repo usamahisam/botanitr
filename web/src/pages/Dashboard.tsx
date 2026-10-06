@@ -42,6 +42,7 @@ export default function Dashboard({ admin = false }: { admin?: boolean }) {
   const [issues, setIssues] = useState<BalanceIssue[]>([]);
 
   const [corr, setCorr] = useState<{ high: { a: string; b: string; corr: number }[]; note: string; ignored: string[] } | null>(null);
+  const [liveBots, setLiveBots] = useState<any[]>([]);
 
   const loadCorr = useCallback(() => {
     api.get<{ high: { a: string; b: string; corr: number }[]; note: string; ignored: string[] }>('/correlation')
@@ -103,8 +104,6 @@ export default function Dashboard({ admin = false }: { admin?: boolean }) {
       load();
     } catch (e: any) { alert(e.message); }
   };
-
-  const [liveBots, setLiveBots] = useState<any[]>([]);
 
   return (
     <div className="space-y-4">
