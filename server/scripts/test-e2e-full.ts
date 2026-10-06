@@ -50,9 +50,28 @@ async function main() {
   check('setup 201', r.status === 201, `got ${r.status}`);
   r = await post('/auth/login', { username: 'admin', password: 'admin123' });
   check('login 200 + token', r.status === 200 && !!r.data.token, `got ${r.status}`);
+  const A = r.data.token;
+  // Trader untuk semua aksi trading (admin diblokir trading)
+  r = await post('/auth/users', { username: 'trader1', password: 'trader123', role: 'user' }, A);
+  check('admin buat user trader 201', r.status === 201, `got ${r.status}`);
+  r = await post('/auth/login', { username: 'trader1', password: 'trader123' });
+  check('login trader 200', r.status === 200 && !!r.data.token, `got ${r.status}`);
   const T = r.data.token;
   r = await get('/dashboard');
   check('tanpa token → 401', r.status === 401, `got ${r.status}`);
+
+  // ===== 0b) RBAC: admin kelola, tidak trading =====
+  console.log('\n0b) RBAC admin vs trader');
+  r = await post('/bots', { name: 'AdminBot', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid', params: {}, budget_idr: 1000, mode: 'paper' }, A);
+  check('admin buat bot → 403', r.status === 403, `got ${r.status}`);
+  r = await post('/trade/quick', { exchange_id: 'indodax', pair: 'XRPIDR', side: 'buy', amount: 10000, mode: 'paper' }, A);
+  check('admin quick-trade → 403', r.status === 403, `got ${r.status}`);
+  r = await post('/killswitch', {}, A);
+  check('admin killswitch → 403', r.status === 403, `got ${r.status}`);
+  r = await get('/bots?all=1', A);
+  check('admin lihat semua bot 200', r.status === 200 && Array.isArray(r.data), `got ${r.status}`);
+  r = await get('/bots?all=1', T);
+  check('trader ?all=1 tetap milik sendiri', r.status === 200 && (r.data || []).every((b: any) => b.user_id === 2), `got ${JSON.stringify((r.data || []).map((b: any) => b.user_id))}`);
 
   // ===== 1) Dashboard & saldo =====
   console.log('\n1) Dashboard & saldo');

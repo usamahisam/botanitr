@@ -46,8 +46,11 @@ async function main() {
 
   await rq('POST', '/auth/setup', { username: 'admin', password: 'admin123' });
   const login = await rq('POST', '/auth/login', { username: 'admin', password: 'admin123' });
-  const T = login.data.token;
-  const U = 1;
+  const A = login.data.token;
+  await rq('POST', '/auth/users', { username: 'trader', password: 'trader123', role: 'user' }, A);
+  const loginU = await rq('POST', '/auth/login', { username: 'trader', password: 'trader123' });
+  const T = loginU.data.token;
+  const U = 2;
 
   // Bot running dengan 1 posisi terbuka (kas sudah jadi barang)
   const info = queries.insertBot.run({

@@ -11,13 +11,14 @@ interface BotSummary {
   sellDist: { pctAway: number; label: string } | null;
 }
 
-export default function Riwayat() {
+export default function Riwayat({ admin = false }: { admin?: boolean }) {
   const [params, setParams] = useSearchParams();
   const botId = params.get('bot_id') || '';
   const [rows, setRows] = useState<TradeRow[]>([]);
   const [total, setTotal] = useState(0);
   const [exchange, setExchange] = useState('');
   const [mode, setMode] = useState('');
+  const [allUsers, setAllUsers] = useState(false);
   const [page, setPage] = useState(1);
   const [summary, setSummary] = useState<BotSummary | null>(null);
   const [bots, setBots] = useState<Bot[]>([]);
@@ -25,8 +26,8 @@ export default function Riwayat() {
 
   // Daftar bot untuk dropdown (sinkron dengan ?bot_id= dari tombol Riwayat)
   useEffect(() => {
-    api.get<Bot[]>('/bots').then(setBots).catch(() => {});
-  }, []);
+    api.get<Bot[]>(`/bots${admin && allUsers ? '?all=1' : ''}`).then(setBots).catch(() => {});
+  }, [admin, allUsers]);
 
   const pickBot = (v: string) => {
     setPage(1);
@@ -40,8 +41,9 @@ export default function Riwayat() {
     if (exchange) q.set('exchange', exchange);
     if (mode) q.set('mode', mode);
     if (botId) q.set('bot_id', botId);
+    if (admin && allUsers) q.set('all', '1');
     api.get<{ total: number; rows: TradeRow[] }>(`/trades?${q}`).then(d => { setRows(d.rows); setTotal(d.total); });
-  }, [exchange, mode, page, botId]);
+  }, [exchange, mode, page, botId, admin, allUsers]);
 
   useEffect(() => {
     if (botId) api.get<BotSummary>(`/bots/${botId}/summary`).then(setSummary).catch(() => setSummary(null));
@@ -95,6 +97,12 @@ export default function Riwayat() {
           <span className="num text-xs txt-3 ml-2">{total} baris{botId ? ' · bot ini' : ''}</span>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {admin && (
+            <label className="flex items-center gap-2 text-xs txt-2 cursor-pointer self-center">
+              <input type="checkbox" checked={allUsers} onChange={e => { setAllUsers(e.target.checked); setPage(1); }} className="accent-[#4f7cff] w-4 h-4" />
+              Semua user
+            </label>
+          )}
           <select value={botId} onChange={e => pickBot(e.target.value)} className="input !w-auto !py-1.5 text-xs" aria-label="Filter bot">
             <option value="">Semua bot</option>
             {bots.map(b => (
@@ -114,7 +122,7 @@ export default function Riwayat() {
           </select>
           <button
             onClick={() => {
-              const q = new URLSearchParams({ ...(exchange ? { exchange } : {}), ...(mode ? { mode } : {}), ...(botId ? { bot_id: botId } : {}) }).toString();
+              const q = new URLSearchParams({ ...(exchange ? { exchange } : {}), ...(mode ? { mode } : {}), ...(botId ? { bot_id: botId } : {}), ...(admin && allUsers ? { all: '1' } : {}) }).toString();
               download(`/trades/export${q ? `?${q}` : ''}`, `trades-${new Date().toISOString().slice(0, 10)}.csv`).catch(e => alert(e.message));
             }}
             className="btn btn-ghost btn-sm">
@@ -138,7 +146,7 @@ export default function Riwayat() {
             {rows.map(t => (
               <tr key={t.id}>
                 <td className="txt-3 whitespace-nowrap !text-[12px]">{fmtDateTime(t.created_at)}</td>
-                <td><span className="font-semibold font-sans">{t.pair}</span> <span className="txt-3 text-[11px] font-sans">{t.exchange_id}</span></td>
+                <td><span className="font-semibold font-sans">{t.pair}</span> <span className="txt-3 text-[11px] font-sans">{t.exchange_id}{t.username ? ` · ${t.username}` : ''}</span></td>
                 <td><span className={`text-[12px] font-bold tracking-wide ${t.side === 'buy' ? 'txt-up' : 'txt-down'}`}>{t.side === 'buy' ? 'BELI' : 'JUAL'}</span></td>
                 <td className="!text-right">{fmtMoney(t.price, quoteOfPair(t.pair))}</td>
                 <td className="!text-right txt-2">{fmtQty(t.qty)}</td>

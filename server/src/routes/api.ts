@@ -9,7 +9,7 @@ import { restartTelegram, sendTestMessage } from '../telegram/bot.js';
 import { registry as stratRegistry } from '../strategies/types.js';
 import { config } from '../config.js';
 import { createHttp } from '../exchange/http.js';
-import { uid } from '../auth.js';
+import { uid, requireTrader } from '../auth.js';
 import { log } from '../log.js';
 import '../strategies/grid.js';
 import '../strategies/dca.js';
@@ -53,6 +53,16 @@ function getUserExchange(userId: number, id: string) {
 
 function getUserBot(userId: number, id: string | number) {
   return db.prepare('SELECT * FROM bots WHERE id=? AND user_id=?').get(id, userId) as BotRow | undefined;
+}
+
+/** Baca bot untuk endpoint baca: admin boleh intip bot user mana pun. */
+function getVisibleBot(req: any, id: string | number) {
+  const own = getUserBot(uid(req), id);
+  if (own) return own;
+  if ((req as any).user?.role === 'admin') {
+    return db.prepare('SELECT * FROM bots WHERE id=?').get(id) as BotRow | undefined;
+  }
+  return undefined;
 }
 
 // ===== Health (publik) =====
@@ -245,10 +255,13 @@ api.get('/market', asyncH(async (req: any, res: any) => {
 // ===== Bots =====
 api.get('/bots', asyncH(async (req: any, res: any) => {
   const userId = uid(req);
+  const scope = scopeUser(req);
   const status = String(req.query.status || '');
-  const bots = (status
-    ? db.prepare('SELECT * FROM bots WHERE user_id=? AND status=? ORDER BY id DESC').all(userId, status)
-    : db.prepare('SELECT * FROM bots WHERE user_id=? ORDER BY id DESC').all(userId)) as BotRow[];
+  const bots = (scope === null
+    ? db.prepare(`SELECT b.*, u.username FROM bots b LEFT JOIN users u ON u.id=b.user_id ${status ? 'WHERE b.status=?' : ''} ORDER BY b.id DESC`).all(...(status ? [status] : []))
+    : db.prepare(status
+      ? 'SELECT * FROM bots WHERE user_id=? AND status=? ORDER BY id DESC'
+      : 'SELECT * FROM bots WHERE user_id=? ORDER BY id DESC').all(...(status ? [scope, status] : [scope]))) as BotRow[];
   const { nearestSellTarget } = await import('../engine/targets.js');
   const out: any[] = [];
   for (const b of bots) {
@@ -257,7 +270,7 @@ api.get('/bots', asyncH(async (req: any, res: any) => {
       const st = JSON.parse(b.state || '{}');
       const hasPos = (st.entries || st.filledBuys || (st.position ? [st.position] : [])).length > 0;
       if (hasPos) {
-        const client = registry.getForUser(b.exchange_id, userId);
+        const client = registry.getForUser(b.exchange_id, b.user_id);
         const ticker = await client.getTicker(b.pair);
         sellDist = nearestSellTarget(b.strategy, st, safeJson(b.params, {}), b.exchange_id, ticker.last);
       }
@@ -289,12 +302,12 @@ function cashInfo(b: BotRow): { cash_quote: number | null; open_cost_quote: numb
 }
 
 api.get('/bots/:id', asyncH(async (req: any, res: any) => {
-  const bot = getUserBot(uid(req), req.params.id);
+  const bot = getVisibleBot(req, req.params.id);
   if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   res.json({ ...bot, params: safeJson(bot.params, {}), state: safeJson(bot.state, {}), stats: pnl.botStats(bot.id), trend: pnl.botTrend(bot.id) });
 }));
 
-api.post('/bots', asyncH(async (req: any, res: any) => {
+api.post('/bots', requireTrader, asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   const { name, exchange_id, pair, strategy, params, budget_idr, auto_compound_pct, mode, confirmed_live, max_daily_loss_pct, status } = req.body || {};
   if (!name || !exchange_id || !pair || !strategy || !budget_idr) {
@@ -353,12 +366,12 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
   res.status(201).json({ ...bot, params: JSON.parse(bot.params), state: JSON.parse(bot.state) });
 }));
 
-api.post('/bots/:id/pause', asyncH(async (req: any, res: any) => {
+api.post('/bots/:id/pause', requireTrader, asyncH(async (req: any, res: any) => {
   if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   queries.setBotStatus.run('paused', now(), req.params.id);
   res.json({ ok: true });
 }));
-api.post('/bots/:id/resume', asyncH(async (req: any, res: any) => {
+api.post('/bots/:id/resume', requireTrader, asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   const bot = getUserBot(userId, req.params.id);
   if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
@@ -383,7 +396,7 @@ api.post('/bots/:id/resume', asyncH(async (req: any, res: any) => {
  * notifikasi tercatat). Status -> stopped (arsip, hilang dari daftar aktif,
  * riwayat utuh). Sisa debu di bawah lot minimum dilaporkan, bukan error.
  */
-api.post('/bots/:id/stop', asyncH(async (req: any, res: any) => {
+api.post('/bots/:id/stop', requireTrader, asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   const bot = getUserBot(userId, req.params.id);
   if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
@@ -457,7 +470,7 @@ api.post('/bots/:id/stop', asyncH(async (req: any, res: any) => {
   res.json({ ok: true, sold, realized, skipped_dust: skipped.length, skipped, errors });
 }));
 
-api.delete('/bots/:id', asyncH(async (req: any, res: any) => {
+api.delete('/bots/:id', requireTrader, asyncH(async (req: any, res: any) => {
   const bot = getUserBot(uid(req), req.params.id);
   if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   // Kunci: bot yang masih berjalan tak bisa dihapus — hentikan dulu (Stop).
@@ -522,7 +535,7 @@ api.post('/bots/:id/reconcile', asyncH(async (req: any, res: any) => {
 
 // Ringkasan riwayat per bot (untuk halaman riwayat terfilter)
 api.get('/bots/:id/summary', asyncH(async (req: any, res: any) => {
-  const bot = getUserBot(uid(req), req.params.id);
+  const bot = getVisibleBot(req, req.params.id);
   if (!bot) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   const s = db.prepare(`SELECT
       SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) buys,
@@ -533,10 +546,10 @@ api.get('/bots/:id/summary', asyncH(async (req: any, res: any) => {
   let drift: any = null;
   try {
     const { parsePair } = await import('../exchange/base.js');
-    const client = registry.getForUser(bot.exchange_id, uid(req));
+    const client = registry.getForUser(bot.exchange_id, bot.user_id);
     const { base } = parsePair(bot.pair, client.quoteAsset);
     const bals = bot.mode === 'paper'
-      ? registry.getPaperForUser(bot.exchange_id, uid(req)).getBalances()
+      ? registry.getPaperForUser(bot.exchange_id, bot.user_id).getBalances()
       : await client.getBalances();
     const actual = (bals.find(b => b.asset === base.toUpperCase())?.free ?? 0)
       + (bals.find(b => b.asset === base.toUpperCase())?.locked ?? 0);
@@ -550,7 +563,7 @@ api.get('/bots/:id/summary', asyncH(async (req: any, res: any) => {
   let sellDist: any = null;
   try {
     const { nearestSellTarget } = await import('../engine/targets.js');
-    const client = registry.getForUser(bot.exchange_id, uid(req));
+    const client = registry.getForUser(bot.exchange_id, bot.user_id);
     const ticker = await client.getTicker(bot.pair);
     const state = JSON.parse(bot.state || '{}');
     sellDist = nearestSellTarget(bot.strategy, state, JSON.parse(bot.params || '{}'), bot.exchange_id, ticker.last);
@@ -559,13 +572,13 @@ api.get('/bots/:id/summary', asyncH(async (req: any, res: any) => {
 }));
 
 api.get('/bots/:id/trend', asyncH(async (req: any, res: any) => {
-  if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  if (!getVisibleBot(req, req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   res.json(pnl.botTrend(Number(req.params.id), num(req.query.days, 7, 1, 90)));
 }));
 
 // Equity curve per bot (termasuk titik live agar langsung tampil)
 api.get('/bots/:id/equity', asyncH(async (req: any, res: any) => {
-  if (!getUserBot(uid(req), req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
+  if (!getVisibleBot(req, req.params.id)) return res.status(404).json({ error: 'Bot tidak ditemukan' });
   const { getEquityCurve } = await import('../engine/equity.js');
   res.json(await getEquityCurve(Number(req.params.id), num(req.query.days, 30, 1, 365)));
 }));
@@ -583,7 +596,7 @@ api.get('/exchanges/:id/max-spendable', asyncH(async (req: any, res: any) => {
 }));
 
 // ===== Quick Trade =====
-api.post('/trade/quick', asyncH(async (req: any, res: any) => {
+api.post('/trade/quick', requireTrader, asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   const { exchange_id, pair, side, amount, mode } = req.body || {};
   if (!exchange_id || !pair || !side || !amount) {
@@ -652,10 +665,26 @@ api.post('/trade/quick', asyncH(async (req: any, res: any) => {
 }));
 
 // ===== Trades =====
-function tradeFilter(req: any) {
+/**
+ * Cakupan user untuk endpoint baca: user biasa selalu data sendiri;
+ * admin boleh ?all=1 (semua user) atau ?user_id=N (satu user).
+ * Mengembalikan null bila cakupan = semua user.
+ */
+function scopeUser(req: any): number | null {
+  const me = uid(req);
+  if ((req as any).user?.role !== 'admin') return me;
+  const q = req.query as any;
+  if (q.all === '1' || q.all === 'true') return null;
+  const n = Number(q.user_id);
+  if (Number.isFinite(n) && n > 0) return n;
+  return me;
+}
+
+function tradeFilter(req: any, scope?: number | null) {
   const { exchange, mode, strategy_tag, bot_id, from, to } = req.query as any;
-  let sql = 'SELECT * FROM trades WHERE user_id=?';
-  const args: any[] = [uid(req)];
+  const u = scope === undefined ? uid(req) : scope;
+  let sql = u === null ? 'SELECT * FROM trades WHERE 1=1' : 'SELECT * FROM trades WHERE user_id=?';
+  const args: any[] = u === null ? [] : [u];
   if (exchange) { sql += ' AND exchange_id=?'; args.push(exchange); }
   if (mode) { sql += ' AND mode=?'; args.push(mode); }
   if (strategy_tag) { sql += ' AND strategy_tag=?'; args.push(strategy_tag); }
@@ -667,15 +696,22 @@ function tradeFilter(req: any) {
 
 api.get('/trades', asyncH(async (req: any, res: any) => {
   const { limit = 50, offset = 0 } = req.query as any;
-  const { sql, args } = tradeFilter(req);
+  const scope = scopeUser(req);
+  const { sql, args } = tradeFilter(req, scope);
   const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) c');
   const total = (db.prepare(countSql).get(...args) as any).c;
-  res.json({ total, rows: db.prepare(sql + ' ORDER BY id DESC LIMIT ? OFFSET ?').all(...args, num(limit, 50, 1, 200), num(offset, 0, 0, 1000000)) });
+  const rows = db.prepare(sql + ' ORDER BY id DESC LIMIT ? OFFSET ?').all(...args, num(limit, 50, 1, 200), num(offset, 0, 0, 1000000)) as any[];
+  // Mode admin semua-user: lampirkan username agar riwayat bisa dibedakan
+  if (scope === null) {
+    const umap = Object.fromEntries((db.prepare('SELECT id, username FROM users').all() as any[]).map(u => [u.id, u.username]));
+    for (const r of rows) r.username = umap[r.user_id] ?? `#${r.user_id}`;
+  }
+  res.json({ total, rows });
 }));
 
 // Ekspor CSV riwayat trades (filter sama, tanpa pagination)
 api.get('/trades/export', asyncH(async (req: any, res: any) => {
-  const { sql, args } = tradeFilter(req);
+  const { sql, args } = tradeFilter(req, scopeUser(req));
   const rows = db.prepare(sql + ' ORDER BY id ASC LIMIT 50000').all(...args) as any[];
   const header = ['id', 'waktu', 'bot_id', 'exchange', 'pair', 'sisi', 'harga', 'qty', 'nilai', 'fee', 'pnl', 'cost_basis', 'mode', 'order_id', 'strategi', 'catatan'];
   const esc = (v: any) => {
@@ -694,10 +730,10 @@ api.get('/trades/export', asyncH(async (req: any, res: any) => {
 
 // ===== Logs =====
 api.get('/logs', asyncH(async (req: any, res: any) => {
-  const userId = uid(req);
+  const scope = scopeUser(req);
   const { level, tag, limit = 100 } = req.query as any;
-  let sql = 'SELECT * FROM logs WHERE (user_id=? OR user_id=0)';
-  const args: any[] = [userId];
+  let sql = scope === null ? 'SELECT * FROM logs WHERE 1=1' : 'SELECT * FROM logs WHERE (user_id=? OR user_id=0)';
+  const args: any[] = scope === null ? [] : [scope];
   if (level === 'warn') sql += ` AND level IN ('warn','error')`;
   else if (level) { sql += ' AND level=?'; args.push(level); }
   if (tag === 'trades') sql += ` AND tag IN ('TRADE','GRID_UNWIND','DCA_TP','SCALPER_TP','SCALPER_SL','SCALPER_EXIT','INVENTORY_HARVEST_RECYCLE','REBALANCE','AUTO_COMPOUND')`;
@@ -832,7 +868,7 @@ api.post('/telegram/test', asyncH(async (req: any, res: any) => {
 }));
 
 // ===== Kill Switch =====
-api.post('/killswitch', asyncH(async (req: any, res: any) => {
+api.post('/killswitch', requireTrader, asyncH(async (req: any, res: any) => {
   const { activateKillSwitch } = await import('../engine/killswitch.js');
   res.json(await activateKillSwitch('Dashboard', uid(req)));
 }));
@@ -907,13 +943,15 @@ api.post('/marketplace', asyncH(async (req: any, res: any) => {
     return res.status(400).json({ error: 'params harus objek' });
   }
   const merged = { ...strat.defaultParams, ...(params || {}) };
+  // Preset buatan admin = preset sistem untuk semua user
+  const ownerId = (req as any).user?.role === 'admin' ? 0 : userId;
   const info = db.prepare(`INSERT INTO market_presets (user_id, name, strategy, params, description, budget_quote, public, installs, created_at)
-    VALUES (?,?,?,?,?,?,1,0,?)`).run(userId, String(name).slice(0, 80), strategy, JSON.stringify(merged), String(description || '').slice(0, 500), num(budget_quote, 100000, 1, 1e12), now());
+    VALUES (?,?,?,?,?,?,1,0,?)`).run(ownerId, String(name).slice(0, 80), strategy, JSON.stringify(merged), String(description || '').slice(0, 500), num(budget_quote, 100000, 1, 1e12), now());
   res.status(201).json({ id: info.lastInsertRowid });
 }));
 
 // Install preset → buat bot (default paused agar direview dulu)
-api.post('/marketplace/:id/install', asyncH(async (req: any, res: any) => {
+api.post('/marketplace/:id/install', requireTrader, asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   const preset = db.prepare('SELECT * FROM market_presets WHERE id=? AND public=1').get(req.params.id) as any;
   if (!preset) return res.status(404).json({ error: 'Preset tidak ditemukan' });

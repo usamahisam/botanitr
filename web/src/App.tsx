@@ -97,7 +97,7 @@ export default function App() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
           <div className="flex items-center gap-2.5 select-none">
-            <span className="text-[#2ebd85]"><Icon.logo size={22} /></span>
+            <img src="/logo.svg" alt="Botani" width={26} height={26} className="rounded-[7px]" />
             <span className="font-bold text-[15px] tracking-tight hidden min-[400px]:inline">BOTANI<span className="txt-3 font-medium"> / TERMINAL</span></span>
           </div>
           <nav className="hidden md:flex items-center gap-1 overflow-x-auto">
@@ -140,11 +140,11 @@ export default function App() {
       </header>
       <main className="max-w-[1400px] mx-auto px-4 py-5">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/bots" element={<Bots />} />
-          <Route path="/wizard" element={<Wizard />} />
-          <Route path="/market" element={<Market />} />
-          <Route path="/riwayat" element={<Riwayat />} />
+          <Route path="/" element={<Dashboard admin={user.role === 'admin'} />} />
+          <Route path="/bots" element={<Bots admin={user.role === 'admin'} />} />
+          <Route path="/wizard" element={<Wizard admin={user.role === 'admin'} />} />
+          <Route path="/market" element={<Market admin={user.role === 'admin'} />} />
+          <Route path="/riwayat" element={<Riwayat admin={user.role === 'admin'} />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/pengaturan" element={<Pengaturan me={user} />} />
           <Route path="/login" element={<Navigate to="/" replace />} />

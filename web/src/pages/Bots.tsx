@@ -11,7 +11,7 @@ const PER_PAGE = 8;
 
 const TRADE_TAGS = ['TRADE', 'GRID_UNWIND', 'GRID_SELL', 'DCA_TP', 'DCA_TP1', 'SCALPER_TP', 'SCALPER_SL', 'SCALPER_EXIT', 'REVERT_TP', 'REVERT_SL', 'REVERT_EXIT', 'BB_EXIT', 'BB_SL', 'BRK_TP', 'BRK_SL', 'BRK_EXIT', 'DYN_SELL', 'DYN_SL', 'DCA_SL', 'STOP_LIQUIDATE', 'INVENTORY_HARVEST_RECYCLE', 'REBALANCE', 'AUTO_COMPOUND'];
 
-function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
+function BotCard({ bot, onChanged, admin = false }: { bot: Bot; onChanged: () => void; admin?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [equity, setEquity] = useState<{ date: string; equity: number }[]>([]);
   useEffect(() => {
@@ -49,7 +49,7 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
             <span className="font-semibold text-[14px] truncate">{bot.name}</span>
             {(bot.params as any)?.turbo && <span className="tag tag-accent shrink-0">TURBO</span>}
           </div>
-          <div className="num text-xs txt-3 mt-1">{bot.pair} · {STRAT_LABEL[bot.strategy] || bot.strategy} · {bot.exchange_id} · {bot.mode === 'live' ? 'RIIL' : 'DEMO'}</div>
+          <div className="num text-xs txt-3 mt-1">{bot.pair} · {STRAT_LABEL[bot.strategy] || bot.strategy} · {bot.exchange_id} · {bot.mode === 'live' ? 'RIIL' : 'DEMO'}{bot.username ? ` · ${bot.username}` : ''}</div>
           {bot.sellDist && (
             <div className="num text-[11px] mt-1 txt-3" title="Kenaikan harga yang ditunggu hingga posisi terjual">
               Jual terdekat <b className={bot.sellDist.pctAway <= 0 ? 'txt-up' : 'txt-2'}>{bot.sellDist.pctAway >= 0 ? '+' : ''}{bot.sellDist.pctAway.toFixed(2)}%</b>
@@ -95,27 +95,33 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
       </div>
 
       <div className="flex gap-2 mt-3">
-        <button onClick={() => act(running ? 'pause' : 'resume')} disabled={busy} className="btn btn-ghost btn-sm flex-1">
-          {running ? <><Icon.pause size={13} /> Jeda</> : <><Icon.play size={13} /> Lanjut</>}
-        </button>
+        {!admin && (
+          <button onClick={() => act(running ? 'pause' : 'resume')} disabled={busy} className="btn btn-ghost btn-sm flex-1">
+            {running ? <><Icon.pause size={13} /> Jeda</> : <><Icon.play size={13} /> Lanjut</>}
+          </button>
+        )}
         <Link to={`/riwayat?bot_id=${bot.id}`} className="btn btn-ghost btn-sm flex-1 !no-underline">Riwayat</Link>
-        <button
-          onClick={async () => {
-            if (!confirm(`Stop "${bot.name}" dan JUAL SEMUA posisi jadi saldo? Bot diarsipkan (riwayat tetap ada).`)) return;
-            setBusy(true);
-            try {
-              const r: any = await api.post(`/bots/${bot.id}/stop`, { liquidate: true });
-              alert(`Bot dihentikan.\nTerjual: ${r.sold ?? 0} posisi (+${fmtMoney(r.realized ?? 0, quoteOfPair(bot.pair))})${r.skipped_dust ? `\nSisa debu tak terjual: ${r.skipped_dust}` : ''}${r.errors?.length ? `\nGagal: ${r.errors.join('; ')}` : ''}`);
-              onChanged();
-            } catch (e: any) { alert(e.message || 'Stop gagal'); }
-            finally { setBusy(false); }
-          }}
-          disabled={busy} className="btn btn-ghost btn-sm flex-1" title="Hentikan & jual semua posisi">
-          Stop & Jual
-        </button>
-        <button onClick={() => act('delete')} disabled={busy} className="btn btn-ghost btn-sm btn-icon !text-[#ff7a8c]" title="Hapus bot (harus berhenti dulu)">
-          <Icon.trash size={14} />
-        </button>
+        {!admin && (
+          <>
+            <button
+              onClick={async () => {
+                if (!confirm(`Stop "${bot.name}" dan JUAL SEMUA posisi jadi saldo? Bot diarsipkan (riwayat tetap ada).`)) return;
+                setBusy(true);
+                try {
+                  const r: any = await api.post(`/bots/${bot.id}/stop`, { liquidate: true });
+                  alert(`Bot dihentikan.\nTerjual: ${r.sold ?? 0} posisi (+${fmtMoney(r.realized ?? 0, quoteOfPair(bot.pair))})${r.skipped_dust ? `\nSisa debu tak terjual: ${r.skipped_dust}` : ''}${r.errors?.length ? `\nGagal: ${r.errors.join('; ')}` : ''}`);
+                  onChanged();
+                } catch (e: any) { alert(e.message || 'Stop gagal'); }
+                finally { setBusy(false); }
+              }}
+              disabled={busy} className="btn btn-ghost btn-sm flex-1" title="Hentikan & jual semua posisi">
+              Stop & Jual
+            </button>
+            <button onClick={() => act('delete')} disabled={busy} className="btn btn-ghost btn-sm btn-icon !text-[#ff7a8c]" title="Hapus bot (harus berhenti dulu)">
+              <Icon.trash size={14} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -130,14 +136,14 @@ function tagClass(l: LogRow): string {
   return 'txt-3';
 }
 
-function LogFeed() {
+function LogFeed({ all = false }: { all?: boolean }) {
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [filter, setFilter] = useState<'semua' | 'peringatan' | 'trades'>('semua');
 
   const load = useCallback(() => {
     const q = filter === 'peringatan' ? 'level=warn' : filter === 'trades' ? 'tag=trades' : '';
-    api.get<LogRow[]>(`/logs?limit=100&${q}`).then(rows => setLogs(rows.reverse()));
-  }, [filter]);
+    api.get<LogRow[]>(`/logs?limit=100&${q}${all ? '&all=1' : ''}`).then(rows => setLogs(rows.reverse()));
+  }, [filter, all]);
 
   useEffect(() => {
     load();
@@ -190,13 +196,14 @@ function LogFeed() {
   );
 }
 
-export default function Bots() {
+export default function Bots({ admin = false }: { admin?: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
   const [page, setPage] = useState(1);
+  const [allUsers, setAllUsers] = useState(false);
 
   const load = useCallback(() => {
-    api.get<Bot[]>('/bots').then(b => setBots(b.filter(x => x.status !== 'stopped')));
-  }, []);
+    api.get<Bot[]>(`/bots${admin && allUsers ? '?all=1' : ''}`).then(b => setBots(b.filter(x => x.status !== 'stopped')));
+  }, [admin, allUsers]);
 
   useEffect(() => {
     load();
@@ -213,10 +220,18 @@ export default function Bots() {
     <div>
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div className="min-w-0">
-          <h2 className="text-[17px] font-bold tracking-tight">Bot</h2>
+          <h2 className="text-[17px] font-bold tracking-tight">Bot{admin ? ' · mode admin (pantau saja)' : ''}</h2>
           <p className="text-xs txt-3 mt-0.5">{bots.length} bot terdaftar · {bots.filter(b => b.status === 'running').length} berjalan</p>
         </div>
-        <Link to="/wizard" className="btn btn-primary btn-sm shrink-0"><Icon.plus size={14} /> Bot baru</Link>
+        <div className="flex items-center gap-2 shrink-0">
+          {admin && (
+            <label className="flex items-center gap-2 text-xs txt-2 cursor-pointer">
+              <input type="checkbox" checked={allUsers} onChange={e => setAllUsers(e.target.checked)} className="accent-[#4f7cff] w-4 h-4" />
+              Semua user
+            </label>
+          )}
+          {!admin && <Link to="/wizard" className="btn btn-primary btn-sm shrink-0"><Icon.plus size={14} /> Bot baru</Link>}
+        </div>
       </div>
 
       {bots.length === 0 ? (
@@ -227,7 +242,7 @@ export default function Bots() {
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-            {shown.map(b => <BotCard key={b.id} bot={b} onChanged={load} />)}
+            {shown.map(b => <BotCard key={b.id} bot={b} onChanged={load} admin={admin} />)}
           </div>
           <div className="flex items-center justify-between mt-3 text-xs txt-3">
             <span className="num">{(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, bots.length)} dari {bots.length}</span>
@@ -241,7 +256,7 @@ export default function Bots() {
         </>
       )}
 
-      <LogFeed />
+      <LogFeed all={admin && allUsers} />
     </div>
   );
 }

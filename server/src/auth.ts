@@ -79,6 +79,17 @@ export function requireAdmin(req: any, res: any, next: any) {
   next();
 }
 
+/**
+ * Akun admin khusus mengelola strategi & memantau semua user — tidak boleh
+ * trading (buat bot, eksekusi order, kill switch). Trading hanya untuk akun user.
+ */
+export function requireTrader(req: any, res: any, next: any) {
+  if (req.user && req.user.role === 'admin') {
+    return res.status(403).json({ error: 'Akun admin khusus kelola strategi — trading hanya untuk akun user', code: 'ADMIN_NO_TRADE' });
+  }
+  next();
+}
+
 export function uid(req: any): number {
   return req.user.id;
 }

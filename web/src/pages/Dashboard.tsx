@@ -35,7 +35,7 @@ function Tape() {
 
 interface BalanceIssue { exchange_id: string; quote: string; free_quote: number; bot_id: number | null; name: string; lot: number; mode: string; overalloc?: boolean; committed?: number }
 
-export default function Dashboard() {
+export default function Dashboard({ admin = false }: { admin?: boolean }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [showQuick, setShowQuick] = useState(false);
   const [err, setErr] = useState('');
@@ -190,17 +190,25 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => setShowQuick(true)} className="btn btn-primary !py-3">
-              <Icon.zap size={15} /> Order cepat
-            </button>
-            <button onClick={killswitch} className="btn btn-danger !py-3">
-              <Icon.power size={15} /> Mode darurat
-            </button>
-          </div>
-          <p className="text-[11px] txt-3 leading-relaxed px-1">
-            Mode darurat menghentikan seluruh bot dan membatalkan order terbuka pada akun riil.
-          </p>
+          {admin ? (
+            <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[12px] txt-2">
+              Mode admin: pantau saja — trading (order cepat, mode darurat) hanya untuk akun user.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => setShowQuick(true)} className="btn btn-primary !py-3">
+                  <Icon.zap size={15} /> Order cepat
+                </button>
+                <button onClick={killswitch} className="btn btn-danger !py-3">
+                  <Icon.power size={15} /> Mode darurat
+                </button>
+              </div>
+              <p className="text-[11px] txt-3 leading-relaxed px-1">
+                Mode darurat menghentikan seluruh bot dan membatalkan order terbuka pada akun riil.
+              </p>
+            </>
+          )}
         </div>
       </div>
 

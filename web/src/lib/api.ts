@@ -78,7 +78,7 @@ export interface Bot {
   params: Record<string, any>; budget_idr: number; current_budget: number; lot: number;
   cash_quote: number | null; open_cost_quote: number;
   sellDist: { pctAway: number; label: string } | null;
-  mode: string; auto_compound_pct: number; status: string;
+  mode: string; auto_compound_pct: number; status: string; user_id: number; username?: string;
   stats: { realized: number; wins: number; total: number; trades: number };
   trend: { date: string; pnl: number }[];
 }
@@ -90,6 +90,7 @@ export interface TradeRow {
   id: number; bot_id: number | null; exchange_id: string; pair: string; side: string;
   price: number; qty: number; fee: number; value: number; realized_pnl: number;
   mode: string; strategy_tag: string | null; note: string | null; created_at: string;
+  username?: string;
 }
 export interface Preset {
   id: string; nama: string; strategi: string; gaya: string; deskripsi: string;

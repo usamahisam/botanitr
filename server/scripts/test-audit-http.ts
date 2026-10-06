@@ -47,6 +47,10 @@ async function main() {
   await post('/auth/setup', { username: 'admin', password: 'admin123' });
   const login = await post('/auth/login', { username: 'admin', password: 'admin123' });
   const T = login.data.token;
+  // Trader untuk aksi trading (admin diblokir trading)
+  await post('/auth/users', { username: 'trader', password: 'trader123', role: 'user' }, T);
+  const loginU = await post('/auth/login', { username: 'trader', password: 'trader123' });
+  const U = loginU.data.token;
 
   // ===== A) Query numerik korup tak 500 =====
   console.log('A) Sanitasi query');
@@ -62,15 +66,15 @@ async function main() {
   // ===== B) Validasi body bots =====
   console.log('\nB) Validasi bots');
   const goodBot = { name: 't', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid', budget_idr: 100000 };
-  r = await post('/bots', { ...goodBot, budget_idr: -5 }, T);
+  r = await post('/bots', { ...goodBot, budget_idr: -5 }, U);
   check('budget negatif → 400', r.status === 400, `got ${r.status} ${JSON.stringify(r.data)}`);
-  r = await post('/bots', { ...goodBot, mode: 'hacker' }, T);
+  r = await post('/bots', { ...goodBot, mode: 'hacker' }, U);
   check('mode ilegal → 400', r.status === 400, `got ${r.status}`);
-  r = await post('/bots', { ...goodBot, strategy: 'tidakada' }, T);
+  r = await post('/bots', { ...goodBot, strategy: 'tidakada' }, U);
   check('strategi tak dikenal → 400', r.status === 400, `got ${r.status}`);
-  r = await post('/bots', { ...goodBot, compound_pct: 500 }, T);
+  r = await post('/bots', { ...goodBot, compound_pct: 500 }, U);
   check('compound >100 dijepit ke 100', r.status === 201 && r.data.auto_compound_pct === 100, `got ${r.status} ${JSON.stringify(r.data)}`);
-  r = await post('/bots', goodBot, T);
+  r = await post('/bots', goodBot, U);
   check('bot valid → 201', r.status === 201, `got ${r.status} ${JSON.stringify(r.data)}`);
 
   // ===== C) Validasi alerts =====
@@ -121,11 +125,11 @@ async function main() {
 
   // ===== G) Quick-trade balance guard (paper, tanpa jaringan) =====
   console.log('\nG) Quick-trade guard');
-  r = await post('/trade/quick', { exchange_id: 'indodax', pair: 'XRPIDR', side: 'buy', amount: 999999999 }, T);
+  r = await post('/trade/quick', { exchange_id: 'indodax', pair: 'XRPIDR', side: 'buy', amount: 999999999 }, U);
   check('buy melebihi kas paper → 400 berpesan', r.status === 400 && /tidak cukup/i.test(r.data.error || ''), `got ${r.status} ${JSON.stringify(r.data)}`);
-  r = await post('/trade/quick', { exchange_id: 'indodax', pair: 'XRPIDR', side: 'buy', amount: -5 }, T);
+  r = await post('/trade/quick', { exchange_id: 'indodax', pair: 'XRPIDR', side: 'buy', amount: -5 }, U);
   check('amount negatif → 400', r.status === 400, `got ${r.status}`);
-  r = await post('/trade/quick', { exchange_id: 'indodax', pair: 'XRPIDR', side: 'hold', amount: 100 }, T);
+  r = await post('/trade/quick', { exchange_id: 'indodax', pair: 'XRPIDR', side: 'hold', amount: 100 }, U);
   check('side ilegal → 400', r.status === 400, `got ${r.status}`);
 
   server.close();

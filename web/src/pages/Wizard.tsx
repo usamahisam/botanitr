@@ -236,7 +236,7 @@ const STRAT_EXPLAIN: Record<string, string> = {
 
 interface ExchangeInfo { id: string; name: string; mode: string; has_credentials: boolean }
 
-export default function Wizard() {
+export default function Wizard({ admin = false }: { admin?: boolean }) {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [mode, setMode] = useState<'paper' | 'live'>('paper');
@@ -522,9 +522,14 @@ export default function Wizard() {
             </label>
           )}
 
+          {admin && (
+            <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[12px] txt-2 mb-3">
+              Mode admin: Anda bisa merancang & menguji strategi di sini, tetapi aktivasi bot hanya untuk akun user.
+            </div>
+          )}
           <div className="flex justify-between mt-4">
             <button onClick={() => setStep(2)} className="btn btn-ghost">Kembali</button>
-            <button onClick={activate} disabled={submitting || (mode === 'live' && !confirmedLive) || !botName} className="btn btn-primary">
+            <button onClick={activate} disabled={admin || submitting || (mode === 'live' && !confirmedLive) || !botName} className="btn btn-primary" title={admin ? 'Akun admin tidak bisa mengaktifkan bot' : ''}>
               {submitting ? 'Mengaktifkan…' : 'Aktifkan bot'}
             </button>
           </div>

@@ -21,7 +21,66 @@ function Stars({ value, onRate }: { value: number; onRate?: (s: number) => void 
   );
 }
 
-export default function Market() {
+const STRAT_KEYS = ['grid', 'dca', 'scalper', 'harvester', 'rebalance', 'revert', 'bollinger', 'breakout', 'dynamic'];
+
+function PresetCreator({ onDone }: { onDone: () => void }) {
+  const [name, setName] = useState('');
+  const [strategy, setStrategy] = useState('grid');
+  const [params, setParams] = useState('{}');
+  const [description, setDescription] = useState('');
+  const [budget, setBudget] = useState('100000');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setMsg('');
+    let parsed: any = {};
+    try { parsed = params.trim() ? JSON.parse(params) : {}; }
+    catch { setMsg('Params harus JSON valid'); return; }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) { setMsg('Params harus objek JSON'); return; }
+    setBusy(true);
+    try {
+      await api.post('/marketplace', { name, strategy, params: parsed, description, budget_quote: Number(budget) });
+      setMsg('Preset sistem tersimpan.');
+      setName(''); setParams('{}'); setDescription(''); setBudget('100000');
+      onDone();
+    } catch (e: any) { setMsg(e.message || 'Gagal menyimpan'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section className="panel p-4 mb-4">
+      <div className="text-[14px] font-semibold mb-1">Buat preset sistem</div>
+      <p className="text-xs txt-3 mb-3">Preset admin tampil untuk semua user di Marketplace.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <div className="lbl mb-1.5">Nama preset</div>
+          <input value={name} onChange={e => setName(e.target.value)} className="input" placeholder="cth. Grid Agresif" />
+        </div>
+        <div>
+          <div className="lbl mb-1.5">Strategi</div>
+          <select value={strategy} onChange={e => setStrategy(e.target.value)} className="input">
+            {STRAT_KEYS.map(k => <option key={k} value={k}>{STRAT_LABEL[k] || k}</option>)}
+          </select>
+        </div>
+        <div>
+          <div className="lbl mb-1.5">Params (JSON)</div>
+          <input value={params} onChange={e => setParams(e.target.value)} className="input num" spellCheck={false} placeholder='{"levels": 8}' />
+        </div>
+        <div>
+          <div className="lbl mb-1.5">Budget saran</div>
+          <input type="number" value={budget} onChange={e => setBudget(e.target.value)} className="input num" />
+        </div>
+      </div>
+      <div className="mt-3">
+        <div className="lbl mb-1.5">Deskripsi</div>
+        <input value={description} onChange={e => setDescription(e.target.value)} className="input" placeholder="Kapan strategi ini cocok…" />
+      </div>
+      {msg && <div className="text-[13px] txt-2 mt-2">{msg}</div>}
+      <button onClick={submit} disabled={busy || !name || !strategy} className="btn btn-primary btn-sm mt-3">Simpan preset sistem</button>
+    </section>
+  );
+}
+
+export default function Market({ admin = false }: { admin?: boolean }) {
   const navigate = useNavigate();
   const [presets, setPresets] = useState<MarketPreset[]>([]);
   const [search, setSearch] = useState('');
@@ -73,6 +132,8 @@ export default function Market() {
           <span className="text-xs txt-2">total bot dari preset</span>
         </div>
       </div>
+
+      {admin && <PresetCreator onDone={load} />}
 
       {msg && <div className="text-[13px] txt-2 border border-white/10 rounded-md px-3 py-2.5 mb-4">{msg}</div>}
 
