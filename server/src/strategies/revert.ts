@@ -20,7 +20,8 @@ const revert: Strategy = {
   name: 'revert',
   label: 'Revert',
   defaultParams: {
-    timeframe: '5m', rsi_len: 3, oversold: 20, exit_rsi: 65, exit_max_loss_pct: 0.5,
+    timeframe: '5m', rsi_len: 3, oversold: 20, exit_rsi: 65,
+    bounce_confirm: true,
     trend_sma: 100, tp_pct: 1.0, sl_pct: 3.0, budget_pct: 100,
   },
 
@@ -71,16 +72,13 @@ const revert: Strategy = {
     if (closes.length < rsiLen + 2) return actions;
 
     // Exit momentum: RSI pendek sudah panas → kunci pantulan.
-    // Gerbang profitabilitas: jangan kunci RUGI. Exit hanya bila cuan bersih
-    // atau ruginya masih dalam toleransi (selip). Selain itu tahan untuk TP,
-    // atau potong di SL bila pantulan gagal total.
+    // WAJIB cuan bersih (setelah fee dua sisi). Tanpa ini, tiap pantulan
+    // gagal dikunci rugi kecil (-0,5% dst) dan menggerus modal pelan-pelan.
+    // Rugi ditangani stop-loss, bukan exit.
     if (state.position && state.position.qty * price >= minLot
         && rsi(closes, rsiLen) >= numParam(params, 'exit_rsi', 65, 50, 95)) {
       const p = state.position;
-      const maxLoss = numParam(params, 'exit_max_loss_pct', 0.5, 0, 5) / 100;
-      const ok = isNetProfitable(p.entryPrice, price, ctx.bot.exchange_id, params)
-        || (p.entryPrice > 0 && (price - p.entryPrice) / p.entryPrice >= -maxLoss);
-      if (ok) {
+      if (isNetProfitable(p.entryPrice, price, ctx.bot.exchange_id, params)) {
         actions.push({
           type: 'sell', qtyBase: p.qty, costBasis: p.cost,
           reason: `[REVERT_EXIT] RSI(${rsiLen}) panas — kunci pantulan @ ${Math.round(price)}`,
@@ -89,18 +87,24 @@ const revert: Strategy = {
         // (posisi dibersihkan scheduler saat fill terkonfirmasi)
         return actions;
       }
-      // Tak memenuhi gerbang → tahan posisi (lanjut ke proteksi TP/SL di bawah
-      // pada tick ini tidak ada; TP/SL dievaluasi di blok atas).
+      // Belum cuan → tahan posisi (TP/SL dievaluasi di blok atas tick berikut).
     }
 
-    // Entry: oversold ekstrem + tren besar masih naik + 1h selaras + cooldown
+    // Entry: oversold ekstrem + BUKTI pantul (RSI crossing kembali ke atas)
+    // + tren besar masih naik + 1h selaras + cooldown.
+    // Tanpa konfirmasi pantul, entry terjadi saat pisau masih jatuh.
     if (!state.position) {
       const r = rsi(closes, rsiLen);
+      const oversold = numParam(params, 'oversold', 20, 2, 40);
+      const prevRsi = closes.length > rsiLen + 2 ? rsi(closes.slice(0, -1), rsiLen) : 0;
+      const rsiOk = params.bounce_confirm === false
+        ? r <= oversold
+        : (prevRsi <= oversold && r > oversold);
       const trendLen = Math.max(20, Math.min(200, Math.floor(numParam(params, 'trend_sma', 100, 20, 200))));
       const trendOk = closes.length < trendLen ? true : price > sma(closes, trendLen);
       const htfOk = params.mtf_confirm === false || (await higherTrend(ctx.getKlines)) !== 'down';
       const regime = detectRegime(state.candles, params);
-      if (r <= numParam(params, 'oversold', 20, 2, 40) && trendOk && htfOk
+      if (rsiOk && trendOk && htfOk
           && ctx.now - (state.lastEntryTs || 0) >= adaptiveCooldownMs(params, regime.mode)) {
         const pct = Math.max(10, Math.min(100, numParam(params, 'budget_pct', 100, 10, 100)));
         const amount = Math.floor(ctx.bot.current_budget * pct / 100);
@@ -118,7 +122,7 @@ const revert: Strategy = {
   },
 
   describe(p: any) {
-    return `RSI(${p.rsi_len ?? 3})≤${p.oversold ?? 20} + tren SMA${p.trend_sma ?? 100}, exit RSI≥${p.exit_rsi ?? 65}/TP fee-aware`;
+    return `RSI(${p.rsi_len ?? 3}) pantul dari ≤${p.oversold ?? 20} + tren SMA${p.trend_sma ?? 100}, exit RSI≥${p.exit_rsi ?? 65} wajib cuan/TP fee-aware`;
   }
 };
 

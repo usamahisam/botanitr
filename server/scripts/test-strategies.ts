@@ -117,27 +117,41 @@ async function main() {
   const dcaSL = await replay('dca', { drop_pct: 2, take_profit_pct: 3, max_buys: 5, all_in: 'cadangan', sl_pct: 4 }, cr, { budget: BUDGET });
   check('dca stop-rugi memotong saat crash', dcaSL.sells > 0, `s=${dcaSL.sells}`);
 
-  console.log('\nF) Revert: exit RSI tak boleh kunci rugi');
+  console.log('\nF) Revert: exit wajib cuan + entry tunggu pantul');
   const { getStrategy } = await import('../src/strategies/types.js');
   await import('../src/strategies/revert.js');
   const revS = getStrategy('revert');
   // RSI panas (closes naik tajam) tapi harga di bawah entry
   const hot = Array.from({ length: 60 }, (_, i) => [1700000000000 + i * 300000, 90 + i, 91 + i, 89 + i, 90 + i, 10]);
-  const mkRevCtx = (price: number): any => ({
+  const mkRevCtx = (price: number, kl: any = hot): any => ({
     bot: { current_budget: 1000000, exchange_id: 'indodax' }, ticker: { last: price },
     quote: 'IDR', minLot: 0, usdtIdr: 1, now: Date.now(),
-    getKlines: async () => hot, getBalances: async () => [], getPrice: async () => price,
+    getKlines: async () => kl, getBalances: async () => [], getPrice: async () => price,
   });
-  const rParams = { timeframe: '5m', rsi_len: 3, oversold: 20, exit_rsi: 65, exit_max_loss_pct: 0.5, tp_pct: 1.0, sl_pct: 3.0 };
+  const rParams = { timeframe: '5m', rsi_len: 3, oversold: 20, exit_rsi: 65, tp_pct: 1.0, sl_pct: 3.0, mtf_confirm: false };
   const stLoss = { position: { entryPrice: 100, qty: 10, cost: 1000 }, candlesTs: 0, candles: [], lastEntryTs: 0 };
   const aLoss = await revS.onTick(mkRevCtx(98), stLoss, rParams);
   check('rugi -2% saat RSI panas -> TAHAN (tak ada sell)', !aLoss.some(a => a.type === 'sell'), JSON.stringify(aLoss.map(a => a.type)));
   const stTol = { position: { entryPrice: 100, qty: 10, cost: 1000 }, candlesTs: 0, candles: [], lastEntryTs: 0 };
   const aTol = await revS.onTick(mkRevCtx(99.6), stTol, rParams);
-  check('rugi -0,4% (dalam toleransi) -> exit', aTol.some(a => a.type === 'sell'), JSON.stringify(aTol.map(a => a.type)));
+  check('rugi -0,4% saat RSI panas -> TAHAN juga', !aTol.some(a => a.type === 'sell'), JSON.stringify(aTol.map(a => a.type)));
   const stWin = { position: { entryPrice: 100, qty: 10, cost: 1000 }, candlesTs: 0, candles: [], lastEntryTs: 0 };
   const aWin = await revS.onTick(mkRevCtx(102), stWin, rParams);
   check('cuan -> exit', aWin.some(a => a.type === 'sell'), JSON.stringify(aWin.map(a => a.type)));
+  // Basis naik 90->109.5: tren (SMA20) lolos di kedua kasus, yang
+  // membedakan hanya cross pantul RSI.
+  const rise: any[] = [];
+  for (let i = 0; i < 40; i++) rise.push([1700000000000 + i * 300000, 90 + i * 0.5, 91 + i * 0.5, 89 + i * 0.5, 90 + i * 0.5, 10]);
+  const t0 = 1700000000000 + 40 * 300000;
+  const kl = (extra: number[]) => [...rise, ...extra.map((c, i) => [t0 + i * 300000, c - 0.1, c + 0.1, c - 0.1, c, 10])];
+  // Jatuh terus: 108.5, 107, 106.5 (RSI tetap tenggelam, tren masih lolos)
+  const stF = { position: null, candlesTs: 0, candles: [], lastEntryTs: 0 };
+  const aF = await revS.onTick(mkRevCtx(106.6, kl([108.5, 107, 106.5])), stF, { ...rParams, trend_sma: 20 });
+  check('RSI tenggelam tanpa pantul -> tak entry', !aF.some(a => a.type === 'buy'), JSON.stringify(aF.map(a => a.type)));
+  // Pantul: 108.5, 107, 108 (cross naik melewati oversold)
+  const stV = { position: null, candlesTs: 0, candles: [], lastEntryTs: 0 };
+  const aV = await revS.onTick(mkRevCtx(108.1, kl([108.5, 107, 108])), stV, { ...rParams, trend_sma: 20 });
+  check('pantul cross oversold -> entry', aV.some(a => a.type === 'buy'), JSON.stringify(aV.map(a => a.type)));
 
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);
