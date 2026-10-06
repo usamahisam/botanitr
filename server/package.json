@@ -36,7 +36,8 @@
     "test:corr": "tsx scripts/test-correlation.ts",
     "test:ml": "tsx scripts/test-ml.ts",
     "test:targets": "tsx scripts/test-targets.ts",
-    "test:sellfill": "tsx scripts/test-sell-fill.ts"
+    "test:sellfill": "tsx scripts/test-sell-fill.ts",
+    "test:roundtrip": "tsx scripts/test-audit-roundtrip.ts"
   },
   "dependencies": {
     "axios": "^1.7.9",

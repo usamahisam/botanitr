@@ -51,17 +51,21 @@ export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift
     } catch { /* gagal ambil saldo → lewati */ }
   }
 
-  if (drifts.length > 0 && opts.notifyOnDrift !== false) {
+  // Masa tenggang settlement: buy <10 menit lalu belum tentu masuk saldo —
+  // jangan tuduh drift (kasus SUI 00:26). Saring di sini agar log pun bersih.
+  const { recentlyBought } = await import('./scheduler.js');
+  const settled = drifts.filter(d => !recentlyBought(d.bot_id, 10 * 60 * 1000));
+  if (settled.length > 0 && opts.notifyOnDrift !== false) {
     // Kelompokkan per user agar notifikasi tidak bocor antar akun.
     // Notifikasi per bot di-throttle 6 jam; log DB tetap ditulis tiap siklus.
     const nowMs = Date.now();
-    const fresh = drifts.filter(d => {
+    const fresh = settled.filter(d => {
       const last = lastDriftNotify.get(d.bot_id) || 0;
       if (nowMs - last < DRIFT_NOTIFY_MS) return false;
       lastDriftNotify.set(d.bot_id, nowMs);
       return true;
     });
-    for (const d of drifts) {
+    for (const d of settled) {
       const bot = bots.find(b => b.id === d.bot_id);
       log('info', 'ENGINE', `Drift ${d.name} (${d.pair}): tercatat ${d.recorded_qty.toFixed(6)}, aktual ${d.actual_qty.toFixed(6)} (drift ${d.drift_pct.toFixed(1)}%)`, { bot_id: d.bot_id, user_id: bot?.user_id ?? 0 });
     }
@@ -84,7 +88,7 @@ export async function reconcileOnce(opts: { tolerancePct?: number; notifyOnDrift
     }
   }
 
-  return drifts;
+  return settled;
 }
 
 /** Cooldown notifikasi drift per bot (6 jam) — log tetap tiap siklus, Telegram tidak spam */

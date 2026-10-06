@@ -110,7 +110,10 @@ async function processBot(bot: BotRow) {
 
   // Auto-heal drift (live saja): catatan melebihi saldo exchange (partial fill
   // / jual manual) → selaraskan ke bawah + catat. Tak pernah menaikkan.
-  if (bot.mode === 'live' && balEntry) {
+  // Masa tenggang 10 menit setelah buy terakhir: saldo exchange butuh waktu
+  // settlement (kasus SUI: buy 00:26:18, saldo masih 0 di 00:26:30) — tanpa
+  // ini heal dan recover saling menimpa (churn).
+  if (bot.mode === 'live' && balEntry && !recentlyBought(bot.id, 10 * 60 * 1000)) {
     const healed = healDriftQty(state, () => baseActual());
     if (healed) {
       log('warn', 'ENGINE', `Drift ${bot.name} diselaraskan otomatis: catatan ${healed.recorded.toFixed(6)} → saldo ${healed.actual.toFixed(6)}`, { bot_id: bot.id, user_id: bot.user_id });
@@ -171,6 +174,22 @@ export function initCashLedger(state: any, currentBudget: number): void {
   const open: any[] = state.entries || state.filledBuys || (state.position ? [state.position] : []);
   const openCost = open.reduce((s: number, e: any) => s + (Number(e.cost) || 0), 0);
   state.cash = currentBudget - openCost;
+}
+
+/** Waktu buy terakhir bot (ms epoch) — untuk masa tenggang settlement. */
+export function lastBuyAt(botId: number): number {
+  try {
+    const row = db.prepare(`SELECT created_at FROM trades WHERE bot_id=? AND side='buy' ORDER BY id DESC LIMIT 1`).get(botId) as any;
+    const t = row ? Date.parse(row.created_at) : 0;
+    return Number.isFinite(t) ? t : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** True bila ada buy dalam windowMs terakhir (saldo mungkin belum settlement). */
+export function recentlyBought(botId: number, windowMs: number): boolean {
+  return Date.now() - lastBuyAt(botId) < windowMs;
 }
 
 /**
