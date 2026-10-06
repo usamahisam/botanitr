@@ -87,25 +87,31 @@ async function processBot(bot: BotRow) {
     balanceCache.set(balKey, balEntry);
   }
 
+  // Saldo aktual aset bot: baris base tak ada + baris quote ADA = benar-benar
+  // nol (exchange hanya mengembalikan aset bersaldo). Quote tak ada = baca
+  // gagal → null (jangan perlakukan sebagai nol).
+  const baseActual = (): number | null => {
+    try {
+      const { base } = parsePair(bot.pair, client.quoteAsset);
+      const find = (a: string) => balEntry.data.find((b: any) => String(b.asset).toUpperCase() === a.toUpperCase());
+      if (!find(client.quoteAsset)) return null;
+      const bal = find(base);
+      return bal ? (Number(bal.free) || 0) + (Number(bal.locked) || 0) : 0;
+    } catch {
+      return null;
+    }
+  };
+
   // Pulihkan posisi yang hilang dari state padahal koin masih ada
   // (sinyal jual gagal tereksekusi di versi lama). Berlaku paper+live.
   try {
-    const { base } = parsePair(bot.pair, client.quoteAsset);
-    await recoverPosition(bot, state, async () => {
-      const bal = balEntry.data.find((b: any) => String(b.asset).toUpperCase() === base.toUpperCase());
-      return bal ? (Number(bal.free) || 0) + (Number(bal.locked) || 0) : null;
-    });
+    await recoverPosition(bot, state, async () => baseActual());
   } catch { /* gagal baca → lewati, strategi jalan normal */ }
 
   // Auto-heal drift (live saja): catatan melebihi saldo exchange (partial fill
-  // / jual manual) → selaraskan ke bawah + catat. Tak pernah menaikkan; baris
-  // aset tak ada di respons = lewati (bukan dianggap nol).
+  // / jual manual) → selaraskan ke bawah + catat. Tak pernah menaikkan.
   if (bot.mode === 'live' && balEntry) {
-    const healed = healDriftQty(state, () => {
-      const { base } = parsePair(bot.pair, client.quoteAsset);
-      const bal = balEntry.data.find((b: any) => String(b.asset).toUpperCase() === base.toUpperCase());
-      return bal ? (Number(bal.free) || 0) + (Number(bal.locked) || 0) : null;
-    });
+    const healed = healDriftQty(state, () => baseActual());
     if (healed) {
       log('warn', 'ENGINE', `Drift ${bot.name} diselaraskan otomatis: catatan ${healed.recorded.toFixed(6)} → saldo ${healed.actual.toFixed(6)}`, { bot_id: bot.id, user_id: bot.user_id });
     }
