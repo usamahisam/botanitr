@@ -79,6 +79,20 @@ async function main() {
     check('breakout bukan #1 saat sideways', recs[0].strategi !== 'breakout', `#1=${recs[0].strategi}`);
   } finally { pub.getKlines = orig; }
 
+  console.log('\nE) Budget kecil vs lot minimum (Binance, 10 USDT)');
+  const pubB: any = registry.get('binance');
+  const origB = pubB.getKlines.bind(pubB);
+  pubB.getKlines = async () => synth(150, 0, 0.02, 44);
+  pub.getKlines = async () => synth(150, 0, 0.02, 44);
+  try {
+    const recs = await recommend('binance', 'SMALLUSDT', 10);
+    const grid = recs.find(r => r.strategi === 'grid');
+    const revert = recs.find(r => r.strategi === 'revert');
+    check('grid kena lotWarning (lot 1 < min 5)', !!grid?.lotWarning, grid?.lotWarning || 'tanpa warning');
+    check('revert tanpa lotWarning (1 posisi penuh)', !revert?.lotWarning, revert?.lotWarning || 'ok');
+    check('revert di atas grid saat budget mini', (revert?.skor ?? 0) > (grid?.skor ?? 999), `revert=${revert?.skor} grid=${grid?.skor}`);
+  } finally { pub.getKlines = orig; pubB.getKlines = origB; }
+
   console.log(`\n═══════════════════════════════`);
   console.log(`HASIL: ${passed} lolos, ${failed} gagal`);
   process.exit(failed > 0 ? 1 : 0);

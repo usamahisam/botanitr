@@ -435,6 +435,24 @@ export interface PresetRecommendation extends PresetDef {
   backtest: BacktestResult;
   /** Kondisi grafik pair saat dianalisis (sama untuk semua preset) */
   market: MarketRegime & { interval: string; candles: number };
+  /** Peringatan bila lot per level di bawah minimum order exchange */
+  lotWarning?: string;
+}
+
+/** Order minimum per exchange (satuan quote) — selaras seed DB */
+const MIN_LOT: Record<string, number> = { indodax: 10000, tokocrypto: 2, binance: 5, bittime: 10000 };
+
+/** Pembagi lot per strategi (disamakan dengan validasi pembuatan bot).
+ * Strategi posisi-tunggal memakai seluruh budget sekaligus (divisor 1). */
+function lotDivisor(strategi: string, params: Record<string, any>): number {
+  if (strategi === 'grid' || strategi === 'dynamic') {
+    return Math.max(2, Math.min(50, Math.floor(Number(params.levels ?? 6)) || 6));
+  }
+  if (strategi === 'dca' || strategi === 'harvester') {
+    const n = Math.floor(Number(params.max_buys ?? 5)) || 5;
+    return Math.max(1, Math.min(50, n));
+  }
+  return 1;
 }
 
 const recCache = new Map<string, { data: PresetRecommendation[]; ts: number }>();
@@ -495,14 +513,27 @@ export async function recommend(exchangeId: string, pair: string, budgetQuote = 
   const metrics = computeMetrics(daily);
   const regime = detectMarketRegime(daily);
   const market = { ...regime, interval: dailyInterval, candles: daily.length };
+  const minLot = MIN_LOT[exchangeId] ?? 0;
   const out: PresetRecommendation[] = PRESETS.map(preset => {
     const kl = preset.strategi === 'scalper' ? micro : daily;
     const bt = backtest(preset, kl, budgetQuote);
     // Tak ada sinyal di data ini = strategi tak cocok koinnya → tekan skor
     const noSignal = bt.trades === 0;
+    // Lot per level di bawah minimum order = strategi tak akan pernah trade
+    // dengan budget ini → tekan skor + beri peringatan eksplisit.
+    let lotWarning: string | undefined;
+    let lotPenalty = 0;
+    if (minLot > 0 && budgetQuote > 0) {
+      const lot = Math.floor(budgetQuote / lotDivisor(preset.strategi, preset.params));
+      if (lot < minLot) {
+        lotPenalty = 30;
+        lotWarning = `Lot per level ${lot} di bawah minimum order ${minLot} — tak akan trade dengan budget ini`;
+      }
+    }
     return {
       ...preset,
-      skor: scorePreset(preset, metrics, regime) - (noSignal ? 15 : 0),
+      lotWarning,
+      skor: scorePreset(preset, metrics, regime) - (noSignal ? 15 : 0) - lotPenalty,
       backtest: {
         ...bt,
         note: noSignal

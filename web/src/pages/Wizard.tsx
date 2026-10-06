@@ -271,11 +271,12 @@ export default function Wizard() {
   const changePair = (v: string) => { setPair(v); setPresets([]); setSelected(null); };
   const changeExchange = (v: string) => { setExchange(v); setPresets([]); setSelected(null); };
 
-  // Analisis otomatis saat masuk langkah 2 (hemat 1 klik)
+  // Analisis otomatis saat masuk langkah 2; ikut refresh bila pair/exchange/
+  // budget berubah agar label pair di hasil tak pernah basi.
   useEffect(() => {
     if (step === 2 && presets.length === 0 && !loadingPresets && pair) analyze();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [step, pair, exchange, budget]);
 
   const analyze = async () => {
     setLoadingPresets(true); setError(''); setPresets([]); setSelected(null);
@@ -410,6 +411,9 @@ export default function Wizard() {
                         <span className="num text-[13px] font-semibold txt-up shrink-0">{p.skor.toFixed(1)}</span>
                       </div>
                       <p className="text-xs txt-2 mt-1.5 leading-relaxed">{p.deskripsi}</p>
+                      {p.lotWarning && (
+                        <p className="text-[11px] mt-1.5 rounded border border-[rgba(246,70,93,0.35)] bg-[rgba(246,70,93,0.07)] px-2 py-1 txt-down">{p.lotWarning}</p>
+                      )}
                       {p.backtest.note && (
                         <p className="text-[11px] txt-3 mt-1 num">{p.backtest.note}</p>
                       )}
