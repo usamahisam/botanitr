@@ -16,6 +16,7 @@ export interface ReplayOpts {
   exchangeId?: string;
   stepMs?: number;       // waktu antar candle (def 5 mnt)
   maxActionsPerTick?: number;
+  maxTradesPerDay?: number; // paritas cap live (def tanpa batas)
 }
 
 export interface ReplayResult {
@@ -58,11 +59,17 @@ export async function replay(
 
   let cash = budget, invQty = 0, realized = 0, buys = 0, sells = 0;
   let peak = budget, maxDd = 0;
+  const dayCount = new Map<string, number>();
+  const capDay = opts.maxTradesPerDay ?? 0;
 
   for (let i = 0; i < klines.length; i++) {
     const k = klines[i];
     const price = k[4];
     if (!(price > 0)) continue;
+    // Cap harian: paritas guard live — entry (buy) ditahan, exit (sell) tetap jalan
+    const dayKey = new Date(k[0] + 7 * 3600 * 1000).toISOString().slice(0, 10);
+    const cappedDay = capDay > 0 && (dayCount.get(dayKey) || 0) >= capDay;
+    const bumpDay = () => { if (capDay > 0) dayCount.set(dayKey, (dayCount.get(dayKey) || 0) + 1); };
     // Sama seperti live: strategi menyusun lot dari sisa kas, bukan modal awal
     const effBudget = Math.min(budget, Math.max(0, cash));
     const ctx: any = {
@@ -81,6 +88,7 @@ export async function replay(
     for (const a of actions) {
       if (++n > maxPer) break;
       if (a.type === 'buy') {
+        if (cappedDay) continue;
         const amount = Number(a.amountQuote ?? 0);
         if (!(amount > 0) || cash < amount) continue;
         // Selip: beli dieksekusi sedikit lebih mahal dari sinyal
@@ -91,6 +99,7 @@ export async function replay(
         cash -= amount;
         invQty += qty;
         buys++;
+        bumpDay();
       } else if (a.type === 'sell') {
         let qty = Number(a.qtyBase ?? 0);
         if (!(qty > 0)) continue;
@@ -106,6 +115,7 @@ export async function replay(
         invQty -= qty;
         realized += proceeds - costPart;
         sells++;
+        bumpDay();
       }
     }
     const eq = cash + invQty * price;

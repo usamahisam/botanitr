@@ -47,6 +47,7 @@ function BotCard({ bot, onChanged }: { bot: Bot; onChanged: () => void }) {
           <div className="flex items-center gap-2">
             <span className={running ? 'txt-up' : 'txt-3'}><Icon.dot size={7} /></span>
             <span className="font-semibold text-[14px] truncate">{bot.name}</span>
+            {(bot.params as any)?.turbo && <span className="tag tag-accent shrink-0">TURBO</span>}
           </div>
           <div className="num text-xs txt-3 mt-1">{bot.pair} · {STRAT_LABEL[bot.strategy] || bot.strategy} · {bot.exchange_id} · {bot.mode === 'live' ? 'RIIL' : 'DEMO'}</div>
           {bot.sellDist && (

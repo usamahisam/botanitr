@@ -24,11 +24,16 @@ export function createHttp(baseURL: string, proxyUrl?: string | null): AxiosInst
   instance.interceptors.response.use(undefined, async (err) => {
     const cfg: any = err.config || {};
     const status = err.response?.status;
-    const retryable = !status || status >= 500;
+    const is429 = status === 429;
+    const retryable = !status || status >= 500 || is429;
     cfg.__retryCount = cfg.__retryCount || 0;
-    if (retryable && cfg.__retryCount < 3) {
+    // 429 (rate-limit): mundur lebih sopan, maks 2x — selebihnya biarkan
+    // failStreak trader yang menurunkan mode, bukan retry membabi-buta.
+    const maxRetry = is429 ? 2 : 3;
+    if (retryable && cfg.__retryCount < maxRetry) {
       cfg.__retryCount++;
-      await sleep(500 * Math.pow(3, cfg.__retryCount - 1)); // 500ms, 1.5s, 4.5s
+      const wait = is429 ? 2000 * Math.pow(4, cfg.__retryCount - 1) : 500 * Math.pow(3, cfg.__retryCount - 1);
+      await sleep(wait);
       return instance(cfg);
     }
     return Promise.reject(err);

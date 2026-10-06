@@ -116,7 +116,7 @@ async function main() {
   console.log('\n5) Marketplace');
   r = await get('/marketplace', T);
   const sysCount = r.data?.length ?? 0;
-  check(`marketplace 10 preset sistem (got ${sysCount})`, r.status === 200 && sysCount === 10, `got ${r.status}`);
+  check(`marketplace 11 preset sistem (got ${sysCount})`, r.status === 200 && sysCount === 11, `got ${r.status}`);
   const dynPreset = (r.data || []).find((p: any) => p.strategy === 'dynamic');
   check('preset dynamic ada', !!dynPreset);
   r = await post('/marketplace', { name: 'E2E Preset', strategy: 'revert', params: {}, budget_quote: 50000 }, T);
@@ -135,7 +135,7 @@ async function main() {
   console.log('\n6) Wizard & backtest');
   r = await get('/wizard/presets?exchange=indodax&pair=XRPIDR&budget=100000', T);
   check('presets tak 500', no500(r), `got ${r.status}`);
-  if (r.status === 200) check(`presets 9 (got ${r.data?.length})`, r.data?.length === 9);
+  if (r.status === 200) check(`presets 10 (got ${r.data?.length})`, r.data?.length === 10);
   r = await post('/wizard/backtest', { exchange_id: 'indodax', pair: 'XRPIDR', preset_id: 'grid-sideways' }, T);
   check('backtest preset tak 500', no500(r), `got ${r.status}`);
   r = await post('/backtest', { exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid', params: {}, days: 7, budget: 100000 }, T);

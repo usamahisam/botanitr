@@ -162,7 +162,8 @@ const PARAM_FIELDS: Record<string, { key: string; label: string; hint?: string }
     { key: 'ema_fast', label: 'EMA cepat' }, { key: 'ema_slow', label: 'EMA lambat' },
     { key: 'rsi_period', label: 'Periode RSI' }, { key: 'rsi_overbought', label: 'RSI overbought' },
     { key: 'tp_pct', label: 'Take profit (%)' }, { key: 'sl_pct', label: 'Stop loss (%)' },
-    { key: 'trailing_pct', label: 'Trailing stop (%)', hint: '0 = nonaktif' }
+    { key: 'trailing_pct', label: 'Trailing stop (%)', hint: '0 = nonaktif' },
+    { key: 'cooldown_min', label: 'Cooldown (mnt)' }, { key: 'max_trades_per_day', label: 'Maks trade/hari', hint: '0 = tanpa batas' },
   ],
   harvester: [
     { key: 'drop_pct', label: 'Akumulasi tiap turun (%)' }, { key: 'harvest_pct', label: 'Target panen (%)' }, { key: 'max_buys', label: 'Maks akumulasi' }
@@ -428,6 +429,12 @@ export default function Wizard() {
 
           {selected && (<>
           <div className="text-[13px] txt-2 mb-1">Strategi: <b className="text-white">{selected.nama}</b> <button onClick={() => setSelected(null)} className="text-xs txt-3 hover:text-white ml-1">ganti</button></div>
+          {(selected.params as any)?.turbo && (exchange === 'indodax' || exchange === 'bittime') && (
+            <div className="text-[12px] border border-[rgba(246,70,93,0.35)] bg-[rgba(246,70,93,0.07)] rounded-md px-3 py-2 mb-3">
+              <span className="font-semibold txt-down">Tidak viable di fee 0,3%:</span>
+              <span className="txt-2"> TP mikro turbo habis dimakan fee. Pindah ke Tokocrypto/Binance (fee 0,1%) atau matikan turbo.</span>
+            </div>
+          )}
           {STRAT_EXPLAIN[selected.strategi] && (
             <p className="text-xs txt-2 mb-3 leading-relaxed border-l-2 border-[#4f7cff]/50 pl-2.5">{STRAT_EXPLAIN[selected.strategi]}</p>
           )}

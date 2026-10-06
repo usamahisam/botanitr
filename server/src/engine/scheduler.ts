@@ -3,7 +3,7 @@ import { registry } from '../exchange/registry.js';
 import { Ticker, parsePair } from '../exchange/base.js';
 import { log } from '../log.js';
 import { getStrategy, StrategyContext } from '../strategies/types.js';
-import { executeAction } from './trader.js';
+import { executeAction, isDegraded } from './trader.js';
 import { getUsdtIdr } from './balances.js';
 import { notifyTrade, notify } from '../telegram/notify.js';
 import { pnl } from './pnl.js';
@@ -17,30 +17,37 @@ import '../strategies/bollinger.js';
 import '../strategies/breakout.js';
 import '../strategies/dynamic.js';
 
-/** Cache ticker in-memory 5 detik per user+exchange+pair */
+/** Cache ticker in-memory per user+exchange+pair (default 5 dtk, turbo 2 dtk) */
 const tickerCache = new Map<string, { data: Ticker; ts: number }>();
 const balanceCache = new Map<string, { data: { asset: string; free: number; locked: number }[]; ts: number }>();
-async function getTickerCached(exchangeId: string, pair: string, userId = 0): Promise<Ticker> {
+async function getTickerCached(exchangeId: string, pair: string, userId = 0, ttlMs = 5000): Promise<Ticker> {
   const key = `${userId}:${exchangeId}:${pair}`;
   const c = tickerCache.get(key);
-  if (c && Date.now() - c.ts < 5000) return c.data;
+  if (c && Date.now() - c.ts < ttlMs) return c.data;
   const data = await registry.getForUser(exchangeId, userId).getTicker(pair);
   tickerCache.set(key, { data, ts: Date.now() });
   return data;
 }
 
 /**
- * Stagger: bot diproses tiap ~8 detik + jitter per id.
+ * Stagger: bot diproses tiap ~8 detik + jitter per id; bot turbo tiap ~4 detik.
  * WAJIB module-level Map: objek BotRow dari DB selalu baru tiap tick,
  * sehingga state di badan objek (__last_tick dulu) tak pernah bertahan.
  */
 const lastTick = new Map<number, number>();
-export function shouldTick(botId: number, nowMs: number): boolean {
-  const interval = 8000 + (botId % 4) * 1500;
+export function shouldTick(botId: number, nowMs: number, turbo = false): boolean {
+  const interval = turbo ? 4000 : 8000 + (botId % 4) * 1500;
   const last = lastTick.get(botId) || 0;
   if (nowMs - last < interval) return false;
   lastTick.set(botId, nowMs);
   return true;
+}
+
+/** Turbo aktif bila params.turbo=true, bot tidak degraded, dan kuota (2/user) cukup */
+export function turboAllowed(bot: BotRow, params: any, turboCountByUser: Map<number, number>): boolean {
+  if (!params || params.turbo !== true) return false;
+  if (isDegraded(bot.id)) return false;
+  return (turboCountByUser.get(bot.user_id) || 0) < 2;
 }
 /** Buang entri bot yang sudah tak ada agar Map tak bocor memori. */
 export function pruneTickCache(activeIds: number[]) {
@@ -50,7 +57,30 @@ export function pruneTickCache(activeIds: number[]) {
   }
 }
 
-async function processBot(bot: BotRow) {
+/**
+ * Cap trade harian: bila tercapai, ENTRY baru dibuang tapi EXIT tetap jalan.
+ * Posisi yang sudah terbuka wajib selalu bisa keluar (TP/SL/trail) — memblokir
+ * exit justru menciptakan risiko overnight. Log 1x/hari/bot.
+ */
+const capLogged = new Set<string>();
+export function hitDailyCap(bot: BotRow, params: any): boolean {
+  const max = Math.floor(Number(params?.max_trades_per_day) || 0);
+  if (!(max > 0)) return false;
+  if (pnl.botTradesToday(bot.id) < max) return false;
+  const key = `${bot.id}:${new Date().toISOString().slice(0, 10)}`;
+  if (!capLogged.has(key)) {
+    capLogged.add(key);
+    log('info', 'ENGINE', `Bot "${bot.name}" cap ${max} trade/hari tercapai — entry baru ditahan, exit tetap jalan`, { bot_id: bot.id, user_id: bot.user_id });
+  }
+  return true;
+}
+
+/** Buang aksi entry (buy) saat cap tercapai; sell/exit selalu lolos. */
+export function filterCappedEntries<T extends { type: string }>(actions: T[], capped: boolean): T[] {
+  return capped ? actions.filter(a => a.type !== 'buy') : actions;
+}
+
+async function processBot(bot: BotRow, turbo = false) {
   // Guard: max daily loss — pause bot jika rugi realized hari ini melewati batas
   if (bot.max_daily_loss_pct > 0) {
     const client0 = registry.getForUser(bot.exchange_id, bot.user_id);
@@ -68,11 +98,12 @@ async function processBot(bot: BotRow) {
 
   const strategy = getStrategy(bot.strategy);
   const params = JSON.parse(bot.params || '{}');
+  const capped = hitDailyCap(bot, params);
   let state = JSON.parse(bot.state || '{}');
   // Ledger kas virtual per bot (eksak, bukan aproksimasi).
   initCashLedger(state, bot.current_budget);
 
-  const ticker = await getTickerCached(bot.exchange_id, bot.pair, bot.user_id);
+  const ticker = await getTickerCached(bot.exchange_id, bot.pair, bot.user_id, turbo ? 2000 : 5000);
   const client = registry.getForUser(bot.exchange_id, bot.user_id);
   const usdtIdr = client.quoteAsset === 'IDR' ? 1 : await getUsdtIdr();
 
@@ -132,10 +163,10 @@ async function processBot(bot: BotRow) {
     bot: { ...bot, current_budget: effBudget }, ticker, quote: client.quoteAsset, minLot, usdtIdr, now: Date.now(),
     getKlines: (interval, limit) => client.getKlines(bot.pair, interval, limit),
     getBalances: async () => balEntry!.data,
-    getPrice: async (pair: string) => (await getTickerCached(bot.exchange_id, pair, bot.user_id)).last
+    getPrice: async (pair: string) => (await getTickerCached(bot.exchange_id, pair, bot.user_id, turbo ? 2000 : 5000)).last
   };
 
-  const actions = await strategy.onTick(ctx, state, params);
+  const actions = filterCappedEntries((await strategy.onTick(ctx, state, params)) ?? [], capped);
 
   // Eksekusi aksi; update state berdasarkan hasil fill
   let filled = 0;
@@ -372,10 +403,21 @@ export function startScheduler(broadcast: (event: string, payload: any) => void)
       const bots = queries.runningBots.all() as BotRow[];
       const nowMs = Date.now();
       pruneTickCache(bots.map(b => b.id));
+      // Kuota turbo: maks 2 bot per user (anti rate-limit 429)
+      const turboCount = new Map<number, number>();
+      const turboFlags = new Map<number, boolean>();
       for (const bot of bots) {
-        if (!shouldTick(bot.id, nowMs)) continue;
+        let p: any = {};
+        try { p = JSON.parse(bot.params || '{}'); } catch { /* abaikan */ }
+        const ok = turboAllowed(bot, p, turboCount);
+        turboFlags.set(bot.id, ok);
+        if (ok) turboCount.set(bot.user_id, (turboCount.get(bot.user_id) || 0) + 1);
+      }
+      for (const bot of bots) {
+        const turbo = turboFlags.get(bot.id) || false;
+        if (!shouldTick(bot.id, nowMs, turbo)) continue;
         try {
-          await processBot(bot);
+          await processBot(bot, turbo);
         } catch (e: any) {
           const fresh = queries.getBot.get(bot.id) as BotRow;
           const errCount = (fresh.error_count || 0) + 1;

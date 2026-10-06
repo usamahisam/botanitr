@@ -32,6 +32,7 @@
     "test:equity": "tsx scripts/test-equity-curve.ts",
     "test:stop": "tsx scripts/test-bot-stop.ts",
     "test:rank": "tsx scripts/test-market-rank.ts",
+    "test:flash": "tsx scripts/test-flash.ts",
     "test:optimize": "tsx scripts/test-optimize.ts",
     "test:corr": "tsx scripts/test-correlation.ts",
     "test:ml": "tsx scripts/test-ml.ts",

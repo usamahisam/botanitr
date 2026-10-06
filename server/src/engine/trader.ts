@@ -10,6 +10,37 @@ import { compound } from './compound.js';
 let tradeCounter = 0;
 
 /**
+ * Fail-safe kecepatan: kegagalan eksekusi beruntun (network/order/429)
+ * menandai bot degraded → scheduler otomatis menurunkan ke mode normal
+ * + cooldown 15 menit. Pulih saat ada fill sukses.
+ */
+const failStreak = new Map<number, { n: number; at: number }>();
+const FAIL_LIMIT = 3;
+const DEGRADE_MS = 15 * 60 * 1000;
+
+export function recordTradeSuccess(botId: number): void {
+  failStreak.delete(botId);
+}
+
+export function recordTradeFail(botId: number): boolean {
+  const cur = failStreak.get(botId) || { n: 0, at: 0 };
+  cur.n++;
+  cur.at = Date.now();
+  failStreak.set(botId, cur);
+  return cur.n >= FAIL_LIMIT;
+}
+
+export function isDegraded(botId: number): boolean {
+  const cur = failStreak.get(botId);
+  if (!cur) return false;
+  if (Date.now() - cur.at > DEGRADE_MS) {
+    failStreak.delete(botId);
+    return false;
+  }
+  return cur.n >= FAIL_LIMIT;
+}
+
+/**
  * Throttle log skip berulang: kondisi persisten (kas kurang/lot kecil) bisa
  * terpicu tiap tick (~450 baris/jam ke DB). Batasi 1 log per 15 menit per
  * (bot, jenis-sebab); eksekusi skip-nya sendiri tetap jalan tiap tick.
@@ -212,9 +243,13 @@ export async function executeAction(bot: BotRow, action: Action, usdtIdr: number
       compound.maybeCompound(bot, realized, usdtIdr);
     }
 
+    recordTradeSuccess(bot.id);
     return trade;
   } catch (e: any) {
     log('error', 'ERROR', `Eksekusi ${action.type} ${bot.pair} gagal: ${e.message}`, { bot_id: bot.id, user_id: bot.user_id });
+    if (recordTradeFail(bot.id)) {
+      log('warn', 'ENGINE', `Bot "${bot.name}" 3x gagal beruntun — turun ke mode normal 15 menit`, { bot_id: bot.id, user_id: bot.user_id });
+    }
     throw e;
   }
 }

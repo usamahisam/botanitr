@@ -42,6 +42,12 @@ export const pnl = {
     return (db.prepare(sql).get(...args) as any).s;
   },
 
+  /** Jumlah trade hari ini per bot (untuk cap harian scalper cepat) */
+  botTradesToday(botId: number): number {
+    return (db.prepare(`SELECT COUNT(*) c FROM trades WHERE bot_id=? AND created_at >= ?`)
+      .get(botId, todayStartUtcIso()) as any).c || 0;
+  },
+
   /** Realized PnL hari ini per bot (untuk max daily loss guard) */
   botRealizedToday(botId: number): number {
     return (db.prepare(`SELECT COALESCE(SUM(realized_pnl),0) s FROM trades WHERE bot_id=? AND created_at >= ?`)

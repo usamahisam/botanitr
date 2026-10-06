@@ -3,7 +3,7 @@ import { Kline } from '../exchange/base.js';
 
 /**
  * AI Wizard rule-based: analisis metrik candle + backtest replay sederhana
- * untuk men-skor 9 preset strategi per pasangan.
+ * untuk men-skor 10 preset strategi per pasangan.
  */
 
 export interface PresetDef {
@@ -66,6 +66,12 @@ export const PRESETS: PresetDef[] = [
     deskripsi: 'PALING PINTAR. Beli saat turun, ikut saat naik, panen tiap level berkali-kali. Anchor mengikuti harga.',
     params: { step_pct: 1.0, levels: 8, profit_pct: 0.5, auto_step: true, rsi_filter: true, trend_lot_mult: 0.5, max_trend_buys: 3, max_exposure_pct: 100, sl_pct: 5.0 },
     leverage_label: '1x', tp_sl_label: 'Auto ping-pong', timeframe: 'Tick + 5m'
+  },
+  {
+    id: 'flash-scalper', nama: 'Flash Scalper', strategi: 'scalper', gaya: 'Kilatturbo',
+    deskripsi: 'Scalping tercepat: tick 4 detik, cooldown 60 detik, TP mikro. WAJIB fee 0,1% (Tokocrypto/Binance) — rugi di Indodax.',
+    params: { timeframe: '1m', ema_fast: 12, ema_slow: 30, rsi_period: 7, rsi_entry: 60, rsi_overbought: 75, tp_pct: 1.2, sl_pct: 0.7, trailing_pct: 0.8, cooldown_min: 1, max_trades_per_day: 20, turbo: true },
+    leverage_label: '1x', tp_sl_label: 'TP 1.2% / SL 0.7%', timeframe: '1m'
   },
   {
     id: 'rebalance-portfolio', nama: 'Rebalance Portfolio', strategi: 'rebalance', gaya: 'Alokasi',
@@ -137,6 +143,7 @@ function scorePreset(preset: PresetDef, m: Metrics, regime?: MarketRegime): numb
     case 'scalper':
       score += Math.min(30, m.volPct * 15);       // butuh volatilitas
       if (Math.abs(m.trendPct) < 1) score += 10;   // mikro ranging
+      if ((preset.params as any)?.turbo) score += m.volPct >= 1.2 ? 8 : -12; // flash butuh pasar cepat
       break;
     case 'grid':
       score += Math.min(25, m.rangePct * 2);       // butuh range lebar
