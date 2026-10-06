@@ -1,5 +1,5 @@
 import { Strategy, StrategyContext, Action, registerStrategy, numParam } from './types.js';
-import { minGrossTargetPct } from './fees.js';
+import { isNetProfitable, minGrossTargetPct } from './fees.js';
 import { adaptiveCooldownMs, detectRegime, higherTrend } from './regime.js';
 import { closesOf, rsi, sma } from './indicators.js';
 
@@ -20,7 +20,7 @@ const revert: Strategy = {
   name: 'revert',
   label: 'Revert',
   defaultParams: {
-    timeframe: '5m', rsi_len: 3, oversold: 20, exit_rsi: 65,
+    timeframe: '5m', rsi_len: 3, oversold: 20, exit_rsi: 65, exit_max_loss_pct: 0.5,
     trend_sma: 100, tp_pct: 1.0, sl_pct: 3.0, budget_pct: 100,
   },
 
@@ -70,17 +70,27 @@ const revert: Strategy = {
     const rsiLen = Math.max(2, Math.min(14, Math.floor(numParam(params, 'rsi_len', 3, 2, 14))));
     if (closes.length < rsiLen + 2) return actions;
 
-    // Exit momentum: RSI pendek sudah panas → kunci pantulan
+    // Exit momentum: RSI pendek sudah panas → kunci pantulan.
+    // Gerbang profitabilitas: jangan kunci RUGI. Exit hanya bila cuan bersih
+    // atau ruginya masih dalam toleransi (selip). Selain itu tahan untuk TP,
+    // atau potong di SL bila pantulan gagal total.
     if (state.position && state.position.qty * price >= minLot
         && rsi(closes, rsiLen) >= numParam(params, 'exit_rsi', 65, 50, 95)) {
       const p = state.position;
-      actions.push({
-        type: 'sell', qtyBase: p.qty, costBasis: p.cost,
-        reason: `[REVERT_EXIT] RSI(${rsiLen}) panas — kunci pantulan @ ${Math.round(price)}`,
-        tag: 'REVERT_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
-      });
-      // (posisi dibersihkan scheduler saat fill terkonfirmasi)
-      return actions;
+      const maxLoss = numParam(params, 'exit_max_loss_pct', 0.5, 0, 5) / 100;
+      const ok = isNetProfitable(p.entryPrice, price, ctx.bot.exchange_id, params)
+        || (p.entryPrice > 0 && (price - p.entryPrice) / p.entryPrice >= -maxLoss);
+      if (ok) {
+        actions.push({
+          type: 'sell', qtyBase: p.qty, costBasis: p.cost,
+          reason: `[REVERT_EXIT] RSI(${rsiLen}) panas — kunci pantulan @ ${Math.round(price)}`,
+          tag: 'REVERT_EXIT', impactRp: (price * p.qty - p.cost) * ctx.usdtIdr
+        });
+        // (posisi dibersihkan scheduler saat fill terkonfirmasi)
+        return actions;
+      }
+      // Tak memenuhi gerbang → tahan posisi (lanjut ke proteksi TP/SL di bawah
+      // pada tick ini tidak ada; TP/SL dievaluasi di blok atas).
     }
 
     // Entry: oversold ekstrem + tren besar masih naik + 1h selaras + cooldown
