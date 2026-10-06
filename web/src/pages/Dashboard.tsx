@@ -41,14 +41,27 @@ export default function Dashboard() {
   const [err, setErr] = useState('');
   const [issues, setIssues] = useState<BalanceIssue[]>([]);
 
-  const [corrNote, setCorrNote] = useState('');
+  const [corr, setCorr] = useState<{ high: { a: string; b: string; corr: number }[]; note: string; ignored: string[] } | null>(null);
+
+  const loadCorr = useCallback(() => {
+    api.get<{ high: { a: string; b: string; corr: number }[]; note: string; ignored: string[] }>('/correlation')
+      .then(setCorr).catch(() => {});
+  }, []);
+
+  const ignoreCorr = async (a: string, b: string) => {
+    if (!confirm(`Abaikan pasangan ${a} ↔ ${b}? Banner tak akan muncul lagi untuk pasangan ini.`)) return;
+    try { await api.post('/correlation/ignore', { a, b }); loadCorr(); }
+    catch (e: any) { alert(e.message || 'Gagal'); }
+  };
+
+  const unignoreCorr = async () => {
+    try { await api.del('/correlation/ignore'); loadCorr(); }
+    catch (e: any) { alert(e.message || 'Gagal'); }
+  };
 
   const load = useCallback(() => {
     api.get<DashboardData>('/dashboard').then(d => { setData(d); setErr(''); }).catch(e => setErr(e.message));
-    api.get<{ high: any[]; note: string }>('/correlation').then(r => {
-      if (r.high.length > 0) setCorrNote(r.note);
-      else setCorrNote('');
-    }).catch(() => {});
+    loadCorr();
     api.get<any[]>('/balances/check').then(rows => {
       setIssues(rows.flatMap(r => [
         ...((r.bots || []).filter((b: any) => !b.ok).map((b: any) => ({
@@ -94,10 +107,22 @@ export default function Dashboard() {
     <div className="space-y-4">
       <Tape />
 
-      {corrNote && (
+      {corr && corr.high.length > 0 && (
         <div className="panel p-4 border-l-2 !border-l-[#f0b90b]">
           <div className="text-[13px] font-semibold text-[#f0b90b] mb-1">Bot bergerak sama</div>
-          <div className="text-xs txt-2">{corrNote}</div>
+          <div className="text-xs txt-2 mb-2">{corr.note}</div>
+          {corr.high.map(h => (
+            <div key={`${h.a}|${h.b}`} className="flex items-center gap-2 py-0.5 text-xs flex-wrap">
+              <span className="num txt-2">{h.a} ↔ {h.b} · korelasi <b className="num">{h.corr.toFixed(2)}</b></span>
+              <button onClick={() => ignoreCorr(h.a, h.b)} className="btn btn-ghost btn-sm !py-0.5 !px-2 !text-[11px]">Abaikan pasangan ini</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {corr && corr.high.length === 0 && (corr.ignored || []).length > 0 && (
+        <div className="text-xs txt-3 px-1">
+          {(corr.ignored || []).length} pasangan korelasi diabaikan
+          <button onClick={unignoreCorr} className="ml-2 underline hover:text-white">tampilkan lagi</button>
         </div>
       )}
 

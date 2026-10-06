@@ -1,4 +1,4 @@
-import { db } from '../db/index.js';
+import { db, settings } from '../db/index.js';
 import { getLocalKlines } from './history.js';
 
 /**
@@ -33,7 +33,39 @@ export function pearson(x: number[], y: number[]): number {
 export interface CorrelationReport {
   pairs: string[];
   high: PairCorr[];   // korelasi ≥ 0.85 antar pair bot berjalan
+  ignored: string[];  // pasangan yang sedang diabaikan user
   note: string;
+}
+
+/** Kunci pasangan ternormalisasi (A|B = B|A) */
+export function pairKey(a: string, b: string): string {
+  return [a, b].sort().join('|');
+}
+
+/** Daftar abaikan user (disimpan di settings, dibersihkan otomatis bila basi) */
+export function getIgnored(userId: number): string[] {
+  const raw = settings.get('corr_ignore', '', userId);
+  return raw.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function setIgnored(userId: number, keys: string[]): void {
+  settings.set('corr_ignore', keys.join(','), userId);
+}
+
+/** Abaikan pasangan — idempoten */
+export function ignorePair(userId: number, a: string, b: string): string[] {
+  const k = pairKey(a, b);
+  const cur = getIgnored(userId);
+  if (!cur.includes(k)) {
+    cur.push(k);
+    setIgnored(userId, cur);
+  }
+  return cur;
+}
+
+/** Tampilkan lagi semua pasangan */
+export function unignoreAll(userId: number): void {
+  setIgnored(userId, []);
 }
 
 /**
@@ -51,15 +83,27 @@ export function correlationReport(userId: number): CorrelationReport {
     const k = `${r.exchange_id}:${String(r.pair).toUpperCase()}`;
     series.set(k, closes(r.exchange_id, r.pair));
   }
+  // Pengecualian basi (salah satu pair sudah tak dipakai bot) dibersihkan otomatis
+  const alive = new Set(keys);
+  let ignored = getIgnored(userId).filter(k => {
+    const [a, b] = k.split('|');
+    return alive.has(a) && alive.has(b);
+  });
+  // Normalisasi ulang (urutan A|B) agar perbandingan konsisten
+  ignored = [...new Set(ignored.map(k => pairKey(...(k.split('|') as [string, string]))))];
+  setIgnored(userId, ignored);
+  const ignoredSet = new Set(ignored);
+
   const high: PairCorr[] = [];
   for (let i = 0; i < keys.length; i++) {
     for (let j = i + 1; j < keys.length; j++) {
+      if (ignoredSet.has(pairKey(keys[i], keys[j]))) continue;
       const c = pearson(series.get(keys[i]) || [], series.get(keys[j]) || []);
       if (c >= 0.85) high.push({ a: keys[i], b: keys[j], corr: Math.round(c * 100) / 100 });
     }
   }
   return {
-    pairs: keys, high,
+    pairs: keys, high, ignored,
     note: high.length > 0
       ? `${high.length} pasangan bot riil bergerak nyaris sama (≥0.85) — risiko menumpuk, pertimbangkan jeda salah satunya`
       : 'Tidak ada korelasi berbahaya antar bot riil berjalan',

@@ -128,6 +128,19 @@ async function main() {
   check('install budget > kas → 400', r.status === 400, `got ${r.status}`);
   r = await post(`/marketplace/${myPreset}/rate`, { stars: 5 }, T);
   check('rate 200', r.status === 200, `got ${r.status}`);
+  // Anti double-count: 1 bot wizard (tanpa link) strategi scalper hanya
+  // terhitung di 1 preset + stopped tak dihitung di mana pun.
+  const wiz = await post('/bots', { name: 'E2E Scalp', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'scalper', params: {}, budget_idr: 50000, mode: 'paper' }, T);
+  r = await get('/marketplace', T);
+  const scalpRows = (r.data || []).filter((p: any) => p.strategy === 'scalper');
+  const scalpRunning = scalpRows.reduce((s: number, p: any) => s + (p.bots_running || 0), 0);
+  check('bot tanpa link terhitung tepat 1x', scalpRunning === 1, JSON.stringify(scalpRows.map((p: any) => [p.name, p.bots_running])));
+  await post(`/bots/${wiz.data.id}/pause`, {}, T);
+  await post(`/bots/${wiz.data.id}/stop`, { liquidate: false }, T);
+  r = await get('/marketplace', T);
+  const scalpTotal = (r.data || []).filter((p: any) => p.strategy === 'scalper').reduce((s: number, p: any) => s + (p.bots_total || 0), 0);
+  check('bot stopped tak dihitung', scalpTotal === 0, `got ${scalpTotal}`);
+  await del(`/bots/${wiz.data.id}`, T);
   r = await del(`/marketplace/${myPreset}`, T);
   check('hapus preset user 200', r.status === 200, `got ${r.status}`);
 

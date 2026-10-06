@@ -185,6 +185,22 @@ api.get('/correlation', asyncH(async (req: any, res: any) => {
   res.json(correlationReport(uid(req)));
 }));
 
+// Abaikan pasangan korelasi dengan sadar (tetap proteksi pasangan lain)
+api.post('/correlation/ignore', asyncH(async (req: any, res: any) => {
+  const { a, b } = req.body || {};
+  if (!a || !b) return res.status(400).json({ error: 'Field wajib: a, b (format exchange:PAIR)' });
+  const { ignorePair, correlationReport } = await import('../engine/correlation.js');
+  ignorePair(uid(req), String(a), String(b));
+  res.json(correlationReport(uid(req)));
+}));
+
+// Tampilkan lagi semua pasangan yang diabaikan
+api.delete('/correlation/ignore', asyncH(async (req: any, res: any) => {
+  const { unignoreAll, correlationReport } = await import('../engine/correlation.js');
+  unignoreAll(uid(req));
+  res.json(correlationReport(uid(req)));
+}));
+
 // Health check saldo: kecukupan kas per exchange + per bot yang running
 api.get('/balances/check', asyncH(async (req: any, res: any) => {
   const { checkBalancesHealth } = await import('../engine/balances.js');
@@ -858,12 +874,16 @@ api.get('/marketplace', asyncH(async (req: any, res: any) => {
   const userId = uid(req);
   const search = String(req.query.search || '').trim();
   // Hitungan bot per preset: link eksak dulu; bot tanpa link (dibuat via Wizard/API)
-  // ikut terhitung di preset berstrategi sama (seed bawaan 1 strategi = 1 preset).
+  // hanya ikut di preset SISTEM TERTUA strategi itu (anti hitung ganda —
+  // dulu 1 strategi = 1 preset sehingga fallback strategi-sama aman).
+  // Bot stopped (arsip) tidak dihitung di mana pun.
   let sql = `SELECT m.*, COALESCE(AVG(r.stars),0) rating, COUNT(r.stars) ratings,
-             (SELECT COUNT(*) FROM bots b WHERE b.user_id=?
-               AND (b.market_preset_id=m.id OR (b.market_preset_id IS NULL AND b.strategy=m.strategy))) bots_total,
+             (SELECT COUNT(*) FROM bots b WHERE b.user_id=? AND b.status != 'stopped'
+               AND (b.market_preset_id=m.id OR (b.market_preset_id IS NULL AND b.strategy=m.strategy
+                 AND m.user_id=0 AND m.id=(SELECT MIN(m2.id) FROM market_presets m2 WHERE m2.user_id=0 AND m2.strategy=m.strategy)))) bots_total,
              (SELECT COUNT(*) FROM bots b WHERE b.user_id=? AND b.status='running'
-               AND (b.market_preset_id=m.id OR (b.market_preset_id IS NULL AND b.strategy=m.strategy))) bots_running
+               AND (b.market_preset_id=m.id OR (b.market_preset_id IS NULL AND b.strategy=m.strategy
+                 AND m.user_id=0 AND m.id=(SELECT MIN(m2.id) FROM market_presets m2 WHERE m2.user_id=0 AND m2.strategy=m.strategy)))) bots_running
              FROM market_presets m LEFT JOIN market_ratings r ON r.preset_id=m.id
              WHERE m.public=1`;
   const args: any[] = [userId, userId];
