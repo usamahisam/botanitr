@@ -234,7 +234,7 @@ const STRAT_EXPLAIN: Record<string, string> = {
   dynamic: 'Paling pintar: beli saat turun, ikut saat naik, panen tiap level berkali-kali. Anchor mengikuti harga.'
 };
 
-interface ExchangeInfo { id: string; name: string; mode: string; has_credentials: boolean }
+interface ExchangeInfo { id: string; name: string; mode: string; has_credentials: boolean; enabled: number }
 
 export default function Wizard({ admin = false }: { admin?: boolean }) {
   const navigate = useNavigate();
@@ -359,7 +359,10 @@ export default function Wizard({ admin = false }: { admin?: boolean }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div>
               <select value={exchange} onChange={e => changeExchange(e.target.value)} className="input" aria-label="Exchange">
-                {EXCHANGES.map(x => <option key={x.id} value={x.id}>{x.label} ({x.quote})</option>)}
+                {EXCHANGES.map(x => {
+                  const off = (exList.find(e => e.id === x.id)?.enabled ?? 1) === 0;
+                  return <option key={x.id} value={x.id} disabled={off}>{x.label} ({x.quote}){off ? ' — nonaktif' : ''}</option>;
+                })}
               </select>
             </div>
             <div>

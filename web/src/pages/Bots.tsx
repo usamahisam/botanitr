@@ -201,10 +201,16 @@ export default function Bots({ admin = false }: { admin?: boolean }) {
   const [page, setPage] = useState(1);
   const [allUsers, setAllUsers] = useState(false);
   const [show, setShow] = useState<'aktif' | 'arsip' | 'semua'>('aktif');
+  const [filterUser, setFilterUser] = useState('');
+  const [userList, setUserList] = useState<{ id: number; username: string }[]>([]);
+  useEffect(() => {
+    if (admin) api.get<{ id: number; username: string }[]>('/auth/users').then(setUserList).catch(() => {});
+  }, [admin]);
 
   const load = useCallback(() => {
-    api.get<Bot[]>(`/bots${admin && allUsers ? '?all=1' : ''}`).then(setBots);
-  }, [admin, allUsers]);
+    const q = admin ? (filterUser ? `?user_id=${filterUser}` : allUsers ? '?all=1' : '') : '';
+    api.get<Bot[]>(`/bots${q}`).then(setBots);
+  }, [admin, allUsers, filterUser]);
   const visible = bots.filter(x => show === 'semua' ? true : show === 'arsip' ? x.status === 'stopped' : x.status !== 'stopped');
 
   useEffect(() => {
@@ -235,9 +241,15 @@ export default function Bots({ admin = false }: { admin?: boolean }) {
           </div>
           {admin && (
             <label className="flex items-center gap-2 text-xs txt-2 cursor-pointer">
-              <input type="checkbox" checked={allUsers} onChange={e => setAllUsers(e.target.checked)} className="accent-[#4f7cff] w-4 h-4" />
+              <input type="checkbox" checked={allUsers} onChange={e => { setAllUsers(e.target.checked); setFilterUser(''); }} className="accent-[#4f7cff] w-4 h-4" />
               Semua user
             </label>
+          )}
+          {admin && !allUsers && (
+            <select value={filterUser} onChange={e => setFilterUser(e.target.value)} className="input !w-auto !py-1.5 text-xs" aria-label="Filter user">
+              <option value="">User saya</option>
+              {userList.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+            </select>
           )}
           {!admin && <Link to="/wizard" className="btn btn-primary btn-sm shrink-0"><Icon.plus size={14} /> Bot baru</Link>}
         </div>

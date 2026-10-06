@@ -416,7 +416,11 @@ export function startScheduler(broadcast: (event: string, payload: any) => void)
     if (running) return; // hindari overlap
     running = true;
     try {
-      const bots = queries.runningBots.all() as BotRow[];
+      const allBots = queries.runningBots.all() as BotRow[];
+      // Market yang dinonaktifkan: botnya dilewati (tidak di-pause, hanya tidak jalan)
+      const offRows = db.prepare('SELECT id, user_id FROM exchanges WHERE enabled=0').all() as any[];
+      const off = new Set(offRows.map(r => `${r.user_id}:${r.id}`));
+      const bots = allBots.filter(b => !off.has(`${b.user_id}:${b.exchange_id}`));
       const nowMs = Date.now();
       pruneTickCache(bots.map(b => b.id));
       // Kuota turbo: maks 2 bot per user (anti rate-limit 429)

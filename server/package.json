@@ -34,6 +34,7 @@
     "test:rank": "tsx scripts/test-market-rank.ts",
     "test:flash": "tsx scripts/test-flash.ts",
     "test:lotsize": "tsx scripts/test-lotsize.ts",
+    "test:adminscope": "tsx scripts/test-admin-scope.ts",
     "test:optimize": "tsx scripts/test-optimize.ts",
     "test:corr": "tsx scripts/test-correlation.ts",
     "test:ml": "tsx scripts/test-ml.ts",

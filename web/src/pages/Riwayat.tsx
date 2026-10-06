@@ -19,6 +19,11 @@ export default function Riwayat({ admin = false }: { admin?: boolean }) {
   const [exchange, setExchange] = useState('');
   const [mode, setMode] = useState('');
   const [allUsers, setAllUsers] = useState(false);
+  const [filterUser, setFilterUser] = useState('');
+  const [userList, setUserList] = useState<{ id: number; username: string }[]>([]);
+  useEffect(() => {
+    if (admin) api.get<{ id: number; username: string }[]>('/auth/users').then(setUserList).catch(() => {});
+  }, [admin]);
   const [page, setPage] = useState(1);
   const [summary, setSummary] = useState<BotSummary | null>(null);
   const [bots, setBots] = useState<Bot[]>([]);
@@ -26,8 +31,10 @@ export default function Riwayat({ admin = false }: { admin?: boolean }) {
 
   // Daftar bot untuk dropdown (sinkron dengan ?bot_id= dari tombol Riwayat)
   useEffect(() => {
-    api.get<Bot[]>(`/bots${admin && allUsers ? '?all=1' : ''}`).then(setBots).catch(() => {});
-  }, [admin, allUsers]);
+    const q = admin ? (filterUser ? `?user_id=${filterUser}` : allUsers ? '?all=1' : '') : '';
+    api.get<Bot[]>(`/bots${q}`).then(b => { setBots(b); if (botId && !b.some(x => String(x.id) === botId)) pickBot(''); }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admin, allUsers, filterUser]);
 
   const pickBot = (v: string) => {
     setPage(1);
@@ -42,8 +49,9 @@ export default function Riwayat({ admin = false }: { admin?: boolean }) {
     if (mode) q.set('mode', mode);
     if (botId) q.set('bot_id', botId);
     if (admin && allUsers) q.set('all', '1');
+    else if (admin && filterUser) q.set('user_id', filterUser);
     api.get<{ total: number; rows: TradeRow[] }>(`/trades?${q}`).then(d => { setRows(d.rows); setTotal(d.total); });
-  }, [exchange, mode, page, botId, admin, allUsers]);
+  }, [exchange, mode, page, botId, admin, allUsers, filterUser]);
 
   useEffect(() => {
     if (botId) api.get<BotSummary>(`/bots/${botId}/summary`).then(setSummary).catch(() => setSummary(null));
@@ -99,9 +107,15 @@ export default function Riwayat({ admin = false }: { admin?: boolean }) {
         <div className="flex gap-2 flex-wrap">
           {admin && (
             <label className="flex items-center gap-2 text-xs txt-2 cursor-pointer self-center">
-              <input type="checkbox" checked={allUsers} onChange={e => { setAllUsers(e.target.checked); setPage(1); }} className="accent-[#4f7cff] w-4 h-4" />
+              <input type="checkbox" checked={allUsers} onChange={e => { setAllUsers(e.target.checked); setFilterUser(''); setPage(1); }} className="accent-[#4f7cff] w-4 h-4" />
               Semua user
             </label>
+          )}
+          {admin && !allUsers && (
+            <select value={filterUser} onChange={e => { setFilterUser(e.target.value); setPage(1); }} className="input !w-auto !py-1.5 text-xs" aria-label="Filter user">
+              <option value="">User saya</option>
+              {userList.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+            </select>
           )}
           <select value={botId} onChange={e => pickBot(e.target.value)} className="input !w-auto !py-1.5 text-xs" aria-label="Filter bot">
             <option value="">Semua bot</option>
@@ -122,7 +136,7 @@ export default function Riwayat({ admin = false }: { admin?: boolean }) {
           </select>
           <button
             onClick={() => {
-              const q = new URLSearchParams({ ...(exchange ? { exchange } : {}), ...(mode ? { mode } : {}), ...(botId ? { bot_id: botId } : {}), ...(admin && allUsers ? { all: '1' } : {}) }).toString();
+              const q = new URLSearchParams({ ...(exchange ? { exchange } : {}), ...(mode ? { mode } : {}), ...(botId ? { bot_id: botId } : {}), ...(admin && allUsers ? { all: '1' } : {}), ...(admin && !allUsers && filterUser ? { user_id: filterUser } : {}) }).toString();
               download(`/trades/export${q ? `?${q}` : ''}`, `trades-${new Date().toISOString().slice(0, 10)}.csv`).catch(e => alert(e.message));
             }}
             className="btn btn-ghost btn-sm">

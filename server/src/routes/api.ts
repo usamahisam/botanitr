@@ -9,7 +9,7 @@ import { restartTelegram, sendTestMessage } from '../telegram/bot.js';
 import { registry as stratRegistry } from '../strategies/types.js';
 import { config } from '../config.js';
 import { createHttp } from '../exchange/http.js';
-import { uid, requireTrader } from '../auth.js';
+import { uid, requireTrader, requireAdmin } from '../auth.js';
 import { log } from '../log.js';
 import '../strategies/grid.js';
 import '../strategies/dca.js';
@@ -147,11 +147,20 @@ api.put('/exchanges/:id', asyncH(async (req: any, res: any) => {
   const id = req.params.id;
   const row = getUserExchange(userId, id);
   if (!row) return res.status(404).json({ error: 'Exchange tidak ditemukan' });
-  const { api_key, api_secret, proxy_url, mode } = req.body || {};
+  const { api_key, api_secret, proxy_url, mode, enabled, apply_all } = req.body || {};
 
   if (api_key) db.prepare('UPDATE exchanges SET api_key_enc=? WHERE id=? AND user_id=?').run(encrypt(api_key), id, userId);
   if (api_secret) db.prepare('UPDATE exchanges SET api_secret_enc=? WHERE id=? AND user_id=?').run(encrypt(api_secret), id, userId);
   if (proxy_url !== undefined) db.prepare('UPDATE exchanges SET proxy_url=? WHERE id=? AND user_id=?').run(proxy_url || null, id, userId);
+  // Aktif/nonaktif market: milik sendiri; admin boleh terapkan ke semua user.
+  if (enabled !== undefined) {
+    const on = enabled === true || enabled === 1 || enabled === '1' ? 1 : 0;
+    if (apply_all && (req as any).user?.role === 'admin') {
+      db.prepare('UPDATE exchanges SET enabled=? WHERE id=?').run(on, id);
+    } else {
+      db.prepare('UPDATE exchanges SET enabled=? WHERE id=? AND user_id=?').run(on, id, userId);
+    }
+  }
   if (mode && ['paper', 'live'].includes(mode)) {
     if (mode === 'live') {
       const fresh = getUserExchange(userId, id)!;
@@ -218,6 +227,32 @@ api.get('/balances/check', asyncH(async (req: any, res: any) => {
 }));
 
 // ===== Pairs (global) =====
+// Kelola koin trade per market (admin saja). Muncul otomatis di dropdown Wizard.
+api.post('/pairs', requireAdmin, asyncH(async (req: any, res: any) => {
+  const { exchange_id, symbol, base, quote } = req.body || {};
+  const { label, kategori, min_lot, sort } = req.body || {};
+  if (!exchange_id || !symbol || !base || !quote) {
+    return res.status(400).json({ error: 'Field wajib: exchange_id, symbol, base, quote' });
+  }
+  const sym = String(symbol).toUpperCase().slice(0, 20);
+  try {
+    const info = db.prepare(`INSERT INTO default_pairs (exchange_id, symbol, base, quote, label, kategori, min_lot, sort)
+      VALUES (?,?,?,?,?,?,?,?)`).run(
+      String(exchange_id), sym, String(base).toUpperCase().slice(0, 12), String(quote).toUpperCase().slice(0, 8),
+      String(label || base).slice(0, 40), String(kategori || '').slice(0, 24),
+      Math.max(0, Number(min_lot) || 0), Math.max(0, Math.floor(Number(sort) || 99)));
+    res.status(201).json({ id: info.lastInsertRowid });
+  } catch {
+    return res.status(400).json({ error: 'Pair sudah ada untuk exchange ini' });
+  }
+}));
+
+api.delete('/pairs/:id', requireAdmin, asyncH(async (req: any, res: any) => {
+  const info = db.prepare('DELETE FROM default_pairs WHERE id=?').run(req.params.id);
+  if (info.changes === 0) return res.status(404).json({ error: 'Pair tidak ditemukan' });
+  res.json({ ok: true });
+}));
+
 api.get('/pairs', asyncH(async (req: any, res: any) => {
   const ex = String(req.query.exchange || '');
   const rows = ex
@@ -336,7 +371,7 @@ api.post('/bots', asyncH(async (req: any, res: any) => {
   if (!strat) return res.status(400).json({ error: `Strategi tidak dikenal: ${strategy}` });
   const exRow = getUserExchange(userId, exchange_id);
   if (!exRow) return res.status(400).json({ error: 'Exchange tidak dikenal' });
-
+  if (exRow.enabled === 0) return res.status(400).json({ error: `Market ${exRow.name} sedang dinonaktifkan admin` });
   const defaultPaper = settings.get('default_paper_mode', String(config.defaultPaperMode), userId) !== 'false';
   const finalMode = mode || (defaultPaper ? 'paper' : 'paper');
   if (finalMode === 'live') {
@@ -973,6 +1008,7 @@ api.post('/marketplace/:id/install', requireTrader, asyncH(async (req: any, res:
   if (!exchange_id) return res.status(400).json({ error: 'Field wajib: exchange_id' });
   const exRow = getUserExchange(userId, exchange_id);
   if (!exRow) return res.status(400).json({ error: 'Exchange tidak dikenal' });
+  if (exRow.enabled === 0) return res.status(400).json({ error: `Market ${exRow.name} sedang dinonaktifkan admin` });
   const strat = stratRegistry.get(preset.strategy);
   if (!strat) return res.status(400).json({ error: `Strategi tidak dikenal: ${preset.strategy}` });
   const presetParams = safeJson<Record<string, any>>(preset.params, {});

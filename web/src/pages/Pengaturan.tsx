@@ -76,8 +76,101 @@ function UserManager({ me, onChanged }: { me: AuthUser; onChanged?: () => void }
 
 interface ExchangeSettings {
   id: string; name: string; mode: string; status: string; proxy_url: string | null;
-  api_key_masked: string; has_credentials: boolean;
+  api_key_masked: string; has_credentials: boolean; enabled: number;
   api_version_setting?: string; api_version_active?: string | null;
+}
+
+interface PairRowAdmin { id: number; exchange_id: string; symbol: string; base: string; quote: string; label: string; kategori: string | null; min_lot: number }
+
+function MarketManager() {
+  const [exchanges, setExchanges] = useState<ExchangeSettings[]>([]);
+  const [msg, setMsg] = useState('');
+  const load = () => { api.get<ExchangeSettings[]>('/exchanges').then(setExchanges).catch(() => {}); };
+  useEffect(load, []);
+  const toggle = async (ex: ExchangeSettings) => {
+    const on = ex.enabled === 0;
+    if (!confirm(`${on ? 'Aktifkan' : 'Nonaktifkan'} market ${ex.name} untuk SEMUA user? Bot yang berjalan di market ini akan berhenti diproses.`)) return;
+    try {
+      await api.put(`/exchanges/${ex.id}`, { enabled: on ? 1 : 0, apply_all: true });
+      setMsg(`${ex.name} ${on ? 'diaktifkan' : 'dinonaktifkan'} untuk semua user.`);
+      load();
+    } catch (e: any) { setMsg(e.message || 'Gagal'); }
+  };
+  return (
+    <section className="panel p-4">
+      <div className="text-[14px] font-semibold mb-1">Market aktif / nonaktif</div>
+      <p className="text-xs txt-3 mb-3">Berlaku untuk semua user. Bot di market nonaktif berhenti diproses (tidak di-pause).</p>
+      <div className="space-y-2">
+        {exchanges.map(ex => (
+          <div key={ex.id} className="flex items-center gap-3">
+            <span className="text-[13px] flex-1">{ex.name} {ex.enabled === 0 && <span className="tag tag-dim ml-1">NONAKTIF</span>}</span>
+            <button onClick={() => toggle(ex)} className="btn btn-ghost btn-sm">{ex.enabled === 0 ? 'Aktifkan' : 'Nonaktifkan'}</button>
+          </div>
+        ))}
+      </div>
+      {msg && <div className="text-[13px] txt-2 mt-2">{msg}</div>}
+    </section>
+  );
+}
+
+function PairsManager() {
+  const [pairs, setPairs] = useState<PairRowAdmin[]>([]);
+  const [exchange, setExchange] = useState('indodax');
+  const [symbol, setSymbol] = useState('');
+  const [base, setBase] = useState('');
+  const [msg, setMsg] = useState('');
+  const load = () => { api.get<PairRowAdmin[]>('/pairs').then(setPairs).catch(() => {}); };
+  useEffect(load, []);
+  const add = async () => {
+    setMsg('');
+    try {
+      const quote = exchange === 'indodax' || exchange === 'bittime' ? 'IDR' : 'USDT';
+      await api.post('/pairs', { exchange_id: exchange, symbol, base, quote, label: base || symbol });
+      setMsg(`Koin ${symbol.toUpperCase()} ditambahkan ke ${exchange}.`);
+      setSymbol(''); setBase('');
+      load();
+    } catch (e: any) { setMsg(e.message || 'Gagal menambah'); }
+  };
+  const remove = async (p: PairRowAdmin) => {
+    if (!confirm(`Hapus ${p.symbol} dari ${p.exchange_id}?`)) return;
+    try { await api.del(`/pairs/${p.id}`); load(); }
+    catch (e: any) { setMsg(e.message || 'Gagal menghapus'); }
+  };
+  return (
+    <section className="panel p-4">
+      <div className="text-[14px] font-semibold mb-1">Koin trade per market</div>
+      <p className="text-xs txt-3 mb-3">Langsung muncul di dropdown Wizard semua user.</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+        <div>
+          <div className="lbl mb-1.5">Market</div>
+          <select value={exchange} onChange={e => setExchange(e.target.value)} className="input">
+            {['indodax', 'bittime', 'tokocrypto', 'binance'].map(x => <option key={x} value={x}>{x}</option>)}
+          </select>
+        </div>
+        <div>
+          <div className="lbl mb-1.5">Simbol</div>
+          <input value={symbol} onChange={e => setSymbol(e.target.value)} className="input num" placeholder="cth. PEPEIDR" />
+        </div>
+        <div>
+          <div className="lbl mb-1.5">Base</div>
+          <input value={base} onChange={e => setBase(e.target.value)} className="input" placeholder="cth. PEPE" />
+        </div>
+        <div className="flex items-end">
+          <button onClick={add} disabled={!symbol || !base} className="btn btn-primary btn-sm w-full">Tambah</button>
+        </div>
+      </div>
+      <div className="max-h-[220px] overflow-y-auto space-y-1">
+        {pairs.map(p => (
+          <div key={p.id} className="flex items-center gap-2 text-xs py-1 border-b border-white/[0.04]">
+            <span className="num txt-2 w-24 shrink-0">{p.exchange_id}</span>
+            <span className="font-semibold flex-1">{p.symbol}</span>
+            <button onClick={() => remove(p)} className="btn btn-ghost btn-sm !py-0.5 !px-2 !text-[11px] !text-[#ff7a8c]">Hapus</button>
+          </div>
+        ))}
+      </div>
+      {msg && <div className="text-[13px] txt-2 mt-2">{msg}</div>}
+    </section>
+  );
 }
 
 function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: () => void }) {
@@ -126,7 +219,10 @@ function ExchangeSettingsCard({ ex, onSaved }: { ex: ExchangeSettings; onSaved: 
     <section className="panel p-4">
       <div className="flex items-center justify-between mb-3">
         <span className="text-[14px] font-semibold">{ex.name}</span>
-        <span className={`tag ${mode === 'live' ? 'tag-down' : 'tag-warn'}`}>{mode === 'live' ? 'RIIL' : 'DEMO'}</span>
+        <span className="flex items-center gap-2">
+          {ex.enabled === 0 && <span className="tag tag-dim">NONAKTIF</span>}
+          <span className={`tag ${mode === 'live' ? 'tag-down' : 'tag-warn'}`}>{mode === 'live' ? 'RIIL' : 'DEMO'}</span>
+        </span>
       </div>
       <div className="space-y-3">
         <div>
@@ -316,6 +412,9 @@ export default function Pengaturan({ me }: { me: AuthUser }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {exchanges.map(ex => <ExchangeSettingsCard key={ex.id} ex={ex} onSaved={load} />)}
       </div>
+
+      {me.role === 'admin' && <MarketManager />}
+      {me.role === 'admin' && <PairsManager />}
 
       <section className="panel p-4">
         <div className="text-[14px] font-semibold mb-3">Umum</div>

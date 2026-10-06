@@ -38,6 +38,8 @@ function Clock() {
 export default function App() {
   const [connected, setConnected] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const isAdmin = user?.role === 'admin';
+  const ADMIN_NAV = ['/', '/bots', '/market', '/riwayat', '/pengaturan'];
   const [checking, setChecking] = useState(true);
   const navigate = useNavigate();
 
@@ -94,7 +96,7 @@ export default function App() {
             <span className="font-bold text-[15px] tracking-tight hidden min-[400px]:inline">BOTANI<span className="txt-3 font-medium"> / TERMINAL</span></span>
           </div>
           <nav className="hidden md:flex items-center gap-1 overflow-x-auto">
-            {NAV.map(n => (
+            {NAV.filter(n => !isAdmin || ADMIN_NAV.includes(n.to)).map(n => (
               <NavLink key={n.to} to={n.to} end={n.end as any}
                 className={({ isActive }) =>
                   `flex items-center gap-1.5 px-3 h-8 rounded-md text-[13px] font-medium transition-colors whitespace-nowrap ${isActive ? 'text-white bg-white/[0.08]' : 'txt-2 hover:text-white hover:bg-white/[0.04]'}`
@@ -119,8 +121,8 @@ export default function App() {
       </header>
       {/* Navigasi bawah khusus HP portrait — di desktop tetap menu atas */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 border-t border-white/[0.08]" style={{ background: 'rgba(9,13,19,0.96)', backdropFilter: 'blur(8px)', paddingBottom: 'env(safe-area-inset-bottom)' }} aria-label="Navigasi utama">
-        <div className="grid grid-cols-7 px-1">
-          {NAV.map(n => (
+        <div className="grid px-1" style={{ gridTemplateColumns: `repeat(${NAV.filter(n => !isAdmin || ADMIN_NAV.includes(n.to)).length}, 1fr)` }}>
+          {NAV.filter(n => !isAdmin || ADMIN_NAV.includes(n.to)).map(n => (
             <NavLink key={n.to} to={n.to} end={n.end as any}
               className={({ isActive }) =>
                 `flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium ${isActive ? 'text-white' : 'txt-3'}`
@@ -133,12 +135,12 @@ export default function App() {
       </nav>
       <main className="max-w-[1400px] mx-auto px-4 py-5 pb-24 md:pb-5">
         <Routes>
-          <Route path="/" element={<Dashboard admin={user.role === 'admin'} />} />
-          <Route path="/bots" element={<Bots admin={user.role === 'admin'} />} />
-          <Route path="/wizard" element={<Wizard admin={user.role === 'admin'} />} />
-          <Route path="/market" element={<Market admin={user.role === 'admin'} />} />
-          <Route path="/riwayat" element={<Riwayat admin={user.role === 'admin'} />} />
-          <Route path="/alerts" element={<Alerts />} />
+          <Route path="/" element={<Dashboard admin={isAdmin} />} />
+          <Route path="/bots" element={<Bots admin={isAdmin} />} />
+          <Route path="/wizard" element={isAdmin ? <Navigate to="/" replace /> : <Wizard admin={false} />} />
+          <Route path="/market" element={<Market admin={isAdmin} />} />
+          <Route path="/riwayat" element={<Riwayat admin={isAdmin} />} />
+          <Route path="/alerts" element={isAdmin ? <Navigate to="/" replace /> : <Alerts />} />
           <Route path="/pengaturan" element={<Pengaturan me={user} />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
         </Routes>
