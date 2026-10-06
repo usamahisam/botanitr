@@ -13,12 +13,12 @@ interface BtResult {
 function MaxBudgetBox({ exchange, budget, mode, onMax }: {
   exchange: string; budget: number; mode: 'paper' | 'live'; onMax: (v: number) => void;
 }) {
-  const [info, setInfo] = useState<{ quote: string; free: number; committed: number; available: number; mode: string } | null>(null);
+  const [info, setInfo] = useState<{ quote: string; free: number; committed: number; available: number; mode: string; others: { asset: string; free: number }[] } | null>(null);
   useEffect(() => {
     setInfo(null);
     let alive = true;
     const fetch = () => {
-      api.get<{ quote: string; free: number; committed: number; available: number; mode: string }>(`/exchanges/${exchange}/max-spendable?mode=${mode}`)
+      api.get<{ quote: string; free: number; committed: number; available: number; mode: string; others: { asset: string; free: number }[] }>(`/exchanges/${exchange}/max-spendable?mode=${mode}`)
         .then(d => { if (alive) setInfo(d); }).catch(() => {});
     };
     fetch();
@@ -34,6 +34,7 @@ function MaxBudgetBox({ exchange, budget, mode, onMax }: {
         <span className="txt-2">
           Kas tersedia ({info.mode === 'live' ? 'Riil' : 'Demo'}): <b className="num txt-2">{info.available.toLocaleString('id-ID')} {info.quote}</b>
           {info.committed > 0 && <span className="txt-3"> (kas {info.free.toLocaleString('id-ID')} − diklaim bot {info.committed.toLocaleString('id-ID')})</span>}
+          {(info.others || []).length > 0 && <span className="txt-3"> · Dana di {info.others.map(o => `${o.asset} ${o.free}`).join(', ')} (Earn/terkunci — redeem dulu di aplikasi exchange)</span>}
         </span>
         <button onClick={() => onMax(Math.floor(info.available))} disabled={info.available <= 0}
           className="btn btn-ghost btn-sm shrink-0" title="Isi budget dengan seluruh kas tersedia">
