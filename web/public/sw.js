@@ -1,5 +1,6 @@
-/* Botani Terminal service worker: app-shell cache-first agar bisa di-install & dibuka cepat di Android. */
-const VERSION = 'botani-v1';
+/* Botani Terminal service worker: app-shell agar bisa di-install & dibuka cepat di Android.
+ * Navigasi = network-first (HTML tak boleh basi — menu lama nyangkut), aset = cache-first. */
+const VERSION = 'botani-v2';
 const CORE = ['/', '/index.html', '/manifest.webmanifest', '/logo.svg'];
 
 self.addEventListener('install', (e) => {
@@ -19,6 +20,19 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   // API & socket jangan di-cache
   if (url.pathname.startsWith('/api') || url.pathname.startsWith('/socket.io')) return;
+  // Halaman (navigasi): selalu ambil versi terbaru, cache hanya cadangan offline
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(VERSION).then(c => c.put('/index.html', copy)).catch(() => {});
+        }
+        return res;
+      }).catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
   e.respondWith(
     caches.match(e.request, { ignoreSearch: false }).then(hit => {
       if (hit) return hit;
