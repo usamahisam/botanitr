@@ -200,10 +200,12 @@ export default function Bots({ admin = false }: { admin?: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
   const [page, setPage] = useState(1);
   const [allUsers, setAllUsers] = useState(false);
+  const [show, setShow] = useState<'aktif' | 'arsip' | 'semua'>('aktif');
 
   const load = useCallback(() => {
-    api.get<Bot[]>(`/bots${admin && allUsers ? '?all=1' : ''}`).then(b => setBots(b.filter(x => x.status !== 'stopped')));
+    api.get<Bot[]>(`/bots${admin && allUsers ? '?all=1' : ''}`).then(setBots);
   }, [admin, allUsers]);
+  const visible = bots.filter(x => show === 'semua' ? true : show === 'arsip' ? x.status === 'stopped' : x.status !== 'stopped');
 
   useEffect(() => {
     load();
@@ -213,8 +215,8 @@ export default function Bots({ admin = false }: { admin?: boolean }) {
     return () => { s.off('bot', load); clearInterval(t); };
   }, [load]);
 
-  const totalPages = Math.max(1, Math.ceil(bots.length / PER_PAGE));
-  const shown = bots.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(visible.length / PER_PAGE));
+  const shown = visible.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   return (
     <div>
@@ -223,7 +225,14 @@ export default function Bots({ admin = false }: { admin?: boolean }) {
           <h2 className="text-[17px] font-bold tracking-tight">Bot{admin ? ' · mode admin (pantau saja)' : ''}</h2>
           <p className="text-xs txt-3 mt-0.5">{bots.length} bot terdaftar · {bots.filter(b => b.status === 'running').length} berjalan</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="seg">
+            {(['aktif', 'arsip', 'semua'] as const).map(f => (
+              <button key={f} onClick={() => { setShow(f); setPage(1); }} className={show === f ? 'on' : ''}>
+                {f === 'aktif' ? 'Aktif' : f === 'arsip' ? 'Arsip stop' : 'Semua'}
+              </button>
+            ))}
+          </div>
           {admin && (
             <label className="flex items-center gap-2 text-xs txt-2 cursor-pointer">
               <input type="checkbox" checked={allUsers} onChange={e => setAllUsers(e.target.checked)} className="accent-[#4f7cff] w-4 h-4" />
@@ -234,10 +243,10 @@ export default function Bots({ admin = false }: { admin?: boolean }) {
         </div>
       </div>
 
-      {bots.length === 0 ? (
+      {visible.length === 0 ? (
         <div className="panel p-10 text-center">
-          <p className="txt-2 text-sm">Belum ada bot yang berjalan.</p>
-          <Link to="/wizard" className="btn btn-primary btn-sm mt-4">Buat bot pertama</Link>
+          <p className="txt-2 text-sm">{show === 'arsip' ? 'Belum ada bot yang diarsip.' : 'Belum ada bot yang berjalan.'}</p>
+          {!admin && show !== 'arsip' && <Link to="/wizard" className="btn btn-primary btn-sm mt-4">Buat bot pertama</Link>}
         </div>
       ) : (
         <>
@@ -245,7 +254,7 @@ export default function Bots({ admin = false }: { admin?: boolean }) {
             {shown.map(b => <BotCard key={b.id} bot={b} onChanged={load} admin={admin} />)}
           </div>
           <div className="flex items-center justify-between mt-3 text-xs txt-3">
-            <span className="num">{(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, bots.length)} dari {bots.length}</span>
+            <span className="num">{visible.length === 0 ? 0 : (page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, visible.length)} dari {visible.length}</span>
             <div className="flex gap-1">
               {Array.from({ length: totalPages }, (_, i) => (
                 <button key={i} onClick={() => setPage(i + 1)}

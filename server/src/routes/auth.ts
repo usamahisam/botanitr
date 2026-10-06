@@ -78,7 +78,7 @@ authRouter.post('/auth/users', requireAuth, requireAdmin, asyncH(async (req: any
 
 /** Admin: daftar user */
 authRouter.get('/auth/users', requireAuth, requireAdmin, asyncH(async (_req: any, res: any) => {
-  res.json(queries.allUsers.all());
+  res.json((queries.allUsers.all() as any[]).map(u => ({ id: u.id, username: u.username, role: u.role, created_at: u.created_at })));
 }));
 
 /** Admin: hapus user (tidak boleh hapus diri sendiri / admin terakhir) */

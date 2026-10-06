@@ -307,9 +307,21 @@ api.get('/bots/:id', asyncH(async (req: any, res: any) => {
   res.json({ ...bot, params: safeJson(bot.params, {}), state: safeJson(bot.state, {}), stats: pnl.botStats(bot.id), trend: pnl.botTrend(bot.id) });
 }));
 
-api.post('/bots', requireTrader, asyncH(async (req: any, res: any) => {
-  const userId = uid(req);
-  const { name, exchange_id, pair, strategy, params, budget_idr, auto_compound_pct, mode, confirmed_live, max_daily_loss_pct, status } = req.body || {};
+api.post('/bots', asyncH(async (req: any, res: any) => {
+  const me = uid(req);
+  const isAdmin = (req as any).user?.role === 'admin';
+  const { name, exchange_id, pair, strategy, params, budget_idr, auto_compound_pct, mode, confirmed_live, max_daily_loss_pct, status, owner_id } = req.body || {};
+  // Admin tak boleh punya bot sendiri — hanya boleh buatkan untuk user lain.
+  let userId = me;
+  if (isAdmin) {
+    const oid = Number(owner_id);
+    if (!Number.isFinite(oid) || oid <= 0 || oid === me) {
+      return res.status(403).json({ error: 'Akun admin khusus kelola strategi — trading hanya untuk akun user', code: 'ADMIN_NO_TRADE' });
+    }
+    const target = db.prepare('SELECT id FROM users WHERE id=?').get(oid) as any;
+    if (!target) return res.status(400).json({ error: 'User tujuan tidak ditemukan' });
+    userId = oid;
+  }
   if (!name || !exchange_id || !pair || !strategy || !budget_idr) {
     return res.status(400).json({ error: 'Field wajib: name, exchange_id, pair, strategy, budget_idr' });
   }
@@ -683,24 +695,26 @@ function scopeUser(req: any): number | null {
 function tradeFilter(req: any, scope?: number | null) {
   const { exchange, mode, strategy_tag, bot_id, from, to } = req.query as any;
   const u = scope === undefined ? uid(req) : scope;
-  let sql = u === null ? 'SELECT * FROM trades WHERE 1=1' : 'SELECT * FROM trades WHERE user_id=?';
+  const SEL = 'SELECT t.*, b.name AS bot_name';
+  const FROM = 'FROM trades t LEFT JOIN bots b ON b.id=t.bot_id';
+  let sql = u === null ? `${SEL} ${FROM} WHERE 1=1` : `${SEL} ${FROM} WHERE t.user_id=?`;
   const args: any[] = u === null ? [] : [u];
-  if (exchange) { sql += ' AND exchange_id=?'; args.push(exchange); }
-  if (mode) { sql += ' AND mode=?'; args.push(mode); }
-  if (strategy_tag) { sql += ' AND strategy_tag=?'; args.push(strategy_tag); }
-  if (bot_id) { sql += ' AND bot_id=?'; args.push(bot_id); }
-  if (from) { sql += ' AND created_at>=?'; args.push(from); }
-  if (to) { sql += ' AND created_at<=?'; args.push(to); }
-  return { sql, args };
+  if (exchange) { sql += ' AND t.exchange_id=?'; args.push(exchange); }
+  if (mode) { sql += ' AND t.mode=?'; args.push(mode); }
+  if (strategy_tag) { sql += ' AND t.strategy_tag=?'; args.push(strategy_tag); }
+  if (bot_id) { sql += ' AND t.bot_id=?'; args.push(bot_id); }
+  if (from) { sql += ' AND t.created_at>=?'; args.push(from); }
+  if (to) { sql += ' AND t.created_at<=?'; args.push(to); }
+  return { sql, args, sel: SEL };
 }
 
 api.get('/trades', asyncH(async (req: any, res: any) => {
   const { limit = 50, offset = 0 } = req.query as any;
   const scope = scopeUser(req);
-  const { sql, args } = tradeFilter(req, scope);
-  const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) c');
+  const { sql, args, sel } = tradeFilter(req, scope);
+  const countSql = sql.replace(sel, 'SELECT COUNT(*) c');
   const total = (db.prepare(countSql).get(...args) as any).c;
-  const rows = db.prepare(sql + ' ORDER BY id DESC LIMIT ? OFFSET ?').all(...args, num(limit, 50, 1, 200), num(offset, 0, 0, 1000000)) as any[];
+  const rows = db.prepare(sql + ' ORDER BY t.id DESC LIMIT ? OFFSET ?').all(...args, num(limit, 50, 1, 200), num(offset, 0, 0, 1000000)) as any[];
   // Mode admin semua-user: lampirkan username agar riwayat bisa dibedakan
   if (scope === null) {
     const umap = Object.fromEntries((db.prepare('SELECT id, username FROM users').all() as any[]).map(u => [u.id, u.username]));
@@ -712,15 +726,15 @@ api.get('/trades', asyncH(async (req: any, res: any) => {
 // Ekspor CSV riwayat trades (filter sama, tanpa pagination)
 api.get('/trades/export', asyncH(async (req: any, res: any) => {
   const { sql, args } = tradeFilter(req, scopeUser(req));
-  const rows = db.prepare(sql + ' ORDER BY id ASC LIMIT 50000').all(...args) as any[];
-  const header = ['id', 'waktu', 'bot_id', 'exchange', 'pair', 'sisi', 'harga', 'qty', 'nilai', 'fee', 'pnl', 'cost_basis', 'mode', 'order_id', 'strategi', 'catatan'];
+  const rows = db.prepare(sql + ' ORDER BY t.id ASC LIMIT 50000').all(...args) as any[];
+  const header = ['id', 'waktu', 'bot_id', 'bot', 'exchange', 'pair', 'sisi', 'harga', 'qty', 'nilai', 'fee', 'pnl', 'cost_basis', 'mode', 'order_id', 'strategi', 'catatan'];
   const esc = (v: any) => {
     const s = v === null || v === undefined ? '' : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const lines = [header.join(',')];
   for (const r of rows) {
-    lines.push([r.id, r.created_at, r.bot_id ?? '', r.exchange_id, r.pair, r.side, r.price, r.qty, r.value, r.fee, r.realized_pnl, r.cost_basis, r.mode, r.order_id ?? '', r.strategy_tag ?? '', r.note ?? ''].map(esc).join(','));
+    lines.push([r.id, r.created_at, r.bot_id ?? '', r.bot_name ?? '', r.exchange_id, r.pair, r.side, r.price, r.qty, r.value, r.fee, r.realized_pnl, r.cost_basis, r.mode, r.order_id ?? '', r.strategy_tag ?? '', r.note ?? ''].map(esc).join(','));
   }
   const stamp = new Date().toISOString().slice(0, 10);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');

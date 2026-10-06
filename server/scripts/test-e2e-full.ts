@@ -54,6 +54,7 @@ async function main() {
   // Trader untuk semua aksi trading (admin diblokir trading)
   r = await post('/auth/users', { username: 'trader1', password: 'trader123', role: 'user' }, A);
   check('admin buat user trader 201', r.status === 201, `got ${r.status}`);
+  const traderId = r.data.id;
   r = await post('/auth/login', { username: 'trader1', password: 'trader123' });
   check('login trader 200', r.status === 200 && !!r.data.token, `got ${r.status}`);
   const T = r.data.token;
@@ -68,6 +69,11 @@ async function main() {
   check('admin quick-trade → 403', r.status === 403, `got ${r.status}`);
   r = await post('/killswitch', {}, A);
   check('admin killswitch → 403', r.status === 403, `got ${r.status}`);
+  r = await post('/bots', { name: 'Hadiah Admin', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid', params: {}, budget_idr: 50000, mode: 'paper', status: 'paused', owner_id: traderId }, A);
+  check('admin buatkan bot untuk user → 201 milik user', r.status === 201 && r.data.user_id === traderId, `got ${r.status} ${JSON.stringify(r.data).slice(0, 100)}`);
+  const giftId = r.data.id;
+  r = await post('/bots', { name: 'Milik Sendiri', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid', params: {}, budget_idr: 50000, mode: 'paper', owner_id: 1 }, A);
+  check('admin buat untuk diri sendiri → 403', r.status === 403, `got ${r.status}`);
   r = await get('/bots?all=1', A);
   check('admin lihat semua bot 200', r.status === 200 && Array.isArray(r.data), `got ${r.status}`);
   r = await get('/bots?all=1', T);
@@ -99,7 +105,7 @@ async function main() {
   r = await post('/bots', { name: ' Sultan', exchange_id: 'indodax', pair: 'XRPIDR', strategy: 'grid', params: {}, budget_idr: 999999999999, mode: 'paper' }, T);
   check('budget > kas demo → 400 + saran', r.status === 400 && /demo|kas/i.test(r.data.error || ''), `got ${r.status}`);
   r = await get('/bots', T);
-  check('list bots ada 1', r.status === 200 && r.data.length === 1, `got ${r.status} len=${r.data?.length}`);
+  check('list bots trader (all tetap milik sendiri)', r.status === 200 && (r.data || []).every((b: any) => b.user_id === traderId), `got ${r.status} len=${r.data?.length}`);
   check('bot bawa cash_quote = budget', r.data[0]?.cash_quote === 100000 && r.data[0]?.open_cost_quote === 0, JSON.stringify({ cash: r.data[0]?.cash_quote, open: r.data[0]?.open_cost_quote }));
   r = await post(`/bots/${botId}/pause`, {}, T);
   check('pause 200', r.status === 200, `got ${r.status}`);
@@ -114,6 +120,11 @@ async function main() {
   console.log('\n3) Trades & logs');
   r = await get('/trades?limit=10', T);
   check('trades 200', r.status === 200 && Array.isArray(r.data?.rows), `got ${r.status}`);
+  const { db: dbT } = await import('../src/db/index.js');
+  dbT.prepare(`INSERT INTO trades (user_id, bot_id, exchange_id, pair, side, price, qty, fee, value, realized_pnl, cost_basis, mode, created_at)
+    VALUES (${traderId}, ${botId}, 'indodax','XRPIDR','buy',100,1,0,100,0,100,'paper',datetime('now'))`).run();
+  r = await get(`/trades?bot_id=${botId}&limit=5`, T);
+  check('trades bawa nama bot', (r.data?.rows?.length || 0) > 0 && (r.data.rows || []).every((t: any) => t.bot_name === 'E2E Grid'), JSON.stringify((r.data?.rows || []).map((t: any) => t.bot_name)));
   r = await get('/trades/export', T);
   check('export CSV 200', r.status === 200, `got ${r.status}`);
   r = await get('/logs?limit=10', T);

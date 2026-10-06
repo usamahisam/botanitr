@@ -87,7 +87,7 @@ export interface LogRow {
   message: string; impact_rp: number | null; created_at: string;
 }
 export interface TradeRow {
-  id: number; bot_id: number | null; exchange_id: string; pair: string; side: string;
+  id: number; bot_id: number | null; bot_name?: string | null; exchange_id: string; pair: string; side: string;
   price: number; qty: number; fee: number; value: number; realized_pnl: number;
   mode: string; strategy_tag: string | null; note: string | null; created_at: string;
   username?: string;

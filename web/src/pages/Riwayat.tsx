@@ -135,17 +135,18 @@ export default function Riwayat({ admin = false }: { admin?: boolean }) {
         <table className="tbl num">
           <thead>
             <tr>
-              <th>Waktu</th><th>Pair</th><th>Sisi</th>
+              <th>Waktu</th><th>Bot</th><th>Pair</th><th>Sisi</th>
               <th className="!text-right">Harga</th><th className="!text-right">Qty</th>
               <th className="!text-right">Nilai</th><th className="!text-right">Fee</th><th className="!text-right">PnL</th>
               <th>Mode</th><th>Sumber</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={10} className="!text-center txt-3 !py-8 font-sans">Belum ada transaksi.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={11} className="!text-center txt-3 !py-8 font-sans">Belum ada transaksi.</td></tr>}
             {rows.map(t => (
               <tr key={t.id}>
                 <td className="txt-3 whitespace-nowrap !text-[12px]">{fmtDateTime(t.created_at)}</td>
+                <td className="text-xs font-sans max-w-[140px] truncate" title={t.bot_name || (t.bot_id ? `#${t.bot_id}` : '')}>{t.bot_name || (t.bot_id ? `#${t.bot_id}` : '—')}</td>
                 <td><span className="font-semibold font-sans">{t.pair}</span> <span className="txt-3 text-[11px] font-sans">{t.exchange_id}{t.username ? ` · ${t.username}` : ''}</span></td>
                 <td><span className={`text-[12px] font-bold tracking-wide ${t.side === 'buy' ? 'txt-up' : 'txt-down'}`}>{t.side === 'buy' ? 'BELI' : 'JUAL'}</span></td>
                 <td className="!text-right">{fmtMoney(t.price, quoteOfPair(t.pair))}</td>

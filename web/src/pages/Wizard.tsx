@@ -293,6 +293,12 @@ export default function Wizard({ admin = false }: { admin?: boolean }) {
     setBotName(`${p.nama} ${pair.replace(/IDR|USDT/, '')}`);
   };
 
+  const [ownerId, setOwnerId] = useState('');
+  const [userList, setUserList] = useState<{ id: number; username: string }[]>([]);
+  useEffect(() => {
+    if (admin) api.get<{ id: number; username: string }[]>('/auth/users').then(u => setUserList(u.filter(x => x.username !== 'admin'))).catch(() => {});
+  }, [admin]);
+
   const activate = async () => {
     if (!selected) return;
     setSubmitting(true); setError('');
@@ -301,7 +307,8 @@ export default function Wizard({ admin = false }: { admin?: boolean }) {
         name: botName, exchange_id: exchange, pair, strategy: selected.strategi,
         params, budget_idr: budget, auto_compound_pct: compound, mode,
         max_daily_loss_pct: maxDailyLoss,
-        confirmed_live: mode === 'live' ? confirmedLive : undefined
+        confirmed_live: mode === 'live' ? confirmedLive : undefined,
+        ...(admin ? { owner_id: Number(ownerId) } : {})
       });
       navigate('/bots');
     } catch (e: any) { setError(e.message); }
@@ -523,13 +530,17 @@ export default function Wizard({ admin = false }: { admin?: boolean }) {
           )}
 
           {admin && (
-            <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[12px] txt-2 mb-3">
-              Mode admin: Anda bisa merancang & menguji strategi di sini, tetapi aktivasi bot hanya untuk akun user.
+            <div className="mb-3">
+              <div className="lbl mb-1.5">Buatkan untuk user (admin tidak punya bot sendiri)</div>
+              <select value={ownerId} onChange={e => setOwnerId(e.target.value)} className="input">
+                <option value="">— pilih user —</option>
+                {userList.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+              </select>
             </div>
           )}
           <div className="flex justify-between mt-4">
             <button onClick={() => setStep(2)} className="btn btn-ghost">Kembali</button>
-            <button onClick={activate} disabled={admin || submitting || (mode === 'live' && !confirmedLive) || !botName} className="btn btn-primary" title={admin ? 'Akun admin tidak bisa mengaktifkan bot' : ''}>
+            <button onClick={activate} disabled={submitting || (mode === 'live' && !confirmedLive) || !botName || (admin && !ownerId)} className="btn btn-primary" title={admin && !ownerId ? 'Pilih user pemilik bot dulu' : ''}>
               {submitting ? 'Mengaktifkan…' : 'Aktifkan bot'}
             </button>
           </div>
